@@ -371,8 +371,8 @@ function applyServerPositions(positions) {
         // Update score
         if (pos.score !== undefined) pacmen[index].score = pos.score;
 
-        // Update visual position immediately
-        updatePosition(pacmen[index].element, pacmen[index].px, pacmen[index].py);
+        // Do not update DOM here; renderLoop will interpolate and render
+        // This avoids fighting between server updates and client-side smoothing
       }
     }
   }
@@ -396,8 +396,8 @@ function applyServerPositions(positions) {
         // Update score
         if (pos.score !== undefined) ghosts[index].score = pos.score;
 
-        // Update visual position immediately
-        updatePosition(ghosts[index].element, ghosts[index].px, ghosts[index].py);
+        // Do not update DOM here; renderLoop will interpolate and render
+        // This avoids fighting between server updates and client-side smoothing
       }
     }
   }
@@ -960,6 +960,20 @@ function init() {
 
         // Check if valid move
         if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
+          // Client-side prediction: nudge our local pixel position toward the new target
+          const targetPixel = getTargetPixelPos(newX, newY);
+          const dx = targetPixel.x - character.px;
+          const dy = targetPixel.y - character.py;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const step = BASE_MOVE_SPEED * CELL_SIZE * (character.speed || 1.0);
+          if (dist > 0 && dist > step) {
+            character.px += (dx / dist) * step;
+            character.py += (dy / dist) * step;
+          } else {
+            character.px = targetPixel.x;
+            character.py = targetPixel.y;
+          }
+
           sendInput({ targetX: newX, targetY: newY });
           console.log(`%cSending input: (${newX}, ${newY})`, "color: blue;");
         }
