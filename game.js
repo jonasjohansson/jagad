@@ -1,34 +1,119 @@
 // Simple Pacman Game
 // Map: 0 = path, 1 = wall, 2 = teleport, 3 = ghost spawn (treated as path for movement, just marks spawn location)
+// Map extended to twice the width (56 columns)
 const MAP = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 3, 3, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 3, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1],
-  [1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  [
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1,
+    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 3, 3, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 3, 3, 0, 0,
+    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 3, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 3, 0, 0,
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0,
+    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1,
+  ],
+  [
+    1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0,
+    0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
+  ],
+  [
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+  ],
+  [
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  ],
 ];
 
 const COLS = MAP[0].length;
@@ -104,9 +189,9 @@ function restartGame() {
   pacmen.forEach((pacman, i) => {
     const pos = [
       { x: 1, y: 1 },
-      { x: 26, y: 1 },
+      { x: 54, y: 1 },
       { x: 1, y: 26 },
-      { x: 26, y: 26 },
+      { x: 54, y: 26 },
     ][i];
     pacman.x = pos.x;
     pacman.y = pos.y;
@@ -151,6 +236,12 @@ function restartGame() {
       }
     }
     ghost.moveTimer = 0;
+    // Reset position history to prevent old history from affecting restarted game
+    if (!ghost.positionHistory) {
+      ghost.positionHistory = [];
+    } else {
+      ghost.positionHistory = [];
+    }
   });
 
   console.log("%cGame Restarted!", "color: orange; font-weight: bold;");
@@ -190,6 +281,10 @@ function init() {
       playerColor: "Red",
       pacmanSpeed: 1.0,
       ghostSpeed: 1.0,
+      borderStyle: "double",
+      borderColor: "#ffffff",
+      pathBgColor: "#000000",
+      wallBgColor: "transparent",
       start: () => startGame(),
       restart: () => restartGame(),
     };
@@ -220,6 +315,35 @@ function init() {
       .name("Ghost Speed")
       .onChange((value) => {
         ghostSpeed = value;
+      });
+
+    // Visual settings
+    gui
+      .add(guiParams, "borderStyle", ["solid", "dashed", "dotted", "double"])
+      .name("Border Style")
+      .onChange((value) => {
+        document.documentElement.style.setProperty("--border-style", value);
+      });
+
+    gui
+      .addColor(guiParams, "borderColor")
+      .name("Border Color")
+      .onChange((value) => {
+        document.documentElement.style.setProperty("--color-wall-border", value);
+      });
+
+    gui
+      .addColor(guiParams, "pathBgColor")
+      .name("Path Background")
+      .onChange((value) => {
+        document.documentElement.style.setProperty("--color-path-bg", value);
+      });
+
+    gui
+      .addColor(guiParams, "wallBgColor")
+      .name("Wall Background")
+      .onChange((value) => {
+        document.documentElement.style.setProperty("--color-wall-bg", value);
       });
   }
   const maze = document.getElementById("maze");
@@ -257,8 +381,15 @@ function init() {
         const hasPathBottom = shouldCreateBorder(x, y + 1);
         const hasPathLeft = shouldCreateBorder(x - 1, y);
 
-        // Skip walls that don't have any borders (completely surrounded by other walls)
-        if (!hasPathTop && !hasPathRight && !hasPathBottom && !hasPathLeft) {
+        // Check if this wall is on the edge of the map
+        const isEdgeTop = y === 0;
+        const isEdgeRight = x === COLS - 1;
+        const isEdgeBottom = y === ROWS - 1;
+        const isEdgeLeft = x === 0;
+        const isEdge = isEdgeTop || isEdgeRight || isEdgeBottom || isEdgeLeft;
+
+        // Skip walls that don't have any borders AND are not on the edge
+        if (!hasPathTop && !hasPathRight && !hasPathBottom && !hasPathLeft && !isEdge) {
           continue;
         }
 
@@ -273,6 +404,12 @@ function init() {
         if (hasPathRight) classes.push("border-right");
         if (hasPathBottom) classes.push("border-bottom");
         if (hasPathLeft) classes.push("border-left");
+
+        // Add borders to edge walls (outskirts) - these are walls on the map boundaries
+        if (isEdgeTop) classes.push("edge-top");
+        if (isEdgeRight) classes.push("edge-right");
+        if (isEdgeBottom) classes.push("edge-bottom");
+        if (isEdgeLeft) classes.push("edge-left");
 
         // Add rounded corner classes where two borders meet
         if (hasPathTop && hasPathRight) classes.push("corner-top-right");
@@ -297,12 +434,12 @@ function init() {
   }
   maze.appendChild(fragment);
 
-  // Create 4 pacmen in corners
+  // Create 4 pacmen in corners (map is now 56 columns wide)
   const pacmanPositions = [
     { x: 1, y: 1 }, // top-left
-    { x: 26, y: 1 }, // top-right
+    { x: 54, y: 1 }, // top-right (56 - 2)
     { x: 1, y: 26 }, // bottom-left
-    { x: 26, y: 26 }, // bottom-right
+    { x: 54, y: 26 }, // bottom-right (56 - 2)
   ];
 
   pacmanPositions.forEach((pos, i) => {
@@ -400,6 +537,8 @@ function init() {
       moveTimer: 0,
       lastDirX: initialDirX,
       lastDirY: initialDirY,
+      positionHistory: [], // Track recent positions to avoid loops
+      lastDecisionTime: 0, // Track when last decision was made
     };
     ghosts.push(ghost);
   });
@@ -627,10 +766,28 @@ function getPossibleMoves(ghost) {
   }
 
   // Filter out turning around, but if that leaves no moves, allow it (better than being stuck)
-  const filteredMoves = possibleMoves.filter((move) => !currentDir || move.dir !== OPPOSITE_DIR[currentDir]);
+  let filteredMoves = possibleMoves.filter((move) => !currentDir || move.dir !== OPPOSITE_DIR[currentDir]);
 
   // If filtering removed all moves, allow turning around (ghost is stuck otherwise)
-  return filteredMoves.length > 0 ? filteredMoves : possibleMoves;
+  if (filteredMoves.length === 0) {
+    filteredMoves = possibleMoves;
+  }
+
+  // Filter out moves that would take us to recently visited positions (prevent loops)
+  // Keep only last 4 positions in history to avoid short loops
+  if (ghost.positionHistory && ghost.positionHistory.length > 0) {
+    const recentPositions = ghost.positionHistory.slice(-4); // Last 4 positions
+    filteredMoves = filteredMoves.filter((move) => {
+      return !recentPositions.some((pos) => pos.x === move.newX && pos.y === move.newY);
+    });
+
+    // If filtering removed all moves, allow revisiting (better than being stuck)
+    if (filteredMoves.length === 0) {
+      filteredMoves = possibleMoves;
+    }
+  }
+
+  return filteredMoves;
 }
 
 function calculateDistance(pos1, pos2) {
@@ -657,15 +814,38 @@ function determineBestMove(ghost, possibleMoves, targetPacman) {
   }
 
   let bestMove = null;
-  let bestDistance = Infinity;
+  let bestScore = -Infinity;
   const targetPos = { x: targetPacman.x, y: targetPacman.y };
 
   possibleMoves.forEach((move) => {
     const movePos = { x: move.newX, y: move.newY };
     const distance = calculateDistanceWithWrap(movePos, targetPos);
 
-    if (distance < bestDistance) {
-      bestDistance = distance;
+    // Score based on distance (closer is better)
+    let score = -distance;
+
+    // Bonus for continuing in the same direction (reduces oscillation)
+    if (ghost.lastDirX === move.x && ghost.lastDirY === move.y) {
+      score += 0.5;
+    }
+
+    // Penalty for moves that lead to recently visited positions
+    if (ghost.positionHistory) {
+      const recentPositions = ghost.positionHistory.slice(-2);
+      const isRecent = recentPositions.some((pos) => pos.x === move.newX && pos.y === move.newY);
+      if (isRecent) {
+        score -= 2.0; // Strong penalty for revisiting
+      }
+    }
+
+    // Prefer moves that get us closer to target
+    const currentDistance = calculateDistanceWithWrap({ x: ghost.x, y: ghost.y }, targetPos);
+    if (distance < currentDistance) {
+      score += 1.0; // Bonus for getting closer
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
       bestMove = move;
     }
   });
@@ -678,22 +858,37 @@ function moveGhostAI(ghost) {
   ghost.x = ghost.targetX;
   ghost.y = ghost.targetY;
 
+  // Update position history to prevent loops
+  if (!ghost.positionHistory) {
+    ghost.positionHistory = [];
+  }
+
+  // Add current position to history
+  ghost.positionHistory.push({ x: ghost.x, y: ghost.y });
+
+  // Keep only last 6 positions to prevent loops
+  if (ghost.positionHistory.length > 6) {
+    ghost.positionHistory.shift();
+  }
+
   // Find the target pacman (same color) - use current grid position
   const targetPacman = pacmen.find((p) => p && p.color === ghost.color);
 
-  // Get possible moves (avoiding walls and not turning around)
+  // Get possible moves (avoiding walls, not turning around, and avoiding recent positions)
   const possibleMoves = getPossibleMoves(ghost);
 
   if (possibleMoves.length === 0) {
     // No valid moves - this shouldn't happen, but if it does, try to find any valid adjacent cell
     console.warn(`Ghost at (${ghost.x}, ${ghost.y}) has no valid moves!`);
+    // Clear history to allow escape
+    ghost.positionHistory = [];
     return;
   }
 
   let chosenMove;
 
   if (!targetPacman) {
-    // No target, pick random move
+    // No target, pick random move (but avoid recent positions)
     chosenMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
   } else {
     // Use aiDifficulty as probability: if random < difficulty, choose best move, otherwise random
@@ -701,8 +896,15 @@ function moveGhostAI(ghost) {
       // Always chase when skill is high
       chosenMove = determineBestMove(ghost, possibleMoves, targetPacman);
     } else {
-      // Random move at lower skill levels
-      chosenMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+      // Random move at lower skill levels, but still prefer moves that don't revisit
+      const nonRecentMoves = possibleMoves.filter((move) => {
+        if (!ghost.positionHistory || ghost.positionHistory.length === 0) return true;
+        const recent = ghost.positionHistory.slice(-2);
+        return !recent.some((pos) => pos.x === move.newX && pos.y === move.newY);
+      });
+
+      const movesToChooseFrom = nonRecentMoves.length > 0 ? nonRecentMoves : possibleMoves;
+      chosenMove = movesToChooseFrom[Math.floor(Math.random() * movesToChooseFrom.length)];
     }
   }
 

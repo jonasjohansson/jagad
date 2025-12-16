@@ -2,6 +2,8 @@
   /* Colors */
   --color-bg: #000;
   --color-wall-border: #ffffff;
+  --color-path-bg: #000;
+  --color-wall-bg: transparent;
   --color-red: #ff0000;
   --color-green: #00ff00;
   --color-blue: #2121ff;
@@ -14,6 +16,7 @@
   --border-width: 2px;
   --border-radius: 4px;
   --ghost-border-width: 2px;
+  --border-style: double;
 
   /* Z-index */
   --z-characters: 10;
@@ -58,24 +61,40 @@ body {
 }
 
 .wall {
-  background: transparent;
+  background: var(--color-wall-bg);
   border: none;
 }
 
 .wall.border-top {
-  border-top: var(--border-width) double var(--color-wall-border);
+  border-top: var(--border-width) var(--border-style) var(--color-wall-border);
 }
 
 .wall.border-right {
-  border-right: var(--border-width) double var(--color-wall-border);
+  border-right: var(--border-width) var(--border-style) var(--color-wall-border);
 }
 
 .wall.border-bottom {
-  border-bottom: var(--border-width) double var(--color-wall-border);
+  border-bottom: var(--border-width) var(--border-style) var(--color-wall-border);
 }
 
 .wall.border-left {
-  border-left: var(--border-width) double var(--color-wall-border);
+  border-left: var(--border-width) var(--border-style) var(--color-wall-border);
+}
+
+.wall.edge-top {
+  border-top: var(--border-width) var(--border-style) var(--color-wall-border);
+}
+
+.wall.edge-right {
+  border-right: var(--border-width) var(--border-style) var(--color-wall-border);
+}
+
+.wall.edge-bottom {
+  border-bottom: var(--border-width) var(--border-style) var(--color-wall-border);
+}
+
+.wall.edge-left {
+  border-left: var(--border-width) var(--border-style) var(--color-wall-border);
 }
 
 .wall.corner-top-right {
@@ -95,7 +114,7 @@ body {
 }
 
 .path {
-  background: var(--color-bg);
+  background: var(--color-path-bg);
 }
 
 .teleport {
