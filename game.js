@@ -1,119 +1,23 @@
 // Simple Pacman Game
 // Map: 0 = path, 1 = wall, 2 = teleport, 3 = ghost spawn (treated as path for movement, just marks spawn location)
-// Map extended to twice the width (56 columns)
+// Map: 32 columns wide, 16 rows high - Classic Pacman style
 const MAP = [
-  [
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1,
-    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 3, 3, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 3, 3, 0, 0,
-    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 3, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3, 3, 0, 0,
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0,
-    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1,
-  ],
-  [
-    1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0,
-    0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-  ],
-  [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-  ],
-  [
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-  ],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+  [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ];
 
 const COLS = MAP[0].length;
@@ -122,7 +26,7 @@ const CELL_SIZE = 20;
 const CHARACTER_SIZE = 16;
 const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
 const BASE_MOVE_SPEED = 0.15; // base pixels per frame (smooth movement)
-const TUNNEL_ROW = 13;
+const TUNNEL_ROW = 8; // Row 8 (0-indexed) has teleport tiles
 
 const COLORS = ["red", "green", "blue", "yellow"];
 const DIRECTIONS = [
@@ -162,6 +66,8 @@ for (let y = 0; y < ROWS; y++) {
 let pacmen = [];
 let ghosts = [];
 let currentPacman = 0;
+let currentGhost = null; // null means controlling a pacman, otherwise index of controlled ghost
+let playerType = "pacman"; // "pacman" or "ghost"
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
 let pacmanSpeed = 1.0; // multiplier for pacman speed
 let ghostSpeed = 1.0; // multiplier for ghost speed
@@ -189,9 +95,9 @@ function restartGame() {
   pacmen.forEach((pacman, i) => {
     const pos = [
       { x: 1, y: 1 },
-      { x: 54, y: 1 },
-      { x: 1, y: 26 },
-      { x: 54, y: 26 },
+      { x: 30, y: 1 },
+      { x: 1, y: 14 },
+      { x: 30, y: 14 },
     ][i];
     pacman.x = pos.x;
     pacman.y = pos.y;
@@ -244,26 +150,63 @@ function restartGame() {
     }
   });
 
+  // Re-apply selection highlight after restart
+  if (playerType === "pacman" && pacmen[currentPacman]) {
+    pacmen[currentPacman].element.classList.add("selected");
+  } else if (playerType === "ghost" && currentGhost !== null && ghosts[currentGhost]) {
+    ghosts[currentGhost].element.classList.add("selected");
+  }
+
   console.log("%cGame Restarted!", "color: orange; font-weight: bold;");
 }
 
-function selectPacman(colorName) {
+function selectCharacter(type, colorName) {
   const colorIndex = COLORS.indexOf(colorName.toLowerCase());
-  if (colorIndex !== -1 && pacmen[colorIndex]) {
-    // Remove selected class from all pacmen
+
+  if (type === "pacman") {
+    // Remove selected class from all characters
     pacmen.forEach((pacman) => {
       if (pacman && pacman.element) {
         pacman.element.classList.remove("selected");
       }
     });
+    ghosts.forEach((ghost) => {
+      if (ghost && ghost.element) {
+        ghost.element.classList.remove("selected");
+      }
+    });
 
-    // Add selected class to the chosen pacman
-    currentPacman = colorIndex;
-    if (pacmen[colorIndex] && pacmen[colorIndex].element) {
-      pacmen[colorIndex].element.classList.add("selected");
+    if (colorIndex !== -1 && pacmen[colorIndex]) {
+      currentPacman = colorIndex;
+      currentGhost = null;
+      playerType = "pacman";
+      if (pacmen[colorIndex] && pacmen[colorIndex].element) {
+        pacmen[colorIndex].element.classList.add("selected");
+      }
+      console.log(`%cNow controlling ${colorName} pacman`, `color: ${COLORS[colorIndex]}; font-weight: bold;`);
     }
+  } else if (type === "ghost") {
+    // Remove selected class from all characters
+    pacmen.forEach((pacman) => {
+      if (pacman && pacman.element) {
+        pacman.element.classList.remove("selected");
+      }
+    });
+    ghosts.forEach((ghost) => {
+      if (ghost && ghost.element) {
+        ghost.element.classList.remove("selected");
+      }
+    });
 
-    console.log(`%cNow controlling ${colorName} pacman`, `color: ${COLORS[colorIndex]}; font-weight: bold;`);
+    if (colorIndex !== -1 && ghosts[colorIndex]) {
+      currentGhost = colorIndex;
+      currentPacman = 0; // Reset pacman selection
+      playerType = "ghost";
+      if (ghosts[colorIndex] && ghosts[colorIndex].element) {
+        ghosts[colorIndex].element.classList.add("selected");
+      }
+      console.log(`%cNow controlling ${colorName} ghost`, `color: ${COLORS[colorIndex]}; font-weight: bold;`);
+    }
   }
 }
 
@@ -278,6 +221,7 @@ function init() {
 
     const guiParams = {
       difficulty: 0.8,
+      playerType: "Pacman",
       playerColor: "Red",
       pacmanSpeed: 1.0,
       ghostSpeed: 1.0,
@@ -292,10 +236,17 @@ function init() {
     gui.add(guiParams, "start").name("Start");
     gui.add(guiParams, "restart").name("Restart");
     gui
-      .add(guiParams, "playerColor", ["Red", "Green", "Blue", "Yellow"])
-      .name("Player")
+      .add(guiParams, "playerType", ["Pacman", "Ghost"])
+      .name("Control")
       .onChange((value) => {
-        selectPacman(value);
+        const type = value.toLowerCase();
+        selectCharacter(type, guiParams.playerColor);
+      });
+    gui
+      .add(guiParams, "playerColor", ["Red", "Green", "Blue", "Yellow"])
+      .name("Color")
+      .onChange((value) => {
+        selectCharacter(guiParams.playerType.toLowerCase(), value);
       });
 
     gui
@@ -347,6 +298,7 @@ function init() {
       });
   }
   const maze = document.getElementById("maze");
+  // Sizes already set in updateSizes(), but ensure they're correct
   maze.style.width = COLS * CELL_SIZE + "px";
   maze.style.height = ROWS * CELL_SIZE + "px";
 
@@ -434,12 +386,12 @@ function init() {
   }
   maze.appendChild(fragment);
 
-  // Create 4 pacmen in corners (map is now 56 columns wide)
+  // Create 4 pacmen in corners (map is 32 columns wide, 16 rows high)
   const pacmanPositions = [
     { x: 1, y: 1 }, // top-left
-    { x: 54, y: 1 }, // top-right (56 - 2)
-    { x: 1, y: 26 }, // bottom-left
-    { x: 54, y: 26 }, // bottom-right (56 - 2)
+    { x: 30, y: 1 }, // top-right (32 - 2)
+    { x: 1, y: 14 }, // bottom-left (16 - 2)
+    { x: 30, y: 14 }, // bottom-right
   ];
 
   pacmanPositions.forEach((pos, i) => {
@@ -459,7 +411,7 @@ function init() {
   });
 
   // Set initial player (after pacmen are created)
-  selectPacman("Red");
+  selectCharacter("pacman", "Red");
 
   // Create 4 ghosts at spawn positions (marked with 3 in the map)
   // Use the pre-calculated ghost spawn positions
@@ -560,34 +512,83 @@ function init() {
 
     // Handle player input (only if game started)
     if (gameStarted) {
-      const pacman = pacmen[currentPacman];
-      if (pacman && isAtTarget(pacman)) {
-        let newX = pacman.x;
-        let newY = pacman.y;
+      if (playerType === "pacman") {
+        const pacman = pacmen[currentPacman];
+        if (pacman && isAtTarget(pacman)) {
+          let newX = pacman.x;
+          let newY = pacman.y;
 
-        if (keys["ArrowLeft"]) newX--;
-        if (keys["ArrowRight"]) newX++;
-        if (keys["ArrowUp"]) newY--;
-        if (keys["ArrowDown"]) newY++;
+          if (keys["ArrowLeft"]) newX--;
+          if (keys["ArrowRight"]) newX++;
+          if (keys["ArrowUp"]) newY--;
+          if (keys["ArrowDown"]) newY++;
 
-        // Check if valid move
-        if (
-          newX >= 0 &&
-          newX < COLS &&
-          newY >= 0 &&
-          newY < ROWS &&
-          (MAP[newY][newX] === 0 || MAP[newY][newX] === 2 || MAP[newY][newX] === 3)
-        ) {
-          pacman.targetX = newX;
-          pacman.targetY = newY;
+          // Handle wrap-around for player
+          if (pacman.y === TUNNEL_ROW) {
+            if (newX < 0) newX = COLS - 1;
+            else if (newX >= COLS) newX = 0;
+          }
+
+          // Check if valid move
+          if (
+            newX >= 0 &&
+            newX < COLS &&
+            newY >= 0 &&
+            newY < ROWS &&
+            (MAP[newY][newX] === 0 || MAP[newY][newX] === 2 || MAP[newY][newX] === 3)
+          ) {
+            pacman.targetX = newX;
+            pacman.targetY = newY;
+          }
+        }
+      } else if (playerType === "ghost" && currentGhost !== null) {
+        const ghost = ghosts[currentGhost];
+        if (ghost && isAtTarget(ghost)) {
+          let newX = ghost.x;
+          let newY = ghost.y;
+
+          if (keys["ArrowLeft"]) newX--;
+          if (keys["ArrowRight"]) newX++;
+          if (keys["ArrowUp"]) newY--;
+          if (keys["ArrowDown"]) newY++;
+
+          // Handle wrap-around for tunnel row
+          if (ghost.y === TUNNEL_ROW) {
+            if (newX < 0) newX = COLS - 1;
+            else if (newX >= COLS) newX = 0;
+          }
+
+          // Check if valid move
+          if (
+            newX >= 0 &&
+            newX < COLS &&
+            newY >= 0 &&
+            newY < ROWS &&
+            (MAP[newY][newX] === 0 || MAP[newY][newX] === 2 || MAP[newY][newX] === 3)
+          ) {
+            ghost.targetX = newX;
+            ghost.targetY = newY;
+            // Update direction for smooth movement (normalize to -1, 0, or 1)
+            const dx = newX - ghost.x;
+            const dy = newY - ghost.y;
+            ghost.lastDirX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+            ghost.lastDirY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+          }
         }
       }
 
       // Move characters smoothly
-      moveCharacter(pacmen[currentPacman], pacmanSpeed);
+      if (playerType === "pacman") {
+        moveCharacter(pacmen[currentPacman], pacmanSpeed);
+      } else if (playerType === "ghost" && currentGhost !== null) {
+        moveCharacter(ghosts[currentGhost], ghostSpeed);
+      }
 
-      // Move ghosts
-      ghosts.forEach((ghost) => {
+      // Move ghosts (skip player-controlled ghost, already moved above)
+      ghosts.forEach((ghost, index) => {
+        if (playerType === "ghost" && index === currentGhost) {
+          return; // Already moved above
+        }
         moveCharacter(ghost, ghostSpeed);
       });
     } else {
@@ -596,9 +597,14 @@ function init() {
       ghosts.forEach((ghost) => moveCharacter(ghost, 0));
     }
 
-    // Ghost AI - always ensure they have a target (only if game started)
+    // Ghost AI - always ensure they have a target (only if game started and not player-controlled)
     if (gameStarted) {
-      ghosts.forEach((ghost) => {
+      ghosts.forEach((ghost, index) => {
+        // Skip AI for player-controlled ghost
+        if (playerType === "ghost" && index === currentGhost) {
+          return;
+        }
+
         // After movement, check if ghost reached target and give it a new one immediately
         if (isAtTarget(ghost)) {
           // Ensure grid position is synced
