@@ -126,6 +126,14 @@ let lastTime = 0;
 let animationId = null;
 let gui = null;
 
+// Multiplayer state
+let ws = null;
+let myPlayerId = null;
+let myCharacterType = null; // 'pacman' or 'ghost'
+let myColorIndex = null;
+let connectedPlayers = new Map(); // Map of playerId -> { type, colorIndex }
+let multiplayerMode = false;
+
 // Game control functions
 function startGame() {
   if (!gameStarted) {
@@ -188,8 +196,157 @@ function selectCharacter(type, colorName) {
   }
 }
 
+// Initialize WebSocket connection
+function initWebSocket() {
+  // Use the deployed server address
+  const serverAddress = "https://pacman-fiit.onrender.com";
+  // Convert https to wss for WebSocket
+  const wsUrl = serverAddress.replace("https://", "wss://").replace("http://", "ws://");
+
+  try {
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log("%cConnected to server", "color: green; font-weight: bold;");
+      multiplayerMode = true;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleServerMessage(data);
+      } catch (error) {
+        console.error("Error parsing server message:", error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      multiplayerMode = false;
+    };
+
+    ws.onclose = () => {
+      console.log("%cDisconnected from server", "color: orange; font-weight: bold;");
+      multiplayerMode = false;
+      // Try to reconnect after 3 seconds
+      setTimeout(initWebSocket, 3000);
+    };
+  } catch (error) {
+    console.warn("WebSocket not available, running in single-player mode:", error);
+    multiplayerMode = false;
+  }
+}
+
+// Handle messages from server
+function handleServerMessage(data) {
+  switch (data.type) {
+    case "connected":
+      myPlayerId = data.playerId;
+      console.log(`%cConnected as ${myPlayerId}`, "color: green; font-weight: bold;");
+      break;
+    case "joined":
+      myCharacterType = data.characterType;
+      myColorIndex = data.colorIndex;
+      console.log(`%cJoined as ${myCharacterType} color ${myColorIndex}`, "color: green; font-weight: bold;");
+      // Auto-select the character we joined as
+      if (myCharacterType === "pacman") {
+        selectCharacter("pacman", COLORS[myColorIndex].charAt(0).toUpperCase() + COLORS[myColorIndex].slice(1));
+      } else {
+        selectCharacter("ghost", COLORS[myColorIndex].charAt(0).toUpperCase() + COLORS[myColorIndex].slice(1));
+      }
+      break;
+    case "joinFailed":
+      console.error(`%cJoin failed: ${data.reason}`, "color: red; font-weight: bold;");
+      break;
+    case "gameState":
+      // Update connected players map
+      connectedPlayers.clear();
+      if (data.players) {
+        data.players.forEach((player) => {
+          if (player.connected) {
+            connectedPlayers.set(player.playerId, {
+              type: player.type,
+              colorIndex: player.colorIndex,
+            });
+          }
+        });
+      }
+      break;
+    case "playerInput":
+      // Handle input from other players (for future sync)
+      if (data.playerId !== myPlayerId) {
+        // Apply other player's input
+        applyRemoteInput(data);
+      }
+      break;
+    case "playerLeft":
+      console.log(`%cPlayer ${data.playerId} left`, "color: orange; font-weight: bold;");
+      break;
+  }
+}
+
+// Apply input from remote player
+function applyRemoteInput(data) {
+  const { characterType, colorIndex, input } = data;
+  const character = characterType === "pacman" ? pacmen[colorIndex] : ghosts[colorIndex];
+  if (character && input) {
+    if (input.targetX !== undefined && input.targetY !== undefined) {
+      character.targetX = input.targetX;
+      character.targetY = input.targetY;
+    }
+  }
+}
+
+// Send input to server
+function sendInput(input) {
+  if (ws && ws.readyState === WebSocket.OPEN && myPlayerId) {
+    ws.send(
+      JSON.stringify({
+        type: "input",
+        input: input,
+      })
+    );
+  }
+}
+
+// Join as a character
+function joinAsCharacter(characterType, colorIndex) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(
+      JSON.stringify({
+        type: "join",
+        characterType: characterType,
+        colorIndex: colorIndex,
+      })
+    );
+  } else {
+    console.warn("Not connected to server, cannot join");
+  }
+}
+
+// Check if a character is player-controlled (has a connected player)
+function isPlayerControlled(characterType, colorIndex) {
+  if (!multiplayerMode) return false;
+
+  // Check if this character is controlled by any connected player
+  for (const [playerId, player] of connectedPlayers.entries()) {
+    if (player.type === characterType && player.colorIndex === colorIndex) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Check if this is MY character
+function isMyCharacter(characterType, colorIndex) {
+  return multiplayerMode && myCharacterType === characterType && myColorIndex === colorIndex;
+}
+
 // Initialize game
 function init() {
+  // Initialize WebSocket connection
+  initWebSocket();
+
   // Initialize GUI
   if (typeof lil !== "undefined" && typeof lil.GUI !== "undefined") {
     const guiContainer = document.getElementById("gui-container");
@@ -226,6 +383,12 @@ function init() {
       .name("Color")
       .onChange((value) => {
         selectCharacter(guiParams.playerType.toLowerCase(), value);
+        // If multiplayer, try to join as this character
+        if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
+          const colorIndex = COLORS.indexOf(value.toLowerCase());
+          const characterType = guiParams.playerType.toLowerCase();
+          joinAsCharacter(characterType, colorIndex);
+        }
       });
 
     controlsFolder
@@ -543,11 +706,17 @@ function init() {
           if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
             pacman.targetX = newX;
             pacman.targetY = newY;
+            // Send input to server if multiplayer
+            if (multiplayerMode) {
+              sendInput({ targetX: newX, targetY: newY });
+            }
           }
         }
       } else if (playerType === "ghost" && currentGhost !== null) {
         const ghost = ghosts[currentGhost];
-        if (ghost && isAtTarget(ghost)) {
+        // Only control if it's our character (local or multiplayer)
+        const isControlling = !multiplayerMode || isMyCharacter("ghost", currentGhost);
+        if (ghost && isAtTarget(ghost) && isControlling) {
           let newX = ghost.x;
           let newY = ghost.y;
 
@@ -571,6 +740,10 @@ function init() {
             const dy = newY - ghost.y;
             ghost.lastDirX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
             ghost.lastDirY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+            // Send input to server if multiplayer
+            if (multiplayerMode) {
+              sendInput({ targetX: newX, targetY: newY });
+            }
           }
         }
       }
@@ -584,13 +757,19 @@ function init() {
 
       // Move all pacmen (skip player-controlled, already moved above)
       pacmen.forEach((pacman, index) => {
-        if (playerType === "pacman" && index === currentPacman) return;
+        // Skip if this is the local player controlling it (and not multiplayer)
+        if (!multiplayerMode && playerType === "pacman" && index === currentPacman) return;
+        // Skip if this pacman is controlled by a multiplayer player
+        if (multiplayerMode && isPlayerControlled("pacman", index)) return;
         if (pacman) moveCharacter(pacman, pacman.speed);
       });
 
       // Move ghosts (skip player-controlled ghost, already moved above)
       ghosts.forEach((ghost, index) => {
-        if (playerType === "ghost" && index === currentGhost) return;
+        // Skip if this is the local player controlling it (and not multiplayer)
+        if (!multiplayerMode && playerType === "ghost" && index === currentGhost) return;
+        // Skip if this ghost is controlled by a multiplayer player
+        if (multiplayerMode && isPlayerControlled("ghost", index)) return;
         if (ghost) moveCharacter(ghost, ghost.speed);
       });
     } else {
@@ -602,8 +781,12 @@ function init() {
     // Ghost AI - always ensure they have a target (only if game started and not player-controlled)
     if (gameStarted) {
       ghosts.forEach((ghost, index) => {
-        // Skip AI for player-controlled ghost
-        if (playerType === "ghost" && index === currentGhost) {
+        // Skip AI for player-controlled ghost (local or multiplayer)
+        if (playerType === "ghost" && index === currentGhost && !multiplayerMode) {
+          return;
+        }
+        // Skip AI if this ghost is controlled by a player (multiplayer)
+        if (multiplayerMode && isPlayerControlled("ghost", index)) {
           return;
         }
 
