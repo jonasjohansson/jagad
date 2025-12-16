@@ -36,8 +36,7 @@ const ROWS = MAP.length;
 const CELL_SIZE = 20;
 const CHARACTER_SIZE = 16;
 const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
-const MOVE_SPEED = 0.15; // pixels per frame (smooth movement)
-const MOVE_DISTANCE = MOVE_SPEED * CELL_SIZE; // Pre-calculate
+const BASE_MOVE_SPEED = 0.15; // base pixels per frame (smooth movement)
 const TUNNEL_ROW = 13;
 
 const COLORS = ["red", "green", "blue", "yellow"];
@@ -69,9 +68,81 @@ let pacmen = [];
 let ghosts = [];
 let currentPacman = 0;
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
+let pacmanSpeed = 1.0; // multiplier for pacman speed
+let ghostSpeed = 1.0; // multiplier for ghost speed
+let gameStarted = false;
 let lastTime = 0;
 let animationId = null;
 let gui = null;
+
+// Game control functions
+function startGame() {
+  if (!gameStarted) {
+    gameStarted = true;
+    console.log("%cGame Started!", "color: green; font-weight: bold;");
+    // Start game loop if not already running
+    if (!animationId) {
+      lastTime = 0;
+      animationId = requestAnimationFrame(gameLoop);
+    }
+  }
+}
+
+function restartGame() {
+  gameStarted = false;
+  // Reset all characters to starting positions
+  pacmen.forEach((pacman, i) => {
+    const pos = [
+      { x: 1, y: 1 },
+      { x: 26, y: 1 },
+      { x: 1, y: 26 },
+      { x: 26, y: 26 },
+    ][i];
+    pacman.x = pos.x;
+    pacman.y = pos.y;
+    pacman.px = pos.x * CELL_SIZE + CHARACTER_OFFSET;
+    pacman.py = pos.y * CELL_SIZE + CHARACTER_OFFSET;
+    pacman.targetX = pos.x;
+    pacman.targetY = pos.y;
+  });
+  
+  ghosts.forEach((ghost, i) => {
+    const pos = [
+      { x: 5, y: 13 },
+      { x: 6, y: 13 },
+      { x: 20, y: 13 },
+      { x: 21, y: 13 },
+    ][i];
+    ghost.x = pos.x;
+    ghost.y = pos.y;
+    ghost.px = pos.x * CELL_SIZE + CHARACTER_OFFSET;
+    ghost.py = pos.y * CELL_SIZE + CHARACTER_OFFSET;
+    
+    // Find initial direction
+    for (const dir of DIRECTIONS) {
+      const newX = pos.x + dir.x;
+      const newY = pos.y + dir.y;
+      if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && (MAP[newY][newX] === 0 || MAP[newY][newX] === 2)) {
+        ghost.targetX = newX;
+        ghost.targetY = newY;
+        ghost.lastDirX = dir.x;
+        ghost.lastDirY = dir.y;
+        break;
+      }
+    }
+    ghost.moveTimer = 0;
+  });
+  
+  console.log("%cGame Restarted!", "color: orange; font-weight: bold;");
+}
+
+function selectPacman(colorName) {
+  const colorIndex = COLORS.indexOf(colorName.toLowerCase());
+  if (colorIndex !== -1 && pacmen[colorIndex]) {
+    currentPacman = colorIndex;
+    console.log(`%cNow controlling ${colorName} pacman`, `color: ${COLORS[colorIndex]}; font-weight: bold;`);
+  }
+}
 
 // Initialize game
 function init() {
@@ -79,15 +150,39 @@ function init() {
   if (typeof lil !== "undefined" && typeof lil.GUI !== "undefined") {
     const guiContainer = document.getElementById("gui-container");
     const GUI = lil.GUI;
+    if (gui) gui.destroy(); // Destroy existing GUI if any
     gui = new GUI({ container: guiContainer });
+    
     const guiParams = {
       difficulty: 0.8,
+      playerColor: "Red",
+      pacmanSpeed: 1.0,
+      ghostSpeed: 1.0,
+      start: () => startGame(),
+      restart: () => restartGame(),
     };
-    gui
-      .add(guiParams, "difficulty", 0, 1, 0.1)
+    
+    gui.add(guiParams, "start").name("Start");
+    gui.add(guiParams, "restart").name("Restart");
+    gui.add(guiParams, "playerColor", ["Red", "Green", "Blue", "Yellow"])
+      .name("Player")
+      .onChange((value) => {
+        selectPacman(value);
+      });
+    gui.add(guiParams, "difficulty", 0, 1, 0.1)
       .name("AI Skill")
       .onChange((value) => {
         aiDifficulty = value;
+      });
+    gui.add(guiParams, "pacmanSpeed", 0.1, 3, 0.1)
+      .name("Pacman Speed")
+      .onChange((value) => {
+        pacmanSpeed = value;
+      });
+    gui.add(guiParams, "ghostSpeed", 0.1, 3, 0.1)
+      .name("Ghost Speed")
+      .onChange((value) => {
+        ghostSpeed = value;
       });
   }
   const maze = document.getElementById("maze");
@@ -247,59 +342,70 @@ function init() {
     const deltaTime = currentTime - lastTime;
     lastTime = currentTime;
 
-    // Handle player input
-    const pacman = pacmen[currentPacman];
-    if (pacman && isAtTarget(pacman)) {
-      let newX = pacman.x;
-      let newY = pacman.y;
+    // Handle player input (only if game started)
+    if (gameStarted) {
+      const pacman = pacmen[currentPacman];
+      if (pacman && isAtTarget(pacman)) {
+        let newX = pacman.x;
+        let newY = pacman.y;
 
-      if (keys["ArrowLeft"]) newX--;
-      if (keys["ArrowRight"]) newX++;
-      if (keys["ArrowUp"]) newY--;
-      if (keys["ArrowDown"]) newY++;
+        if (keys["ArrowLeft"]) newX--;
+        if (keys["ArrowRight"]) newX++;
+        if (keys["ArrowUp"]) newY--;
+        if (keys["ArrowDown"]) newY++;
 
-      // Check if valid move
-      if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && (MAP[newY][newX] === 0 || MAP[newY][newX] === 2)) {
-        pacman.targetX = newX;
-        pacman.targetY = newY;
-      }
-    }
-
-    // Move characters smoothly
-    moveCharacter(pacmen[currentPacman]);
-
-    // Ghost AI - always ensure they have a target
-    ghosts.forEach((ghost) => {
-      // Always move ghosts smoothly first
-      moveCharacter(ghost);
-
-      // After movement, check if ghost reached target and give it a new one immediately
-      if (isAtTarget(ghost)) {
-        ghost.moveTimer += deltaTime;
-        // Faster decisions at higher difficulty, but always make decisions when at target
-        const moveInterval = Math.max(50, 300 - aiDifficulty * 250);
-
-        // Always recalculate if timer expired, or if we can't continue in current direction
-        if (ghost.moveTimer >= moveInterval) {
-          ghost.moveTimer = 0;
-          moveGhostAI(ghost);
-        } else {
-          // Try to continue, but if blocked, recalculate immediately
-          const prevTargetX = ghost.targetX;
-          const prevTargetY = ghost.targetY;
-          continueInCurrentDirection(ghost);
-          // If continueInCurrentDirection didn't change target, we're blocked - recalculate
-          if (ghost.targetX === prevTargetX && ghost.targetY === prevTargetY) {
-            moveGhostAI(ghost);
-          }
+        // Check if valid move
+        if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && (MAP[newY][newX] === 0 || MAP[newY][newX] === 2)) {
+          pacman.targetX = newX;
+          pacman.targetY = newY;
         }
       }
-    });
 
-    checkCollisions();
+      // Move characters smoothly
+      moveCharacter(pacmen[currentPacman], pacmanSpeed);
+      
+      // Move ghosts
+      ghosts.forEach((ghost) => {
+        moveCharacter(ghost, ghostSpeed);
+      });
+    } else {
+      // Game not started, just draw characters in place
+      pacmen.forEach((pacman) => moveCharacter(pacman, 0));
+      ghosts.forEach((ghost) => moveCharacter(ghost, 0));
+    }
+
+    // Ghost AI - always ensure they have a target (only if game started)
+    if (gameStarted) {
+      ghosts.forEach((ghost) => {
+        // After movement, check if ghost reached target and give it a new one immediately
+        if (isAtTarget(ghost)) {
+          ghost.moveTimer += deltaTime;
+          // Faster decisions at higher difficulty, but always make decisions when at target
+          const moveInterval = Math.max(50, 300 - aiDifficulty * 250);
+          
+          // Always recalculate if timer expired, or if we can't continue in current direction
+          if (ghost.moveTimer >= moveInterval) {
+            ghost.moveTimer = 0;
+            moveGhostAI(ghost);
+          } else {
+            // Try to continue, but if blocked, recalculate immediately
+            const prevTargetX = ghost.targetX;
+            const prevTargetY = ghost.targetY;
+            continueInCurrentDirection(ghost);
+            // If continueInCurrentDirection didn't change target, we're blocked - recalculate
+            if (ghost.targetX === prevTargetX && ghost.targetY === prevTargetY) {
+              moveGhostAI(ghost);
+            }
+          }
+        }
+      });
+    }
+
+    // Always continue the loop (for rendering), but only update if started
     animationId = requestAnimationFrame(gameLoop);
   }
 
+  // Start the game loop (it will wait for start button to begin gameplay)
   animationId = requestAnimationFrame(gameLoop);
 }
 
@@ -309,7 +415,7 @@ function isAtTarget(character) {
   return Math.abs(character.px - targetPx) < 0.5 && Math.abs(character.py - targetPy) < 0.5;
 }
 
-function moveCharacter(character) {
+function moveCharacter(character, speedMultiplier = 1.0) {
   if (!character) return;
 
   const targetPx = character.targetX * CELL_SIZE + CHARACTER_OFFSET;
@@ -321,9 +427,10 @@ function moveCharacter(character) {
   const distance = Math.sqrt(dx * dx + dy * dy);
 
   if (distance > 0.5) {
-    if (distance > MOVE_DISTANCE) {
-      character.px += (dx / distance) * MOVE_DISTANCE;
-      character.py += (dy / distance) * MOVE_DISTANCE;
+    const moveDistance = BASE_MOVE_SPEED * CELL_SIZE * speedMultiplier;
+    if (distance > moveDistance) {
+      character.px += (dx / distance) * moveDistance;
+      character.py += (dy / distance) * moveDistance;
     } else {
       character.px = targetPx;
       character.py = targetPy;
