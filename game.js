@@ -99,8 +99,6 @@ function respawnGhost(ghost, spawnPos) {
   ghost.positionHistory = [];
   ghost.lastDirX = 0;
   ghost.lastDirY = 0;
-  ghost.survivalTime = 0; // Reset survival timer on respawn
-  ghost.lastSurvivalPoint = 0; // Reset survival point timer
 
   // Find initial direction
   for (const dir of DIRECTIONS) {
@@ -123,7 +121,6 @@ let currentPacman = 0;
 let currentGhost = null; // null means controlling a pacman, otherwise index of controlled ghost
 let playerType = "pacman"; // "pacman" or "ghost"
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
-let survivalTimeThreshold = 30; // seconds - ghost gets point after surviving this long
 let gameStarted = false;
 let lastTime = 0;
 let animationId = null;
@@ -136,24 +133,43 @@ let myCharacterType = null; // 'pacman' or 'ghost'
 let myColorIndex = null;
 let connectedPlayers = new Map(); // Map of playerId -> { type, colorIndex }
 let multiplayerMode = false;
-let lastPositionUpdate = 0;
-const POSITION_UPDATE_INTERVAL = 16; // Send position updates every ~16ms (60fps)
 
 // Game control functions
 function startGame() {
-  if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "startGame" }));
-  } else {
-    console.warn("Cannot start game: not connected to server");
+  if (!gameStarted) {
+    gameStarted = true;
+    console.log("%cGame Started!", "color: green; font-weight: bold;");
+    // Start game loop if not already running
+    if (!animationId) {
+      lastTime = 0;
+      animationId = requestAnimationFrame(gameLoop);
+    }
   }
 }
 
 function restartGame() {
-  if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "restartGame" }));
-  } else {
-    console.warn("Cannot restart game: not connected to server");
+  gameStarted = false;
+  // Reset all characters to starting positions
+  pacmen.forEach((pacman) => {
+    if (pacman && pacman.spawnPos) {
+      respawnCharacter(pacman, pacman.spawnPos);
+    }
+  });
+
+  ghosts.forEach((ghost) => {
+    if (ghost && ghost.spawnPos) {
+      respawnGhost(ghost, ghost.spawnPos);
+    }
+  });
+
+  // Re-apply selection highlight after restart
+  if (playerType === "pacman" && pacmen[currentPacman]) {
+    pacmen[currentPacman].element.classList.add("selected");
+  } else if (playerType === "ghost" && currentGhost !== null && ghosts[currentGhost]) {
+    ghosts[currentGhost].element.classList.add("selected");
   }
+
+  console.log("%cGame Restarted!", "color: orange; font-weight: bold;");
 }
 
 function selectCharacter(type, colorName) {
@@ -193,16 +209,6 @@ function initWebSocket() {
     ws.onopen = () => {
       console.log("%cConnected to server", "color: green; font-weight: bold;");
       multiplayerMode = true;
-      // Request initial game state
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "gameState" }));
-      }
-      // Auto-join as Red Pacman after connection
-      setTimeout(() => {
-        if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN && !myCharacterType) {
-          joinAsCharacter("pacman", 0); // Join as Red Pacman
-        }
-      }, 300);
     };
 
     ws.onmessage = (event) => {
@@ -265,47 +271,12 @@ function handleServerMessage(data) {
           }
         });
       }
-      // Update GUI with available colors
-      if (data.availableColors) {
-        updateAvailableColors(data.availableColors);
-      }
-      // Apply server's authoritative game state (positions)
-      if (data.positions) {
-        applyServerPositions(data.positions);
-      }
-      // Update game started state
-      if (data.gameStarted !== undefined) {
-        gameStarted = data.gameStarted;
-      }
-      // Auto-join if not already joined
-      if (!myCharacterType && data.availableColors) {
-        const availablePacmen = data.availableColors.pacman || [];
-        if (availablePacmen.length > 0) {
-          setTimeout(() => {
-            joinAsCharacter("pacman", availablePacmen[0]);
-          }, 200);
-        }
-      }
-      break;
-    case "gameStarted":
-      gameStarted = true;
-      console.log("%cGame Started!", "color: green; font-weight: bold;");
-      break;
-    case "gameRestarted":
-      gameStarted = false;
-      console.log("%cGame Restarted!", "color: orange; font-weight: bold;");
       break;
     case "playerInput":
       // Handle input from other players (for future sync)
       if (data.playerId !== myPlayerId) {
         // Apply other player's input
         applyRemoteInput(data);
-      }
-      break;
-    case "positionUpdate":
-      // Legacy: position updates are now in gameState
-      if (data.positions) {
-        applyServerPositions(data.positions);
       }
       break;
     case "playerLeft":
@@ -326,64 +297,6 @@ function applyRemoteInput(data) {
   }
 }
 
-// Apply server's authoritative positions (for all characters)
-function applyServerPositions(positions) {
-  if (!positions) {
-    return;
-  }
-
-  // Apply positions from server for ALL characters (server is authoritative)
-  if (positions.pacmen && Array.isArray(positions.pacmen)) {
-    for (let index = 0; index < positions.pacmen.length; index++) {
-      const pos = positions.pacmen[index];
-      if (pacmen[index] && pos) {
-        // Always update pixel positions directly from server (no interpolation for server updates)
-        if (pos.px !== undefined) pacmen[index].px = pos.px;
-        if (pos.py !== undefined) pacmen[index].py = pos.py;
-
-        // Update target positions
-        if (pos.targetX !== undefined) pacmen[index].targetX = pos.targetX;
-        if (pos.targetY !== undefined) pacmen[index].targetY = pos.targetY;
-
-        // Update grid positions
-        if (pos.x !== undefined) pacmen[index].x = pos.x;
-        if (pos.y !== undefined) pacmen[index].y = pos.y;
-
-        // Update score
-        if (pos.score !== undefined) pacmen[index].score = pos.score;
-
-        // Update visual position immediately
-        updatePosition(pacmen[index].element, pacmen[index].px, pacmen[index].py);
-      }
-    }
-  }
-
-  if (positions.ghosts && Array.isArray(positions.ghosts)) {
-    for (let index = 0; index < positions.ghosts.length; index++) {
-      const pos = positions.ghosts[index];
-      if (ghosts[index] && pos) {
-        // Always update pixel positions directly from server (no interpolation for server updates)
-        if (pos.px !== undefined) ghosts[index].px = pos.px;
-        if (pos.py !== undefined) ghosts[index].py = pos.py;
-
-        // Update target positions
-        if (pos.targetX !== undefined) ghosts[index].targetX = pos.targetX;
-        if (pos.targetY !== undefined) ghosts[index].targetY = pos.targetY;
-
-        // Update grid positions
-        if (pos.x !== undefined) ghosts[index].x = pos.x;
-        if (pos.y !== undefined) ghosts[index].y = pos.y;
-
-        // Update score
-        if (pos.score !== undefined) ghosts[index].score = pos.score;
-
-        // Update visual position immediately
-        updatePosition(ghosts[index].element, ghosts[index].px, ghosts[index].py);
-      }
-    }
-  }
-}
-
 // Send input to server
 function sendInput(input) {
   if (ws && ws.readyState === WebSocket.OPEN && myPlayerId) {
@@ -395,29 +308,6 @@ function sendInput(input) {
     );
   }
 }
-
-// Update GUI with available colors from server
-function updateAvailableColors(availableColors) {
-  if (!window.playerColorController) return;
-
-  const currentType = window.playerTypeController ? window.playerTypeController.getValue().toLowerCase() : "pacman";
-  const availableForType = availableColors[currentType] || [];
-
-  // Get current color options
-  const allColors = ["Red", "Green", "Blue", "Yellow"];
-  const availableColorNames = availableForType.map((i) => allColors[i]);
-
-  // Update the controller options
-  window.playerColorController.options(availableColorNames);
-
-  // If current selection is not available, switch to first available
-  const currentColor = window.playerColorController.getValue();
-  if (!availableColorNames.includes(currentColor) && availableColorNames.length > 0) {
-    window.playerColorController.setValue(availableColorNames[0]);
-  }
-}
-
-// Position updates are no longer sent - server is authoritative
 
 // Join as a character
 function joinAsCharacter(characterType, colorIndex) {
@@ -466,7 +356,6 @@ function init() {
 
     const guiParams = {
       difficulty: 0.8,
-      survivalTime: 30,
       playerType: "Pacman",
       playerColor: "Red",
       borderStyle: "double",
@@ -482,19 +371,14 @@ function init() {
 
     controlsFolder.add(guiParams, "start").name("Start");
     controlsFolder.add(guiParams, "restart").name("Restart");
-    const playerTypeController = controlsFolder
+    controlsFolder
       .add(guiParams, "playerType", ["Pacman", "Ghost"])
       .name("Control")
       .onChange((value) => {
         const type = value.toLowerCase();
         selectCharacter(type, guiParams.playerColor);
-        // Update color options based on type
-        if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "gameState" }));
-        }
       });
-    window.playerTypeController = playerTypeController;
-    const playerColorController = controlsFolder
+    controlsFolder
       .add(guiParams, "playerColor", ["Red", "Green", "Blue", "Yellow"])
       .name("Color")
       .onChange((value) => {
@@ -506,27 +390,12 @@ function init() {
           joinAsCharacter(characterType, colorIndex);
         }
       });
-    window.playerColorController = playerColorController;
-
-    // Auto-join as Red Pacman on startup
-    if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
-      setTimeout(() => {
-        joinAsCharacter("pacman", 0); // Join as Red Pacman
-      }, 500);
-    }
 
     controlsFolder
       .add(guiParams, "difficulty", 0, 1, 0.1)
       .name("AI Skill")
       .onChange((value) => {
         aiDifficulty = value;
-      });
-
-    controlsFolder
-      .add(guiParams, "survivalTime", 30, 120, 1)
-      .name("Survival Time (s)")
-      .onChange((value) => {
-        survivalTimeThreshold = value;
       });
 
     // Visual settings folder - closed by default
@@ -646,9 +515,8 @@ function init() {
       targetX: pos.x,
       targetY: pos.y,
       color: COLORS[i],
-      speed: 1.0,
-      image: "",
-      score: 0,
+      speed: 1.0, // Individual speed multiplier
+      image: "", // Individual image URL
       spawnPos: { ...pos },
       element: createCharacter("pacman", COLORS[i], pos.x, pos.y),
     };
@@ -709,9 +577,6 @@ function init() {
       color: COLORS[i],
       speed: 1.0,
       image: "",
-      score: 0,
-      survivalTime: 0, // Time since last respawn in seconds
-      lastSurvivalPoint: 0, // Last time a survival point was awarded
       spawnPos: { ...pos },
       element: createCharacter("ghost", COLORS[i], pos.x, pos.y),
       moveTimer: 0,
@@ -747,14 +612,6 @@ function init() {
       const pair = colorPairs[i];
       const colorName = color.charAt(0).toUpperCase() + color.slice(1);
       const pairFolder = gui.addFolder(`${colorName} Pair`);
-
-      // Score display (read-only)
-      const scoreObj = {
-        pacmanScore: 0,
-        ghostScore: 0,
-      };
-      pairFolder.add(scoreObj, "pacmanScore").name("Pacman Score").listen();
-      pairFolder.add(scoreObj, "ghostScore").name("Ghost Score").listen();
 
       // Shared color control - updates both characters together
       pairFolder
@@ -806,18 +663,6 @@ function init() {
       pair.pacmanImage = pair.pacman.image;
       pair.ghostImage = pair.ghost.image;
 
-      // Store score object reference for updates
-      pair.pacman.scoreObj = scoreObj;
-      pair.ghost.scoreObj = scoreObj;
-
-      // Update scores periodically (every 100ms)
-      setInterval(() => {
-        if (pacmen[i] && ghosts[i]) {
-          scoreObj.pacmanScore = pacmen[i].score || 0;
-          scoreObj.ghostScore = ghosts[i].score || 0;
-        }
-      }, 100);
-
       // Close the folder by default
       pairFolder.close();
     });
@@ -832,77 +677,158 @@ function init() {
     keys[e.key] = false;
   });
 
-  // Render loop - just updates visual positions based on server state
-  // Server sends pixel positions directly, so we just render what server says
-  function renderLoop() {
-    // Update visual positions for all characters (server is authoritative)
-    pacmen.forEach((pacman) => {
-      if (pacman && pacman.element) {
-        updatePosition(pacman.element, pacman.px, pacman.py);
-      }
-    });
+  // Game loop
+  function gameLoop(currentTime) {
+    if (!lastTime) lastTime = currentTime;
+    const deltaTime = currentTime - lastTime;
+    lastTime = currentTime;
 
-    ghosts.forEach((ghost) => {
-      if (ghost && ghost.element) {
-        updatePosition(ghost.element, ghost.px, ghost.py);
-      }
-    });
-
-    animationId = requestAnimationFrame(renderLoop);
-  }
-
-  // Handle player input - send to server
-  document.addEventListener("keydown", (e) => {
-    keys[e.key] = true;
-    // Only process arrow keys
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
-      return;
-    }
-
-    if (gameStarted && multiplayerMode && myPlayerId && myCharacterType && myColorIndex !== null) {
-      const character = myCharacterType === "pacman" ? pacmen[myColorIndex] : ghosts[myColorIndex];
-      if (character) {
-        // Check if character is at target before allowing new input
-        const target = getTargetPixelPos(character.targetX, character.targetY);
-        const isAtTarget = Math.abs(character.px - target.x) < 0.5 && Math.abs(character.py - target.y) < 0.5;
-
-        if (isAtTarget) {
-          let newX = character.x;
-          let newY = character.y;
+    // Handle player input (only if game started)
+    if (gameStarted) {
+      if (playerType === "pacman") {
+        const pacman = pacmen[currentPacman];
+        if (pacman && isAtTarget(pacman)) {
+          let newX = pacman.x;
+          let newY = pacman.y;
 
           if (keys["ArrowLeft"]) newX--;
           if (keys["ArrowRight"]) newX++;
           if (keys["ArrowUp"]) newY--;
           if (keys["ArrowDown"]) newY++;
 
-          // Handle wrap-around
-          if (character.y === TUNNEL_ROW) {
+          // Handle wrap-around for player
+          if (pacman.y === TUNNEL_ROW) {
             if (newX < 0) newX = COLS - 1;
             else if (newX >= COLS) newX = 0;
           }
 
           // Check if valid move
           if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
-            sendInput({ targetX: newX, targetY: newY });
-            console.log(`%cSending input: (${newX}, ${newY})`, "color: blue;");
+            pacman.targetX = newX;
+            pacman.targetY = newY;
+            // Send input to server if multiplayer
+            if (multiplayerMode) {
+              sendInput({ targetX: newX, targetY: newY });
+            }
           }
         }
-      } else {
-        console.warn("Character not found for input", myCharacterType, myColorIndex);
-      }
-    } else {
-      if (!gameStarted) console.warn("Game not started");
-      if (!multiplayerMode) console.warn("Not in multiplayer mode");
-      if (!myPlayerId) console.warn("No player ID");
-      if (!myCharacterType || myColorIndex === null) console.warn("Not joined as character");
-    }
-  });
-  document.addEventListener("keyup", (e) => {
-    keys[e.key] = false;
-  });
+      } else if (playerType === "ghost" && currentGhost !== null) {
+        const ghost = ghosts[currentGhost];
+        // Only control if it's our character (local or multiplayer)
+        const isControlling = !multiplayerMode || isMyCharacter("ghost", currentGhost);
+        if (ghost && isAtTarget(ghost) && isControlling) {
+          let newX = ghost.x;
+          let newY = ghost.y;
 
-  // Start the render loop
-  animationId = requestAnimationFrame(renderLoop);
+          if (keys["ArrowLeft"]) newX--;
+          if (keys["ArrowRight"]) newX++;
+          if (keys["ArrowUp"]) newY--;
+          if (keys["ArrowDown"]) newY++;
+
+          // Handle wrap-around for tunnel row
+          if (ghost.y === TUNNEL_ROW) {
+            if (newX < 0) newX = COLS - 1;
+            else if (newX >= COLS) newX = 0;
+          }
+
+          // Check if valid move
+          if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
+            ghost.targetX = newX;
+            ghost.targetY = newY;
+            // Update direction for smooth movement
+            const dx = newX - ghost.x;
+            const dy = newY - ghost.y;
+            ghost.lastDirX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+            ghost.lastDirY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+            // Send input to server if multiplayer
+            if (multiplayerMode) {
+              sendInput({ targetX: newX, targetY: newY });
+            }
+          }
+        }
+      }
+
+      // Move characters smoothly using individual speeds
+      if (playerType === "pacman" && pacmen[currentPacman]) {
+        moveCharacter(pacmen[currentPacman], pacmen[currentPacman].speed);
+      } else if (playerType === "ghost" && currentGhost !== null && ghosts[currentGhost]) {
+        moveCharacter(ghosts[currentGhost], ghosts[currentGhost].speed);
+      }
+
+      // Move all pacmen (skip player-controlled, already moved above)
+      pacmen.forEach((pacman, index) => {
+        // Skip if this is the local player controlling it (and not multiplayer)
+        if (!multiplayerMode && playerType === "pacman" && index === currentPacman) return;
+        // Skip if this pacman is controlled by a multiplayer player
+        if (multiplayerMode && isPlayerControlled("pacman", index)) return;
+        if (pacman) moveCharacter(pacman, pacman.speed);
+      });
+
+      // Move ghosts (skip player-controlled ghost, already moved above)
+      ghosts.forEach((ghost, index) => {
+        // Skip if this is the local player controlling it (and not multiplayer)
+        if (!multiplayerMode && playerType === "ghost" && index === currentGhost) return;
+        // Skip if this ghost is controlled by a multiplayer player
+        if (multiplayerMode && isPlayerControlled("ghost", index)) return;
+        if (ghost) moveCharacter(ghost, ghost.speed);
+      });
+    } else {
+      // Game not started, just draw characters in place
+      pacmen.forEach((pacman) => moveCharacter(pacman, 0));
+      ghosts.forEach((ghost) => moveCharacter(ghost, 0));
+    }
+
+    // Ghost AI - always ensure they have a target (only if game started and not player-controlled)
+    if (gameStarted) {
+      ghosts.forEach((ghost, index) => {
+        // Skip AI for player-controlled ghost (local or multiplayer)
+        if (playerType === "ghost" && index === currentGhost && !multiplayerMode) {
+          return;
+        }
+        // Skip AI if this ghost is controlled by a player (multiplayer)
+        if (multiplayerMode && isPlayerControlled("ghost", index)) {
+          return;
+        }
+
+        // After movement, check if ghost reached target and give it a new one immediately
+        if (isAtTarget(ghost)) {
+          // Ensure grid position is synced
+          ghost.x = ghost.targetX;
+          ghost.y = ghost.targetY;
+
+          // If stuck or no direction, get new direction immediately
+          if ((ghost.lastDirX === 0 && ghost.lastDirY === 0) || (ghost.targetX === ghost.x && ghost.targetY === ghost.y)) {
+            moveGhostAI(ghost);
+          } else {
+            ghost.moveTimer += deltaTime;
+            const moveInterval = Math.max(50, 300 - aiDifficulty * 250);
+
+            if (ghost.moveTimer >= moveInterval) {
+              ghost.moveTimer = 0;
+              moveGhostAI(ghost);
+            } else {
+              const prevTargetX = ghost.targetX;
+              const prevTargetY = ghost.targetY;
+              continueInCurrentDirection(ghost);
+              if (ghost.targetX === prevTargetX && ghost.targetY === prevTargetY) {
+                moveGhostAI(ghost);
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (gameStarted) {
+      checkCollisions();
+    }
+
+    // Always continue the loop (for rendering), but only update if started
+    animationId = requestAnimationFrame(gameLoop);
+  }
+
+  // Start the game loop (it will wait for start button to begin gameplay)
+  animationId = requestAnimationFrame(gameLoop);
 }
 
 function isAtTarget(character) {
@@ -1223,14 +1149,6 @@ function checkCollisions() {
       // Check if they're on the same grid position and same color
       if (pacman.color === ghost.color && pacman.x === ghost.x && pacman.y === ghost.y) {
         console.log(`%c${pacman.color} ghost caught ${pacman.color} pacman! Respawned.`, `color: ${pacman.color}; font-weight: bold;`);
-
-        // Award point to ghost (chaser)
-        ghost.score++;
-        if (ghost.scoreObj) {
-          ghost.scoreObj.ghostScore = ghost.score;
-        }
-        console.log(`%c${ghost.color} ghost score: ${ghost.score}`, `color: ${ghost.color}; font-weight: bold;`);
-
         // Respawn both characters
         if (pacman.spawnPos) {
           respawnCharacter(pacman, pacman.spawnPos);
