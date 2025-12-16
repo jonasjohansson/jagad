@@ -92,7 +92,8 @@ function initCharacters() {
     targetX: pos.x,
     targetY: pos.y,
     color: COLORS[i],
-    speed: 1.0,
+    // Slightly faster base speed for pacmen so they feel more responsive
+    speed: 1.3,
     score: 0,
     spawnPos: { ...pos },
   }));
@@ -122,6 +123,7 @@ function initCharacters() {
       targetX: initialTargetX,
       targetY: initialTargetY,
       color: COLORS[i],
+      // Keep ghosts at base speed; pacmen are a bit faster
       speed: 1.0,
       score: 0,
       survivalTime: 0,

@@ -679,7 +679,8 @@ function init() {
       targetX: pos.x,
       targetY: pos.y,
       color: COLORS[i],
-      speed: 1.0,
+      // Match server-side default: pacmen a bit faster than ghosts
+      speed: 1.3,
       image: "",
       score: 0,
       spawnPos: { ...pos },
@@ -870,7 +871,9 @@ function init() {
   function renderLoop() {
     // Smoothing factors
     const OTHER_SMOOTHING = 0.25;
-    const MY_SMOOTHING = 0.4;
+    // For my own character we use a higher smoothing factor (closer to 1)
+    // so it follows the server more aggressively and feels snappier
+    const MY_SMOOTHING = 0.7;
     const SNAP_DISTANCE = 40; // pixels – snap if too far to avoid long slides
 
     pacmen.forEach((pacman, index) => {
