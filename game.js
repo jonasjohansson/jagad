@@ -879,15 +879,15 @@ function init() {
   function renderLoop() {
     // Smoothing factors
     const OTHER_SMOOTHING = 0.25;
-    // For my own character we use a higher smoothing factor (closer to 1)
-    // so it follows the server more aggressively and feels snappier
-    const MY_SMOOTHING = 0.7;
+    // My own character uses a slightly higher factor so it follows the server closely
+    const MY_SMOOTHING = 0.35;
     const SNAP_DISTANCE = 40; // pixels – snap if too far to avoid long slides
 
     pacmen.forEach((pacman, index) => {
       if (!pacman || !pacman.element) return;
 
       const isMine = myCharacterType === "pacman" && myColorIndex === index;
+      // Use slightly higher smoothing for others; my own character follows the server a bit more tightly
       const smoothing = isMine ? MY_SMOOTHING : OTHER_SMOOTHING;
 
       if (pacman.renderX === undefined) {
@@ -971,20 +971,7 @@ function init() {
 
         // Check if valid move
         if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
-          // Client-side prediction: nudge our local pixel position toward the new target
-          const targetPixel = getTargetPixelPos(newX, newY);
-          const dx = targetPixel.x - character.px;
-          const dy = targetPixel.y - character.py;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const step = BASE_MOVE_SPEED * CELL_SIZE * (character.speed || 1.0);
-          if (dist > 0 && dist > step) {
-            character.px += (dx / dist) * step;
-            character.py += (dy / dist) * step;
-          } else {
-            character.px = targetPixel.x;
-            character.py = targetPixel.y;
-          }
-
+          // Let the server drive actual movement; we only send desired target cell
           sendInput({ targetX: newX, targetY: newY });
           console.log(`%cSending input: (${newX}, ${newY})`, "color: blue;");
         }
