@@ -517,8 +517,8 @@ function init() {
     const guiParams = {
       difficulty: 0.8,
       survivalTime: 30,
-      pacmanSpeed: 0.8,
-      ghostSpeed: 0.8,
+      pacmanSpeed: 0.7,
+      ghostSpeed: 0.7,
       playerType: "Pacman",
       playerColor: "Red",
       borderStyle: "double",

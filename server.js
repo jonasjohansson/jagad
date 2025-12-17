@@ -53,8 +53,8 @@ const gameState = {
   aiDifficulty: 0.8,
   survivalTimeThreshold: 30,
   // Global speed multipliers for all pacmen and all ghosts
-  pacmanSpeed: 0.8,
-  ghostSpeed: 0.8,
+  pacmanSpeed: 0.7,
+  ghostSpeed: 0.7,
   pacmen: [],
   ghosts: [],
   lastUpdate: Date.now(),
