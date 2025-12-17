@@ -395,6 +395,19 @@ function applyServerPositions(positions) {
   }
 }
 
+// Send global speed configuration to server
+function sendSpeedConfig(pacmanSpeed, ghostSpeed) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(
+      JSON.stringify({
+        type: "setSpeeds",
+        pacmanSpeed,
+        ghostSpeed,
+      })
+    );
+  }
+}
+
 // Send input to server
 function sendInput(input) {
   if (ws && ws.readyState === WebSocket.OPEN && myPlayerId) {
@@ -504,6 +517,8 @@ function init() {
     const guiParams = {
       difficulty: 0.8,
       survivalTime: 30,
+      pacmanSpeed: 0.8,
+      ghostSpeed: 0.8,
       playerType: "Pacman",
       playerColor: "Red",
       borderStyle: "double",
@@ -564,6 +579,21 @@ function init() {
       .name("Survival Time (s)")
       .onChange((value) => {
         survivalTimeThreshold = value;
+      });
+
+    // Global speed controls
+    controlsFolder
+      .add(guiParams, "pacmanSpeed", 0.2, 3, 0.1)
+      .name("Pacman Speed")
+      .onChange((value) => {
+        sendSpeedConfig(value, guiParams.ghostSpeed);
+      });
+
+    controlsFolder
+      .add(guiParams, "ghostSpeed", 0.2, 3, 0.1)
+      .name("Ghost Speed")
+      .onChange((value) => {
+        sendSpeedConfig(guiParams.pacmanSpeed, value);
       });
 
     // Visual settings folder - closed by default
@@ -807,21 +837,6 @@ function init() {
           updateCharacterAppearance(pair.ghost);
         });
 
-      // Individual speeds
-      pairFolder
-        .add(pair, "pacmanSpeed", 0.1, 3, 0.1)
-        .name("Pacman Speed")
-        .onChange((value) => {
-          pair.pacman.speed = value;
-        });
-
-      pairFolder
-        .add(pair, "ghostSpeed", 0.1, 3, 0.1)
-        .name("Ghost Speed")
-        .onChange((value) => {
-          pair.ghost.speed = value;
-        });
-
       // Individual images
       pairFolder
         .add(pair, "pacmanImage")
@@ -840,8 +855,6 @@ function init() {
         });
 
       // Initialize values from characters
-      pair.pacmanSpeed = pair.pacman.speed;
-      pair.ghostSpeed = pair.ghost.speed;
       pair.pacmanImage = pair.pacman.image;
       pair.ghostImage = pair.ghost.image;
 

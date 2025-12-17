@@ -766,9 +766,7 @@ function handleSetSpeeds(data) {
   if (typeof ghostSpeed === "number") {
     gameState.ghostSpeed = Math.max(0.2, Math.min(3, ghostSpeed));
   }
-  console.log(
-    `[setSpeeds] pacmanSpeed=${gameState.pacmanSpeed.toFixed(2)}, ghostSpeed=${gameState.ghostSpeed.toFixed(2)}`
-  );
+  console.log(`[setSpeeds] pacmanSpeed=${gameState.pacmanSpeed.toFixed(2)}, ghostSpeed=${gameState.ghostSpeed.toFixed(2)}`);
 }
 
 function handleInput(playerId, data) {
