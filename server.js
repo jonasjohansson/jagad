@@ -51,7 +51,6 @@ const gameState = {
   },
   gameStarted: false,
   aiDifficulty: 0.8,
-  survivalTimeThreshold: 30,
   // Global speed multipliers for all pacmen and all ghosts
   pacmanSpeed: 0.7,
   ghostSpeed: 0.7,
@@ -80,9 +79,8 @@ function initCharacters() {
     targetX: pos.x,
     targetY: pos.y,
     color: COLORS[i],
-    // Default pacman speed (slightly slower than before, closer to classic pace)
+    // Default pacman speed (kept in sync with global pacmanSpeed)
     speed: 1.0,
-    score: 0,
     spawnPos: { ...pos },
     // Direction-based movement: current direction the pacman is actually moving
     dirX: 0,
@@ -117,11 +115,8 @@ function initCharacters() {
       targetX: initialTargetX,
       targetY: initialTargetY,
       color: COLORS[i],
-      // Keep ghosts at base speed; pacmen are a bit faster
+      // Keep ghosts at base speed; overridden by global ghostSpeed multiplier
       speed: 1.0,
-      score: 0,
-      survivalTime: 0,
-      lastSurvivalPoint: 0,
       spawnPos: { ...pos },
       moveTimer: 0,
       lastDirX: initialDirX,
@@ -322,7 +317,6 @@ function checkCollisions() {
     gameState.ghosts.forEach((ghost) => {
       if (!ghost) return;
       if (pacman.color === ghost.color && pacman.x === ghost.x && pacman.y === ghost.y) {
-        ghost.score++;
         respawnCharacter(pacman, pacman.spawnPos);
         respawnGhost(ghost, ghost.spawnPos);
       }
@@ -565,27 +559,7 @@ function gameLoop() {
   });
 
   if (gameState.gameStarted) {
-    // Update survival timers only while the game is running
-    gameState.ghosts.forEach((ghost, index) => {
-      if (!ghost) return;
-      const isPlayerControlled = Array.from(gameState.players.values()).some(
-        (p) => p.type === "ghost" && p.colorIndex === index && p.connected
-      );
-      if (!isPlayerControlled) {
-        ghost.survivalTime += deltaSeconds;
-        if (ghost.survivalTime >= gameState.survivalTimeThreshold) {
-          const pointsEarned =
-            Math.floor(ghost.survivalTime / gameState.survivalTimeThreshold) -
-            Math.floor(ghost.lastSurvivalPoint / gameState.survivalTimeThreshold);
-          if (pointsEarned > 0) {
-            ghost.score += pointsEarned;
-            ghost.lastSurvivalPoint = ghost.survivalTime;
-          }
-        }
-      }
-    });
-
-    // Check collisions only when the game is running
+    // Only check collisions while the game is running
     checkCollisions();
   }
 

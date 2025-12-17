@@ -360,9 +360,6 @@ function applyServerPositions(positions) {
         if (pos.x !== undefined) pacmen[index].x = pos.x;
         if (pos.y !== undefined) pacmen[index].y = pos.y;
 
-        // Update score
-        if (pos.score !== undefined) pacmen[index].score = pos.score;
-
         // Do not update DOM here; renderLoop will interpolate and render
         // This avoids fighting between server updates and client-side smoothing
       }
@@ -384,9 +381,6 @@ function applyServerPositions(positions) {
         // Update grid positions
         if (pos.x !== undefined) ghosts[index].x = pos.x;
         if (pos.y !== undefined) ghosts[index].y = pos.y;
-
-        // Update score
-        if (pos.score !== undefined) ghosts[index].score = pos.score;
 
         // Do not update DOM here; renderLoop will interpolate and render
         // This avoids fighting between server updates and client-side smoothing
@@ -670,11 +664,8 @@ function init() {
       targetX: pos.x,
       targetY: pos.y,
       color: COLORS[i],
-      // Match server-side default: pacmen a bit faster than ghosts
       // Default pacman speed (kept in sync with server)
       speed: 1.0,
-      image: "",
-      score: 0,
       spawnPos: { ...pos },
       element: createCharacter("pacman", COLORS[i], pos.x, pos.y),
     };
@@ -734,8 +725,6 @@ function init() {
       targetY: initialTargetY,
       color: COLORS[i],
       speed: 1.0,
-      image: "",
-      score: 0,
       survivalTime: 0, // Time since last respawn in seconds
       lastSurvivalPoint: 0, // Last time a survival point was awarded
       spawnPos: { ...pos },
