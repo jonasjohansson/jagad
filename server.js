@@ -96,6 +96,8 @@ function initCharacters() {
     speed: 1.3,
     score: 0,
     spawnPos: { ...pos },
+    lastDirX: 0,
+    lastDirY: 0,
   }));
 
   gameState.ghosts = ghostSpawnPositions.slice(0, 4).map((pos, i) => {
@@ -342,6 +344,9 @@ function respawnCharacter(character, spawnPos) {
   character.py = pos.y;
   character.targetX = spawnPos.x;
   character.targetY = spawnPos.y;
+  // Stop continuous movement after respawn; new direction will be set by input/AI
+  character.lastDirX = 0;
+  character.lastDirY = 0;
 }
 
 function respawnGhost(ghost, spawnPos) {
@@ -382,8 +387,13 @@ function gameLoop() {
       const pacman = gameState.pacmen[player.colorIndex];
       if (pacman && input.targetX !== undefined && input.targetY !== undefined) {
         if (isPath(input.targetX, input.targetY)) {
+          // Set the next tile and update movement direction
+          const dx = input.targetX - pacman.x;
+          const dy = input.targetY - pacman.y;
           pacman.targetX = input.targetX;
           pacman.targetY = input.targetY;
+          pacman.lastDirX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+          pacman.lastDirY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
         }
       }
     } else if (player.type === "ghost") {
@@ -403,8 +413,21 @@ function gameLoop() {
 
   // Move pacmen (always, even before game starts)
   gameState.pacmen.forEach((pacman) => {
-    if (pacman) {
-      moveCharacter(pacman, pacman.speed);
+    if (!pacman) return;
+
+    // Move pacman toward its current target
+    moveCharacter(pacman, pacman.speed);
+
+    // Pacman-style continuous movement:
+    // if we've reached the current target tile and have a direction,
+    // automatically queue the next tile in that direction (unless it's a wall).
+    if (isAtTarget(pacman) && (pacman.lastDirX || pacman.lastDirY)) {
+      const nextX = pacman.x + pacman.lastDirX;
+      const nextY = pacman.y + pacman.lastDirY;
+      if (nextX >= 0 && nextX < COLS && nextY >= 0 && nextY < ROWS && isPath(nextX, nextY)) {
+        pacman.targetX = nextX;
+        pacman.targetY = nextY;
+      }
     }
   });
 
