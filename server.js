@@ -197,15 +197,11 @@ function getPossibleMoves(ghost) {
   const possibleMoves = [];
   const currentX = ghost.x;
   const currentY = ghost.y;
-  const isTunnelRow = currentY === TUNNEL_ROW;
 
   DIRECTIONS.forEach(({ dir, x: dx, y: dy }) => {
-    let newX = currentX + dx;
-    let newY = currentY + dy;
-    if (isTunnelRow) {
-      if (newX < 0) newX = COLS - 1;
-      else if (newX >= COLS) newX = 0;
-    }
+    const newX = currentX + dx;
+    const newY = currentY + dy;
+    // No manual wrap-around here; we rely on teleport tiles (MAP === 2) and teleportCharacter()
     if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
       possibleMoves.push({ dir, x: dx, y: dy, newX, newY });
     }
@@ -313,12 +309,9 @@ function moveGhostAI(ghost) {
 }
 
 function continueInCurrentDirection(ghost) {
-  let newX = ghost.targetX + ghost.lastDirX;
+  const newX = ghost.targetX + ghost.lastDirX;
   const newY = ghost.targetY + ghost.lastDirY;
-  if (ghost.targetY === TUNNEL_ROW) {
-    if (newX < 0) newX = COLS - 1;
-    else if (newX >= COLS) newX = 0;
-  }
+  // No manual wrap-around; tunnel behavior is handled via teleport tiles
   if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
     ghost.targetX = newX;
     ghost.targetY = newY;
@@ -379,7 +372,7 @@ function gameLoop() {
   const deltaSeconds = deltaTime / 1000;
   gameState.lastUpdate = now;
 
-  // Process player input (pacmen always, ghosts only when game started)
+  // Process player input (pacmen and ghosts always)
   gameState.players.forEach((player) => {
     if (!player.connected || !player.pendingInput) return;
     const input = player.pendingInput;
@@ -394,7 +387,6 @@ function gameLoop() {
         }
       }
     } else if (player.type === "ghost") {
-      if (!gameState.gameStarted) return; // ghosts only react to input once game started
       const ghost = gameState.ghosts[player.colorIndex];
       if (ghost && input.targetX !== undefined && input.targetY !== undefined) {
         if (isPath(input.targetX, input.targetY)) {
@@ -416,43 +408,45 @@ function gameLoop() {
     }
   });
 
-  // Ghost movement, survival, and collisions only when game is started
-  if (gameState.gameStarted) {
-    // Move ghosts
-    gameState.ghosts.forEach((ghost, index) => {
-      if (!ghost) return;
-      const isPlayerControlled = Array.from(gameState.players.values()).some(
-        (p) => p.type === "ghost" && p.colorIndex === index && p.connected
-      );
-      if (!isPlayerControlled) {
-        moveCharacter(ghost, ghost.speed);
-        if (isAtTarget(ghost)) {
-          ghost.x = ghost.targetX;
-          ghost.y = ghost.targetY;
-          if ((ghost.lastDirX === 0 && ghost.lastDirY === 0) || (ghost.targetX === ghost.x && ghost.targetY === ghost.y)) {
+  // Ghost movement, survival, and collisions
+  gameState.ghosts.forEach((ghost, index) => {
+    if (!ghost) return;
+    const isPlayerControlled = Array.from(gameState.players.values()).some(
+      (p) => p.type === "ghost" && p.colorIndex === index && p.connected
+    );
+
+    if (isPlayerControlled) {
+      // Always allow player-controlled ghosts to move, even before the game starts
+      moveCharacter(ghost, ghost.speed);
+    } else if (gameState.gameStarted) {
+      // AI ghosts only move when the game has started
+      moveCharacter(ghost, ghost.speed);
+      if (isAtTarget(ghost)) {
+        ghost.x = ghost.targetX;
+        ghost.y = ghost.targetY;
+        if ((ghost.lastDirX === 0 && ghost.lastDirY === 0) || (ghost.targetX === ghost.x && ghost.targetY === ghost.y)) {
+          moveGhostAI(ghost);
+        } else {
+          ghost.moveTimer += deltaTime;
+          const moveInterval = Math.max(50, 300 - gameState.aiDifficulty * 250);
+          if (ghost.moveTimer >= moveInterval) {
+            ghost.moveTimer = 0;
             moveGhostAI(ghost);
           } else {
-            ghost.moveTimer += deltaTime;
-            const moveInterval = Math.max(50, 300 - gameState.aiDifficulty * 250);
-            if (ghost.moveTimer >= moveInterval) {
-              ghost.moveTimer = 0;
+            const prevTargetX = ghost.targetX;
+            const prevTargetY = ghost.targetY;
+            continueInCurrentDirection(ghost);
+            if (ghost.targetX === prevTargetX && ghost.targetY === prevTargetY) {
               moveGhostAI(ghost);
-            } else {
-              const prevTargetX = ghost.targetX;
-              const prevTargetY = ghost.targetY;
-              continueInCurrentDirection(ghost);
-              if (ghost.targetX === prevTargetX && ghost.targetY === prevTargetY) {
-                moveGhostAI(ghost);
-              }
             }
           }
         }
-      } else {
-        moveCharacter(ghost, ghost.speed);
       }
-    });
+    }
+  });
 
-    // Update survival timers
+  if (gameState.gameStarted) {
+    // Update survival timers only while the game is running
     gameState.ghosts.forEach((ghost, index) => {
       if (!ghost) return;
       const isPlayerControlled = Array.from(gameState.players.values()).some(
@@ -472,7 +466,7 @@ function gameLoop() {
       }
     });
 
-    // Check collisions
+    // Check collisions only when the game is running
     checkCollisions();
   }
 

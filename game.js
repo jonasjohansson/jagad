@@ -945,10 +945,8 @@ function init() {
       return;
     }
 
-    // Allow pacmen to move even when game hasn't started (for debugging)
-    // Ghosts only accept input once the game has started
-    const canMove =
-      multiplayerMode && myPlayerId && myCharacterType && myColorIndex !== null && (myCharacterType === "pacman" || gameStarted);
+    // Allow both pacmen and ghosts to move even when game hasn't started (for debugging)
+    const canMove = multiplayerMode && myPlayerId && myCharacterType && myColorIndex !== null;
 
     if (canMove) {
       const character = myCharacterType === "pacman" ? pacmen[myColorIndex] : ghosts[myColorIndex];
@@ -963,12 +961,6 @@ function init() {
         if (keys["ArrowUp"]) newY--;
         if (keys["ArrowDown"]) newY++;
 
-        // Handle wrap-around on tunnel row
-        if (character.y === TUNNEL_ROW) {
-          if (newX < 0) newX = COLS - 1;
-          else if (newX >= COLS) newX = 0;
-        }
-
         // Check if valid move
         if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
           // Let the server drive actual movement; we only send desired target cell
@@ -982,7 +974,6 @@ function init() {
       if (!multiplayerMode) console.warn("Not in multiplayer mode");
       if (!myPlayerId) console.warn("No player ID");
       if (!myCharacterType || myColorIndex === null) console.warn("Not joined as character");
-      if (myCharacterType === "ghost" && !gameStarted) console.warn("Ghosts can only move after the game has started");
     }
   });
   document.addEventListener("keyup", (e) => {
