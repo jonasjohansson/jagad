@@ -804,7 +804,6 @@ function sendGameState(ws) {
           targetX: p.targetX,
           targetY: p.targetY,
           color: p.color,
-          score: p.score,
         })),
         ghosts: gameState.ghosts.map((g) => ({
           x: g.x,
@@ -814,7 +813,6 @@ function sendGameState(ws) {
           targetX: g.targetX,
           targetY: g.targetY,
           color: g.color,
-          score: g.score,
         })),
       },
     })
@@ -846,7 +844,6 @@ function broadcastGameState() {
         targetX: p.targetX,
         targetY: p.targetY,
         color: p.color,
-        score: p.score,
       })),
       ghosts: gameState.ghosts.map((g) => ({
         x: g.x,
@@ -856,7 +853,6 @@ function broadcastGameState() {
         targetX: g.targetX,
         targetY: g.targetY,
         color: g.color,
-        score: g.score,
       })),
     },
   });

@@ -4,6 +4,7 @@
   --color-wall-border: #ffffff;
   --color-path-bg: #000;
   --color-wall-bg: transparent;
+  --color-text: #ffffff;
   --color-red: #ff0000;
   --color-green: #00ff00;
   --color-blue: #2121ff;
@@ -221,4 +222,12 @@ body {
 .enter-dome-button,
 button[data-enter-dome] {
   transition: opacity 0.5s ease;
+}
+
+/* Generic link styling */
+a:link,
+a:visited {
+  color: var(--color-text);
+  text-decoration: underline;
+  cursor: pointer;
 }
