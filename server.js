@@ -5,7 +5,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
-const { MAP, COLS, ROWS, TUNNEL_ROW } = require("./map");
+const { MAP, COLS, ROWS, TUNNEL_ROW } = require("./public/map");
 
 const PORT = process.env.PORT || 3000;
 
@@ -624,9 +624,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let filePath = "." + req.url;
-  if (filePath === "./") {
+  let filePath;
+  if (req.url === "/" || req.url === "") {
     filePath = "./index.html";
+  } else {
+    // Serve static assets like /public/style.css, /public/game.js, etc.
+    filePath = "." + req.url;
   }
 
   const extname = String(path.extname(filePath)).toLowerCase();
