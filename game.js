@@ -1,34 +1,12 @@
 // Simple Pacman Game
-// Map: 0 = path, 1 = wall, 2 = teleport, 3 = ghost spawn (treated as path for movement, just marks spawn location)
-// Map: 32 columns wide, 16 rows high - Classic Pacman style
-const MAP = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1],
-  [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-];
-
-const COLS = MAP[0].length;
-const ROWS = MAP.length;
+// Map and grid dimensions are shared via PACMAN_MAP (see map.js)
+const { MAP, COLS, ROWS, TUNNEL_ROW } = PACMAN_MAP;
 const CELL_SIZE = 20;
 const CHARACTER_SIZE = 16;
 const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
 // Base movement speed (tuned to feel closer to the original client-side movement)
 // Higher = faster movement across the grid
 const BASE_MOVE_SPEED = 0.25;
-const TUNNEL_ROW = 8; // Row 8 (0-indexed) has teleport tiles
 
 const COLORS = ["red", "green", "blue", "yellow"];
 const DIRECTIONS = [
@@ -141,6 +119,12 @@ let multiplayerMode = false;
 let lastPositionUpdate = 0;
 const POSITION_UPDATE_INTERVAL = 16; // Send position updates every ~16ms (60fps)
 
+// Client-side movement intent for my controlled character
+// This stores the last direction key pressed so movement can continue
+// Pacman-style until blocked by a wall.
+let inputDirX = 0;
+let inputDirY = 0;
+
 // Game control functions
 function startGame() {
   if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
@@ -184,8 +168,8 @@ function selectCharacter(type, colorName) {
 
 // Initialize WebSocket connection
 function initWebSocket() {
-  // Use the deployed Render server address
-  const serverAddress = "https://pacman-fiit.onrender.com";
+  // Use the local development server
+  const serverAddress = "http://localhost:3000";
   // Convert http/https to ws/wss for WebSocket
   const wsUrl = serverAddress.replace("https://", "wss://").replace("http://", "ws://");
 
@@ -414,6 +398,18 @@ function applyServerPositions(positions) {
 // Send input to server
 function sendInput(input) {
   if (ws && ws.readyState === WebSocket.OPEN && myPlayerId) {
+    console.log(
+      "%cSending input to server",
+      "color: cyan;",
+      "playerId=",
+      myPlayerId,
+      "type=",
+      myCharacterType,
+      "colorIndex=",
+      myColorIndex,
+      "input=",
+      input
+    );
     ws.send(
       JSON.stringify({
         type: "input",
@@ -937,7 +933,7 @@ function init() {
     animationId = requestAnimationFrame(renderLoop);
   }
 
-  // Handle player input - send to server
+  // Handle player input - send direction to server
   document.addEventListener("keydown", (e) => {
     keys[e.key] = true;
     // Only process arrow keys
@@ -945,35 +941,18 @@ function init() {
       return;
     }
 
-    // Allow both pacmen and ghosts to move even when game hasn't started (for debugging)
     const canMove = multiplayerMode && myPlayerId && myCharacterType && myColorIndex !== null;
+    if (!canMove) return;
 
-    if (canMove) {
-      const character = myCharacterType === "pacman" ? pacmen[myColorIndex] : ghosts[myColorIndex];
-      if (character) {
-        // Use the current target grid position as the starting point.
-        // This lets you steer while moving, instead of waiting to be exactly at the center.
-        let newX = character.targetX;
-        let newY = character.targetY;
+    let dir = null;
+    if (e.key === "ArrowLeft") dir = "left";
+    else if (e.key === "ArrowRight") dir = "right";
+    else if (e.key === "ArrowUp") dir = "up";
+    else if (e.key === "ArrowDown") dir = "down";
 
-        if (keys["ArrowLeft"]) newX--;
-        if (keys["ArrowRight"]) newX++;
-        if (keys["ArrowUp"]) newY--;
-        if (keys["ArrowDown"]) newY++;
-
-        // Check if valid move
-        if (newX >= 0 && newX < COLS && newY >= 0 && newY < ROWS && isPath(newX, newY)) {
-          // Let the server drive actual movement; we only send desired target cell
-          sendInput({ targetX: newX, targetY: newY });
-          console.log(`%cSending input: (${newX}, ${newY})`, "color: blue;");
-        }
-      } else {
-        console.warn("Character not found for input", myCharacterType, myColorIndex);
-      }
-    } else {
-      if (!multiplayerMode) console.warn("Not in multiplayer mode");
-      if (!myPlayerId) console.warn("No player ID");
-      if (!myCharacterType || myColorIndex === null) console.warn("Not joined as character");
+    if (dir) {
+      console.log("%cKeydown direction", "color: yellow;", dir, "for", myCharacterType, "color", myColorIndex);
+      sendInput({ dir });
     }
   });
   document.addEventListener("keyup", (e) => {
@@ -1004,7 +983,9 @@ function moveCharacter(character, speedMultiplier = 1.0) {
   const dy = target.y - character.py;
   const distance = Math.sqrt(dx * dx + dy * dy);
 
-  if (distance > 0.5) {
+  // Move until we exactly reach the tile center; avoid a "dead zone" where
+  // distance is small but we never snap to the target.
+  if (distance > 0) {
     const moveDistance = BASE_MOVE_SPEED * CELL_SIZE * speedMultiplier;
     if (distance > moveDistance) {
       character.px += (dx / distance) * moveDistance;

@@ -5,39 +5,17 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const { MAP, COLS, ROWS, TUNNEL_ROW } = require("./map");
 
 const PORT = process.env.PORT || 3000;
 
 // ========== GAME CONSTANTS ==========
-// Map: 0 = path, 1 = wall, 2 = teleport, 3 = ghost spawn
-const MAP = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1],
-  [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-];
-
-const COLS = MAP[0].length;
-const ROWS = MAP.length;
 const CELL_SIZE = 20;
 const CHARACTER_SIZE = 16;
 const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
 // Base movement speed (tuned to feel closer to the original client-side movement)
 // Higher = faster movement across the grid
 const BASE_MOVE_SPEED = 0.25;
-const TUNNEL_ROW = 8;
 const COLORS = ["red", "green", "blue", "yellow"];
 const DIRECTIONS = [
   { dir: "up", x: 0, y: -1 },
@@ -79,6 +57,13 @@ const gameState = {
   lastUpdate: Date.now(),
 };
 
+// Debug counters
+let debugTickCounter = 0;
+
+function isPacmanPlayerControlled(index) {
+  return Array.from(gameState.players.values()).some((p) => p.type === "pacman" && p.colorIndex === index && p.connected);
+}
+
 // Initialize lastUpdate
 gameState.lastUpdate = Date.now();
 
@@ -96,8 +81,12 @@ function initCharacters() {
     speed: 1.3,
     score: 0,
     spawnPos: { ...pos },
-    lastDirX: 0,
-    lastDirY: 0,
+    // Direction-based movement: current direction the pacman is actually moving
+    dirX: 0,
+    dirY: 0,
+    // Queued direction from the last input (may be applied at the next junction)
+    nextDirX: 0,
+    nextDirY: 0,
   }));
 
   gameState.ghosts = ghostSpawnPositions.slice(0, 4).map((pos, i) => {
@@ -165,7 +154,9 @@ function moveCharacter(character, speedMultiplier = 1.0) {
   const dy = target.y - character.py;
   const distance = Math.sqrt(dx * dx + dy * dy);
 
-  if (distance > 0.5) {
+  // Move until we exactly reach the tile center; avoid a "dead zone" where
+  // distance is small but we never snap to the target.
+  if (distance > 0) {
     const moveDistance = BASE_MOVE_SPEED * CELL_SIZE * speedMultiplier;
     if (distance > moveDistance) {
       character.px += (dx / distance) * moveDistance;
@@ -345,8 +336,16 @@ function respawnCharacter(character, spawnPos) {
   character.targetX = spawnPos.x;
   character.targetY = spawnPos.y;
   // Stop continuous movement after respawn; new direction will be set by input/AI
-  character.lastDirX = 0;
-  character.lastDirY = 0;
+  if ("dirX" in character) {
+    character.dirX = 0;
+    character.dirY = 0;
+    character.nextDirX = 0;
+    character.nextDirY = 0;
+  }
+  if ("lastDirX" in character) {
+    character.lastDirX = 0;
+    character.lastDirY = 0;
+  }
 }
 
 function respawnGhost(ghost, spawnPos) {
@@ -377,28 +376,69 @@ function gameLoop() {
   const deltaSeconds = deltaTime / 1000;
   gameState.lastUpdate = now;
 
+  // Log a lightweight heartbeat about once per second
+  debugTickCounter++;
+  if (debugTickCounter % 60 === 0) {
+    console.log(
+      `[gameLoop] tick=${debugTickCounter} players=${gameState.players.size} ` +
+        `pacmen=${gameState.pacmen.length} ghosts=${gameState.ghosts.length}`
+    );
+  }
+
   // Process player input (pacmen and ghosts always)
-  gameState.players.forEach((player) => {
+  gameState.players.forEach((player, playerId) => {
     if (!player.connected || !player.pendingInput) return;
     const input = player.pendingInput;
     player.pendingInput = null;
 
+    console.log(`[input] from ${playerId}: type=${player.type} colorIndex=${player.colorIndex} input=`, input);
+
     if (player.type === "pacman") {
       const pacman = gameState.pacmen[player.colorIndex];
-      if (pacman && input.targetX !== undefined && input.targetY !== undefined) {
-        if (isPath(input.targetX, input.targetY)) {
-          // Set the next tile and update movement direction
-          const dx = input.targetX - pacman.x;
-          const dy = input.targetY - pacman.y;
-          pacman.targetX = input.targetX;
-          pacman.targetY = input.targetY;
-          pacman.lastDirX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
-          pacman.lastDirY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+      if (!pacman) return;
+
+      // Direction-based input: input.dir is 'left' | 'right' | 'up' | 'down'
+      if (input.dir) {
+        const dirDef = DIRECTIONS.find((d) => d.dir === input.dir);
+        if (!dirDef) return;
+        const dx = dirDef.x;
+        const dy = dirDef.y;
+
+        // Store desired direction; it will be applied when possible (at next tile center)
+        pacman.nextDirX = dx;
+        pacman.nextDirY = dy;
+
+        // If currently stopped, try to start immediately in this direction
+        if (pacman.dirX === 0 && pacman.dirY === 0) {
+          const startX = pacman.x + dx;
+          const startY = pacman.y + dy;
+          if (startX >= 0 && startX < COLS && startY >= 0 && startY < ROWS && isPath(startX, startY)) {
+            pacman.dirX = dx;
+            pacman.dirY = dy;
+            pacman.targetX = startX;
+            pacman.targetY = startY;
+          }
         }
       }
     } else if (player.type === "ghost") {
       const ghost = gameState.ghosts[player.colorIndex];
-      if (ghost && input.targetX !== undefined && input.targetY !== undefined) {
+      if (!ghost) return;
+
+      // For ghosts we still support tile-based targeting, but also allow dir input
+      if (input.dir) {
+        const dirDef = DIRECTIONS.find((d) => d.dir === input.dir);
+        if (!dirDef) return;
+        const dx = dirDef.x;
+        const dy = dirDef.y;
+        const targetX = ghost.x + dx;
+        const targetY = ghost.y + dy;
+        if (targetX >= 0 && targetX < COLS && targetY >= 0 && targetY < ROWS && isPath(targetX, targetY)) {
+          ghost.targetX = targetX;
+          ghost.targetY = targetY;
+          ghost.lastDirX = dx;
+          ghost.lastDirY = dy;
+        }
+      } else if (input.targetX !== undefined && input.targetY !== undefined) {
         if (isPath(input.targetX, input.targetY)) {
           ghost.targetX = input.targetX;
           ghost.targetY = input.targetY;
@@ -412,21 +452,74 @@ function gameLoop() {
   });
 
   // Move pacmen (always, even before game starts)
-  gameState.pacmen.forEach((pacman) => {
+  gameState.pacmen.forEach((pacman, index) => {
     if (!pacman) return;
+
+    const isPlayerControlledPacman = isPacmanPlayerControlled(index);
+
+    // Periodic debug for the pacman that a player controls
+    if (isPlayerControlledPacman && debugTickCounter % 30 === 0) {
+      console.log(
+        `[pac-debug] index=${index} color=${pacman.color} ` +
+          `x=${pacman.x}, y=${pacman.y}, px=${pacman.px.toFixed(1)}, py=${pacman.py.toFixed(1)}, ` +
+          `dir=(${pacman.dirX},${pacman.dirY}), next=(${pacman.nextDirX},${pacman.nextDirY}), ` +
+          `target=(${pacman.targetX},${pacman.targetY})`
+      );
+    }
 
     // Move pacman toward its current target
     moveCharacter(pacman, pacman.speed);
 
     // Pacman-style continuous movement:
-    // if we've reached the current target tile and have a direction,
-    // automatically queue the next tile in that direction (unless it's a wall).
-    if (isAtTarget(pacman) && (pacman.lastDirX || pacman.lastDirY)) {
-      const nextX = pacman.x + pacman.lastDirX;
-      const nextY = pacman.y + pacman.lastDirY;
-      if (nextX >= 0 && nextX < COLS && nextY >= 0 && nextY < ROWS && isPath(nextX, nextY)) {
-        pacman.targetX = nextX;
-        pacman.targetY = nextY;
+    // when we reach the center of a tile, first try to turn to the desired direction,
+    // otherwise continue straight in the current direction until a wall.
+    if (isAtTarget(pacman)) {
+      if (isPlayerControlledPacman) {
+        console.log(
+          `[pac-debug] at-target index=${index} color=${pacman.color} ` +
+            `x=${pacman.x}, y=${pacman.y}, target=(${pacman.targetX},${pacman.targetY}), ` +
+            `dir=(${pacman.dirX},${pacman.dirY}), next=(${pacman.nextDirX},${pacman.nextDirY})`
+        );
+      }
+      let usedDesired = false;
+
+      // Try to apply queued direction first (allows buffered turns)
+      if (pacman.nextDirX || pacman.nextDirY) {
+        const desiredX = pacman.x + pacman.nextDirX;
+        const desiredY = pacman.y + pacman.nextDirY;
+        if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
+          pacman.dirX = pacman.nextDirX;
+          pacman.dirY = pacman.nextDirY;
+          pacman.targetX = desiredX;
+          pacman.targetY = desiredY;
+          usedDesired = true;
+
+          console.log(
+            `Pacman[${index}] (${pacman.color}) turning to dir (${pacman.dirX},${pacman.dirY}) at (${pacman.x},${pacman.y}) -> (${desiredX},${desiredY})`
+          );
+        } else {
+          console.log(
+            `Pacman[${index}] (${pacman.color}) desired turn blocked at (${pacman.x},${pacman.y}) dir (${pacman.nextDirX},${pacman.nextDirY})`
+          );
+        }
+      }
+
+      // If desired direction isn't possible, try to continue straight
+      if (!usedDesired && (pacman.dirX || pacman.dirY)) {
+        const forwardX = pacman.x + pacman.dirX;
+        const forwardY = pacman.y + pacman.dirY;
+        if (forwardX >= 0 && forwardX < COLS && forwardY >= 0 && forwardY < ROWS && isPath(forwardX, forwardY)) {
+          pacman.targetX = forwardX;
+          pacman.targetY = forwardY;
+          console.log(`Pacman[${index}] (${pacman.color}) moving forward dir (${pacman.dirX},${pacman.dirY}) to (${forwardX},${forwardY})`);
+        } else {
+          // Hit a wall; stop until a new valid direction is given
+          console.log(
+            `Pacman[${index}] (${pacman.color}) hit wall at (${forwardX},${forwardY}) while moving dir (${pacman.dirX},${pacman.dirY}), stopping`
+          );
+          pacman.dirX = 0;
+          pacman.dirY = 0;
+        }
       }
     }
   });
@@ -661,7 +754,15 @@ function handleJoin(ws, playerId, data) {
 
 function handleInput(playerId, data) {
   const player = gameState.players.get(playerId);
-  if (!player || !player.connected) return;
+  if (!player) {
+    console.log(`[handleInput] no player for id=${playerId}`);
+    return;
+  }
+  if (!player.connected) {
+    console.log(`[handleInput] player ${playerId} not connected`);
+    return;
+  }
+  console.log(`[handleInput] storing input for ${playerId}: type=${player.type} colorIndex=${player.colorIndex} input=`, data.input);
   player.pendingInput = data.input;
 }
 
