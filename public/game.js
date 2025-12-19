@@ -105,6 +105,7 @@ let playerType = "pacman"; // "pacman" or "ghost"
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
 let survivalTimeThreshold = 30; // seconds - ghost gets point after surviving this long
 let gameStarted = false;
+let view3D = false; // Toggle for 3D view
 let lastTime = 0;
 let animationId = null;
 let gui = null;
@@ -138,18 +139,6 @@ function startGame() {
   // Start the game cycle
   if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "startGame" }));
-  }
-}
-
-function startPlayerSession() {
-  // Start playing with selected character
-  if (!myCharacterType || myColorIndex === null) {
-    alert("Please select a character first!");
-    return;
-  }
-  if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
-    // The game is always running, so this just confirms the player is ready
-    // The server already tracks the player when they join
   }
 }
 
@@ -278,16 +267,15 @@ function handleServerMessage(data) {
 
       // Auto-select the character we joined as so the GUI and local selection match the server
       const colorName = COLORS[myColorIndex].charAt(0).toUpperCase() + COLORS[myColorIndex].slice(1);
-      if (myCharacterType === "pacman") {
+      // Support both new and legacy type names
+      if (myCharacterType === "fugitive" || myCharacterType === "pacman") {
         selectCharacter("pacman", colorName);
-      } else {
+      } else if (myCharacterType === "chaser" || myCharacterType === "ghost") {
         selectCharacter("ghost", colorName);
       }
 
-      // Show Start button now that character is selected
-      if (window.startController) {
-        window.startController.show();
-      }
+      // Automatically start the game when character is selected
+      startGame();
       break;
     }
     case "joinFailed":
@@ -315,6 +303,16 @@ function handleServerMessage(data) {
       // Apply server's authoritative game state (positions)
       if (data.positions) {
         applyServerPositions(data.positions);
+
+        // Update 3D view if enabled
+        if (view3D && window.render3D) {
+          window.render3D.updatePositions(data.positions);
+        }
+      }
+
+      // Update 3D items if enabled
+      if (view3D && window.render3D && data.items) {
+        window.render3D.updateItems(data.items);
       }
       // Update game started state
       if (data.gameStarted !== undefined) {
@@ -347,7 +345,7 @@ function handleServerMessage(data) {
       // Show alert when current player completes 10 rounds
       // The server sends this message directly to the player's WebSocket, so if we receive it, it's for us
       alert(
-        `You've completed 10 rounds!\n\nChaser Score: ${data.chaserScore}\nChasee Score: ${data.chaseeScore}\nTotal Rounds: ${data.totalRounds}`
+        `You've completed 10 rounds!\n\nChaser Score: ${data.chaserScore}\nFugitive Score: ${data.fugitiveScore}\nTotal Rounds: ${data.totalRounds}`
       );
       // Clear our character selection (we've been kicked out)
       myCharacterType = null;
@@ -358,10 +356,6 @@ function handleServerMessage(data) {
       });
       currentPacman = null;
       currentGhost = null;
-      // Hide Start button
-      if (window.startController) {
-        window.startController.hide();
-      }
       // Update score display
       updateScoreDisplay();
       break;
@@ -433,13 +427,16 @@ function applyServerPositions(positions) {
 }
 
 // Send global speed configuration to server
-function sendSpeedConfig(pacmanSpeed, ghostSpeed) {
+function sendSpeedConfig(fugitiveSpeed, chaserSpeed) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(
       JSON.stringify({
         type: "setSpeeds",
-        pacmanSpeed,
-        ghostSpeed,
+        fugitiveSpeed,
+        chaserSpeed,
+        // Legacy support
+        pacmanSpeed: fugitiveSpeed,
+        ghostSpeed: chaserSpeed,
       })
     );
   }
@@ -464,7 +461,7 @@ function updateScoreDisplay() {
   const myPlayer = connectedPlayers.get(myPlayerId);
   if (myPlayer && myPlayer.stats) {
     window.scoreDisplay.chaserScore.setValue(myPlayer.stats.chaserScore || 0);
-    window.scoreDisplay.chaseeScore.setValue(myPlayer.stats.chaseeScore || 0);
+    window.scoreDisplay.fugitiveScore.setValue(myPlayer.stats.fugitiveScore || 0);
     window.scoreDisplay.rounds.setValue(myPlayer.stats.rounds || 0);
   }
 }
@@ -498,15 +495,6 @@ function updateAvailableColors(availableColors) {
       window.joinQueueController.show();
     } else {
       window.joinQueueController.hide();
-    }
-  }
-
-  // Show/hide Start button based on character selection
-  if (window.startController) {
-    if (myCharacterType && myColorIndex !== null) {
-      window.startController.show();
-    } else {
-      window.startController.hide();
     }
   }
 }
@@ -550,6 +538,52 @@ function joinQueue() {
   }
 }
 
+// Toggle between 2D and 3D view
+function toggle3DView(enabled) {
+  const gameContainer = document.getElementById("game-container");
+  const canvas = document.getElementById("webgl-canvas");
+
+  if (enabled) {
+    // Hide 2D view, show 3D canvas
+    if (gameContainer) gameContainer.style.display = "none";
+    if (canvas) canvas.style.display = "block";
+
+    // Initialize 3D if not already initialized
+    if (window.render3D && !window.render3D.initialized) {
+      window.render3D.init();
+      window.render3D.initialized = true;
+    }
+
+    // Show lighting and color controls
+    if (window.lightControllers) {
+      window.lightControllers.ambient.show();
+      window.lightControllers.directional.show();
+      window.lightControllers.point.show();
+      window.lightControllers.wallColor.show();
+      window.lightControllers.pathColor.show();
+    }
+  } else {
+    // Show 2D view, hide 3D canvas
+    if (gameContainer) gameContainer.style.display = "block";
+    if (canvas) canvas.style.display = "none";
+
+    // Hide lighting and color controls
+    if (window.lightControllers) {
+      window.lightControllers.ambient.hide();
+      window.lightControllers.directional.hide();
+      window.lightControllers.point.hide();
+      window.lightControllers.wallColor.hide();
+      window.lightControllers.pathColor.hide();
+    }
+
+    // Cleanup 3D if needed
+    if (window.render3D && window.render3D.initialized) {
+      window.render3D.cleanup();
+      window.render3D.initialized = false;
+    }
+  }
+}
+
 // Check if a character is player-controlled (has a connected player)
 function isPlayerControlled(characterType, colorIndex) {
   if (!multiplayerMode) return false;
@@ -583,12 +617,19 @@ function init() {
     const guiParams = {
       serverTarget: "Render",
       difficulty: 0.8,
-      pacmanSpeed: 0.4,
-      ghostSpeed: 0.4,
+      fugitiveSpeed: 0.4,
+      chaserSpeed: 0.4,
       playerInitials: "ABC", // 3-letter initials
+      view3D: false, // Toggle for 3D view
+      camera3D: "Orthographic", // Camera type for 3D view
+      ambientLightIntensity: 0.1, // Global ambient light intensity
+      directionalLightIntensity: 0.3, // Global directional light intensity
+      pointLightIntensity: 40, // Point light intensity for characters (0-100 range)
+      wallColor: "#ffffff", // Wall color in hex (white)
+      pathColor: "#777777", // Path/floor color in hex (gray)
+      itemsEnabled: false, // Toggle for yellow dots/items
       startGameCycle: () => startGame(),
       resetGameCycle: () => restartGame(),
-      start: () => startPlayerSession(),
       joinQueue: () => joinQueue(),
     };
 
@@ -615,12 +656,102 @@ function init() {
     gui.add(guiParams, "startGameCycle").name("Start game cycle");
     gui.add(guiParams, "resetGameCycle").name("Reset game cycle");
 
-    // Link to 3D version
-    gui.add({ open3D: () => window.open("/3d.html", "_blank") }, "open3D").name("Open 3D View");
+    // 3D view toggle
+    gui
+      .add(guiParams, "view3D")
+      .name("3D View")
+      .onChange((value) => {
+        view3D = value;
+        toggle3DView(value);
+      });
 
-    // Start button (shown when character is selected)
-    window.startController = gui.add(guiParams, "start").name("Start");
-    window.startController.hide(); // Hidden until character is selected
+    // 3D camera type toggle
+    gui
+      .add(guiParams, "camera3D", ["Orthographic", "Perspective"])
+      .name("3D Camera")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setCameraType) {
+          // Set camera type based on selection
+          const shouldBeOrthographic = value === "Orthographic";
+          window.render3D.setCameraType(shouldBeOrthographic);
+        }
+      });
+
+    // 3D lighting controls (only visible when 3D view is enabled)
+    const ambientLightCtrl = gui
+      .add(guiParams, "ambientLightIntensity", 0, 2, 0.1)
+      .name("Ambient Light")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setAmbientLight) {
+          window.render3D.setAmbientLight(value);
+        }
+      });
+    ambientLightCtrl.hide(); // Hidden by default
+
+    const directionalLightCtrl = gui
+      .add(guiParams, "directionalLightIntensity", 0, 2, 0.1)
+      .name("Directional Light")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setDirectionalLight) {
+          window.render3D.setDirectionalLight(value);
+        }
+      });
+    directionalLightCtrl.hide(); // Hidden by default
+
+    const pointLightCtrl = gui
+      .add(guiParams, "pointLightIntensity", 0, 100, 1)
+      .name("Point Light Intensity")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setPointLightIntensity) {
+          window.render3D.setPointLightIntensity(value);
+        }
+      });
+    pointLightCtrl.hide(); // Hidden by default
+
+    // 3D color controls (only visible when 3D view is enabled)
+    const wallColorCtrl = gui
+      .addColor(guiParams, "wallColor")
+      .name("Wall Color")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setWallColor) {
+          window.render3D.setWallColor(value);
+        }
+      });
+    wallColorCtrl.hide(); // Hidden by default
+
+    const pathColorCtrl = gui
+      .addColor(guiParams, "pathColor")
+      .name("Path Color")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setPathColor) {
+          window.render3D.setPathColor(value);
+        }
+      });
+    pathColorCtrl.hide(); // Hidden by default
+
+    // Items toggle (server control)
+    const itemsEnabledCtrl = gui
+      .add(guiParams, "itemsEnabled")
+      .name("Yellow Dots (Items)")
+      .onChange((value) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "setItemsEnabled",
+              enabled: value,
+            })
+          );
+        }
+      });
+
+    // Store controllers for showing/hiding
+    window.lightControllers = {
+      ambient: ambientLightCtrl,
+      directional: directionalLightCtrl,
+      point: pointLightCtrl,
+      wallColor: wallColorCtrl,
+      pathColor: pathColorCtrl,
+    };
 
     // Join Queue button (only shown when all slots are full)
     window.joinQueueController = gui.add(guiParams, "joinQueue").name("Join Queue");
@@ -644,45 +775,54 @@ function init() {
 
     // Global speed controls
     gui
-      .add(guiParams, "pacmanSpeed", 0.2, 3, 0.1)
-      .name("Pacman Speed")
+      .add(guiParams, "fugitiveSpeed", 0.2, 3, 0.1)
+      .name("Fugitive Speed")
       .onChange((value) => {
-        sendSpeedConfig(value, guiParams.ghostSpeed);
+        sendSpeedConfig(value, guiParams.chaserSpeed);
       });
 
     gui
-      .add(guiParams, "ghostSpeed", 0.2, 3, 0.1)
-      .name("Ghost Speed")
+      .add(guiParams, "chaserSpeed", 0.2, 3, 0.1)
+      .name("Chaser Speed")
       .onChange((value) => {
-        sendSpeedConfig(guiParams.pacmanSpeed, value);
+        sendSpeedConfig(guiParams.fugitiveSpeed, value);
       });
 
     // Character selection: one entry per pacman/ghost/color at root
     const joinActions = {};
     window.characterControllers = { pacman: [], ghost: [] };
 
+    // Names for each fugitive color
+    const fugitiveNames = [
+      "Viktor & Samir", // Red (index 0)
+      "Maria & Sara", // Green (index 1)
+      "Anja & Filippa", // Blue (index 2)
+      "Hasse & Glenn", // Yellow (index 3)
+    ];
+
     COLORS.forEach((color, i) => {
       const colorName = color.charAt(0).toUpperCase() + color.slice(1);
-      const chaseeKey = `${colorName} Chasee`;
+      const fugitiveName = fugitiveNames[i] || `${colorName} Fugitive`;
+      const fugitiveKey = `${colorName} Fugitive (${fugitiveName})`;
       const chaserKey = `${colorName} Chaser`;
 
-      joinActions[chaseeKey] = () => {
-        joinAsCharacter("pacman", i, guiParams.playerInitials);
+      joinActions[fugitiveKey] = () => {
+        joinAsCharacter("fugitive", i, guiParams.playerInitials);
       };
       joinActions[chaserKey] = () => {
-        joinAsCharacter("ghost", i, guiParams.playerInitials);
+        joinAsCharacter("chaser", i, guiParams.playerInitials);
       };
 
-      const chaseeCtrl = gui.add(joinActions, chaseeKey);
+      const fugitiveCtrl = gui.add(joinActions, fugitiveKey);
       const chaserCtrl = gui.add(joinActions, chaserKey);
-      window.characterControllers.pacman[i] = chaseeCtrl;
+      window.characterControllers.pacman[i] = fugitiveCtrl;
       window.characterControllers.ghost[i] = chaserCtrl;
     });
 
     // Score display
     window.scoreDisplay = {
       chaserScore: gui.add({ value: 0 }, "value").name("Chaser Score").disable(),
-      chaseeScore: gui.add({ value: 0 }, "value").name("Chasee Score").disable(),
+      fugitiveScore: gui.add({ value: 0 }, "value").name("Fugitive Score").disable(),
       rounds: gui.add({ value: 0 }, "value").name("Rounds").disable(),
     };
   }
@@ -857,6 +997,14 @@ function init() {
   // Render loop - smooths visual positions toward server state
   // Server sends authoritative pixel positions; we interpolate for smoother motion
   function renderLoop() {
+    // Render 3D if enabled
+    if (view3D && window.render3D) {
+      window.render3D.render();
+      animationId = requestAnimationFrame(renderLoop);
+      return;
+    }
+
+    // 2D rendering
     // Smoothing factors
     const OTHER_SMOOTHING = 0.25;
     // My own character follows the server almost exactly to minimize input latency
