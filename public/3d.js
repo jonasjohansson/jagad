@@ -1,7 +1,7 @@
 // 3D rendering module using Three.js
 // Renders the game in 3D with voxel-based level design
 
-import * as THREE from './three/three.module.js';
+import * as THREE from "./three/three.module.js";
 
 const { MAP, COLS, ROWS, TUNNEL_ROW } = PACMAN_MAP;
 const CELL_SIZE = 20;
@@ -33,12 +33,12 @@ function init3D() {
   // Create both orthographic and perspective cameras
   const viewSize = Math.max(COLS * CELL_SIZE, ROWS * CELL_SIZE) * 1.2;
   const aspect = window.innerWidth / window.innerHeight;
-  
+
   // Orthographic camera
   let left, right, top, bottom;
   if (aspect >= 1) {
-    left = -viewSize * aspect / 2;
-    right = viewSize * aspect / 2;
+    left = (-viewSize * aspect) / 2;
+    right = (viewSize * aspect) / 2;
     top = viewSize / 2;
     bottom = -viewSize / 2;
   } else {
@@ -47,38 +47,38 @@ function init3D() {
     top = viewSize / aspect / 2;
     bottom = -viewSize / aspect / 2;
   }
-  
+
   orthographicCamera = new THREE.OrthographicCamera(left, right, top, bottom, 0.1, 1000);
-  orthographicCamera.position.set(COLS * CELL_SIZE / 2, 200, ROWS * CELL_SIZE / 2);
-  orthographicCamera.lookAt(COLS * CELL_SIZE / 2, 0, ROWS * CELL_SIZE / 2);
-  
+  orthographicCamera.position.set((COLS * CELL_SIZE) / 2, 200, (ROWS * CELL_SIZE) / 2);
+  orthographicCamera.lookAt((COLS * CELL_SIZE) / 2, 0, (ROWS * CELL_SIZE) / 2);
+
   // Perspective camera - zoomed out to see the whole level
   const levelWidth = COLS * CELL_SIZE;
   const levelHeight = ROWS * CELL_SIZE;
   const levelDiagonal = Math.sqrt(levelWidth * levelWidth + levelHeight * levelHeight);
-  
+
   // Calculate camera distance to fit the entire level in view
   // Using a wider field of view and positioning camera higher and further back
   perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
-  
+
   // Position camera high and at an angle to see the whole level
   const cameraHeight = levelDiagonal * 0.8; // Higher up
   const cameraDistance = levelDiagonal * 0.6; // Further back
   perspectiveCamera.position.set(
-    COLS * CELL_SIZE / 2 + cameraDistance * 0.5,
+    (COLS * CELL_SIZE) / 2 + cameraDistance * 0.5,
     cameraHeight,
-    ROWS * CELL_SIZE / 2 + cameraDistance * 0.5
+    (ROWS * CELL_SIZE) / 2 + cameraDistance * 0.5
   );
-  perspectiveCamera.lookAt(COLS * CELL_SIZE / 2, 0, ROWS * CELL_SIZE / 2);
-  
+  perspectiveCamera.lookAt((COLS * CELL_SIZE) / 2, 0, (ROWS * CELL_SIZE) / 2);
+
   // Start with orthographic
   camera = orthographicCamera;
   useOrthographic = true;
 
   // Renderer
-  const canvas = document.getElementById('webgl-canvas');
+  const canvas = document.getElementById("webgl-canvas");
   if (!canvas) {
-    console.error('Canvas element not found');
+    console.error("Canvas element not found");
     return;
   }
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -89,7 +89,7 @@ function init3D() {
   // Lights - minimal ambient so point lights are clearly visible
   ambientLight3D = new THREE.AmbientLight(0xffffff, 0.1);
   scene.add(ambientLight3D);
-  
+
   // Reduced directional light so point lights stand out
   directionalLight3D = new THREE.DirectionalLight(0xffffff, 0.3);
   directionalLight3D.position.set(50, 100, 50);
@@ -100,41 +100,44 @@ function init3D() {
   createMazeVoxels();
 
   // Handle window resize
-  window.addEventListener('resize', onWindowResize3D);
+  window.addEventListener("resize", onWindowResize3D);
 }
 
 function createMazeVoxels() {
   // Clear existing voxels
-  mazeVoxels.forEach(voxel => scene.remove(voxel));
+  mazeVoxels.forEach((voxel) => scene.remove(voxel));
   mazeVoxels = [];
 
   // Initialize materials if not already created
   if (!innerWallMaterial3D) {
-    innerWallMaterial3D = new THREE.MeshStandardMaterial({ 
+    innerWallMaterial3D = new THREE.MeshStandardMaterial({
       color: 0xffffff, // White default
       roughness: 0.5,
       metalness: 0.2,
-      emissive: 0x000000 // No emissive - should reflect point lights
+      emissive: 0x000000, // No emissive - should reflect point lights
     });
   }
-  
+
   if (!outerWallMaterial3D) {
-    outerWallMaterial3D = new THREE.MeshStandardMaterial({ 
+    outerWallMaterial3D = new THREE.MeshStandardMaterial({
       color: 0xffffff, // White default
       roughness: 0.5,
       metalness: 0.2,
-      emissive: 0x000000 // No emissive - should reflect point lights
+      emissive: 0x000000, // No emissive - should reflect point lights
     });
   }
 
   // Track which cells have been processed
-  const processed = Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
+  const processed = Array(ROWS)
+    .fill(null)
+    .map(() => Array(COLS).fill(false));
 
   // Create floors first
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       const cellType = MAP[y][x];
-      if (cellType === 0 || cellType === 2) { // Path or teleport - create floor voxels
+      if (cellType === 0 || cellType === 2) {
+        // Path or teleport - create floor voxels
         const worldX = x * CELL_SIZE;
         const worldZ = y * CELL_SIZE;
         createFloorVoxels(worldX, worldZ, cellType === 2);
@@ -146,18 +149,20 @@ function createMazeVoxels() {
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       if (processed[y][x] || MAP[y][x] !== 1) continue;
-      
+
       const isOuterWall = x === 0 || x === COLS - 1 || y === 0 || y === ROWS - 1;
-      
+
       // Try to find a horizontal run first
       let width = 1;
-      while (x + width < COLS && 
-             MAP[y][x + width] === 1 && 
-             !processed[y][x + width] &&
-             (x + width === 0 || x + width === COLS - 1 || y === 0 || y === ROWS - 1) === isOuterWall) {
+      while (
+        x + width < COLS &&
+        MAP[y][x + width] === 1 &&
+        !processed[y][x + width] &&
+        (x + width === 0 || x + width === COLS - 1 || y === 0 || y === ROWS - 1) === isOuterWall
+      ) {
         width++;
       }
-      
+
       // Try to extend vertically if we can form a rectangle
       let height = 1;
       let canExtendVertically = true;
@@ -169,7 +174,7 @@ function createMazeVoxels() {
             break;
           }
           // Check if wall type matches (outer vs inner)
-          const cellIsOuter = (x + w === 0 || x + w === COLS - 1 || y + height === 0 || y + height === ROWS - 1);
+          const cellIsOuter = x + w === 0 || x + w === COLS - 1 || y + height === 0 || y + height === ROWS - 1;
           if (cellIsOuter !== isOuterWall) {
             canExtendVertically = false;
             break;
@@ -179,27 +184,23 @@ function createMazeVoxels() {
           height++;
         }
       }
-      
+
       // Create merged wall block
       const worldX = x * CELL_SIZE;
       const worldZ = y * CELL_SIZE;
       const blockWidth = width * CELL_SIZE;
       const blockDepth = height * CELL_SIZE;
-      
+
       const wallGeometry = new THREE.BoxGeometry(blockWidth, VOXEL_HEIGHT, blockDepth);
       const wallMaterial = isOuterWall ? outerWallMaterial3D : innerWallMaterial3D;
       const wall = new THREE.Mesh(wallGeometry, wallMaterial);
       // Position at the center of the merged block
-      wall.position.set(
-        worldX + blockWidth / 2,
-        VOXEL_HEIGHT / 2,
-        worldZ + blockDepth / 2
-      );
+      wall.position.set(worldX + blockWidth / 2, VOXEL_HEIGHT / 2, worldZ + blockDepth / 2);
       wall.castShadow = true;
       wall.receiveShadow = true;
       scene.add(wall);
       mazeVoxels.push(wall);
-      
+
       // Mark cells as processed
       for (let h = 0; h < height; h++) {
         for (let w = 0; w < width; w++) {
@@ -218,24 +219,24 @@ function createFloorVoxels(worldX, worldZ, isTeleport = false) {
   // Use shared materials for floors (created once, reused)
   if (isTeleport) {
     if (!teleportMaterial3D) {
-      teleportMaterial3D = new THREE.MeshStandardMaterial({ 
+      teleportMaterial3D = new THREE.MeshStandardMaterial({
         color: 0x4444ff,
         roughness: 0.6,
         metalness: 0.1,
-        emissive: 0x000000 // No emissive - should reflect point lights
+        emissive: 0x000000, // No emissive - should reflect point lights
       });
     }
   } else {
     if (!floorMaterial3D) {
-      floorMaterial3D = new THREE.MeshStandardMaterial({ 
+      floorMaterial3D = new THREE.MeshStandardMaterial({
         color: 0x777777, // Gray default (#777777)
         roughness: 0.6,
         metalness: 0.1,
-        emissive: 0x000000 // No emissive - should reflect point lights
+        emissive: 0x000000, // No emissive - should reflect point lights
       });
     }
   }
-  
+
   const floorGeometry = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE);
   const floorMaterial = isTeleport ? teleportMaterial3D : floorMaterial3D;
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
@@ -250,22 +251,22 @@ function createFloorVoxels(worldX, worldZ, isTeleport = false) {
 function createFugitive3D(color, x, y) {
   // Create a group to hold both the mesh and light
   const group = new THREE.Group();
-  
+
   // Create fugitive as a simple sphere
   const geometry = new THREE.SphereGeometry(CHARACTER_SIZE / 2, 16, 16);
   const colorHex = getColorHex(color);
-  const material = new THREE.MeshStandardMaterial({ 
+  const material = new THREE.MeshStandardMaterial({
     color: colorHex,
     emissive: 0x000000, // No emissive - rely on lights
     roughness: 0.4,
-    metalness: 0.1
+    metalness: 0.1,
   });
   const fugitive = new THREE.Mesh(geometry, material);
   fugitive.position.set(0, 0, 0); // Position relative to group
   fugitive.castShadow = false; // Don't cast shadows on floor to avoid artifacts
   fugitive.receiveShadow = false; // Don't receive shadows
   group.add(fugitive);
-  
+
   // Create a point light as a child of the character group
   const pointLight = new THREE.PointLight(colorHex, 40, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
@@ -281,11 +282,11 @@ function createFugitive3D(color, x, y) {
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
-  
+
   // Set group position
   group.position.set(x * CELL_SIZE + CHARACTER_OFFSET, CHARACTER_SIZE / 2, y * CELL_SIZE + CHARACTER_OFFSET);
   scene.add(group);
-  
+
   // Store the group (which contains both mesh and light)
   return { mesh: group, light: pointLight };
 }
@@ -293,22 +294,22 @@ function createFugitive3D(color, x, y) {
 function createChaser3D(color, x, y) {
   // Create a group to hold both the mesh and light
   const group = new THREE.Group();
-  
+
   // Create chaser as a simple cube
   const geometry = new THREE.BoxGeometry(CHARACTER_SIZE, CHARACTER_SIZE, CHARACTER_SIZE);
   const colorHex = getColorHex(color);
-  const material = new THREE.MeshStandardMaterial({ 
+  const material = new THREE.MeshStandardMaterial({
     color: colorHex,
     emissive: 0x000000, // No emissive - rely on lights
     roughness: 0.4,
-    metalness: 0.1
+    metalness: 0.1,
   });
   const chaser = new THREE.Mesh(geometry, material);
   chaser.position.set(0, 0, 0); // Position relative to group
   chaser.castShadow = false; // Don't cast shadows on floor to avoid artifacts
   chaser.receiveShadow = false; // Don't receive shadows
   group.add(chaser);
-  
+
   // Create a point light as a child of the character group
   const pointLight = new THREE.PointLight(colorHex, 40, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
@@ -324,11 +325,11 @@ function createChaser3D(color, x, y) {
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
-  
+
   // Set group position
   group.position.set(x * CELL_SIZE + CHARACTER_OFFSET, CHARACTER_SIZE / 2, y * CELL_SIZE + CHARACTER_OFFSET);
   scene.add(group);
-  
+
   // Store the group (which contains both mesh and light)
   return { mesh: group, light: pointLight };
 }
@@ -337,10 +338,10 @@ function createItem3D(x, y) {
   // Create item as a small voxel cube
   const itemSize = 3;
   const voxelGeometry = new THREE.BoxGeometry(itemSize, itemSize, itemSize);
-  const voxelMaterial = new THREE.MeshStandardMaterial({ 
+  const voxelMaterial = new THREE.MeshStandardMaterial({
     color: 0xffff00,
     emissive: 0xffff00,
-    emissiveIntensity: 1.0
+    emissiveIntensity: 1.0,
   });
   const item = new THREE.Mesh(voxelGeometry, voxelMaterial);
   item.position.set(x * CELL_SIZE + CHARACTER_OFFSET, itemSize / 2 + 2, y * CELL_SIZE + CHARACTER_OFFSET);
@@ -353,7 +354,7 @@ function getColorHex(colorName) {
     red: 0xff0000,
     green: 0x00ff00,
     blue: 0x0000ff,
-    yellow: 0xffff00
+    yellow: 0xffff00,
   };
   return colorMap[colorName.toLowerCase()] || 0xffffff;
 }
@@ -370,7 +371,7 @@ function updatePositions3D(positions) {
       fugitives3D[index].mesh.position.z = pos.py;
     }
   });
-  
+
   // Update chasers (server may still use "ghosts" name)
   const chaserPositions = positions.chasers || positions.ghosts || [];
   chaserPositions.forEach((pos, index) => {
@@ -386,12 +387,12 @@ function updatePositions3D(positions) {
 
 function updateItems3D(itemsData) {
   // Remove old items
-  items3D.forEach(item => scene.remove(item));
+  items3D.forEach((item) => scene.remove(item));
   items3D = [];
-  
+
   // Create new items
   if (itemsData) {
-    itemsData.forEach(itemData => {
+    itemsData.forEach((itemData) => {
       if (!itemData.collected) {
         const item = createItem3D(itemData.x, itemData.y);
         items3D.push(item);
@@ -402,15 +403,15 @@ function updateItems3D(itemsData) {
 
 function onWindowResize3D() {
   if (!camera || !renderer) return;
-  
+
   const aspect = window.innerWidth / window.innerHeight;
-  
+
   if (useOrthographic && orthographicCamera) {
     // Update orthographic camera bounds
     const viewSize = Math.max(COLS * CELL_SIZE, ROWS * CELL_SIZE) * 1.2;
     if (aspect >= 1) {
-      orthographicCamera.left = -viewSize * aspect / 2;
-      orthographicCamera.right = viewSize * aspect / 2;
+      orthographicCamera.left = (-viewSize * aspect) / 2;
+      orthographicCamera.right = (viewSize * aspect) / 2;
       orthographicCamera.top = viewSize / 2;
       orthographicCamera.bottom = -viewSize / 2;
     } else {
@@ -424,7 +425,7 @@ function onWindowResize3D() {
     perspectiveCamera.aspect = aspect;
     perspectiveCamera.updateProjectionMatrix();
   }
-  
+
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
@@ -447,27 +448,27 @@ function render3D() {
 
 function cleanup3D() {
   // Remove all 3D objects
-  fugitives3D.forEach(fugitive => {
+  fugitives3D.forEach((fugitive) => {
     if (fugitive && fugitive.mesh) scene.remove(fugitive.mesh);
     if (fugitive && fugitive.light) scene.remove(fugitive.light);
   });
-  chasers3D.forEach(chaser => {
+  chasers3D.forEach((chaser) => {
     if (chaser && chaser.mesh) scene.remove(chaser.mesh);
     if (chaser && chaser.light) scene.remove(chaser.light);
   });
-  items3D.forEach(item => scene.remove(item));
-  mazeVoxels.forEach(voxel => scene.remove(voxel));
-  
+  items3D.forEach((item) => scene.remove(item));
+  mazeVoxels.forEach((voxel) => scene.remove(voxel));
+
   fugitives3D = [];
   chasers3D = [];
   items3D = [];
   mazeVoxels = [];
-  
+
   if (renderer) {
     renderer.dispose();
     renderer = null;
   }
-  
+
   scene = null;
   camera = null;
 }
@@ -487,13 +488,13 @@ function setDirectionalLightIntensity(intensity) {
 
 function setPointLightIntensity(intensity) {
   // Update all fugitive lights
-  fugitives3D.forEach(fugitive => {
+  fugitives3D.forEach((fugitive) => {
     if (fugitive && fugitive.light) {
       fugitive.light.intensity = intensity;
     }
   });
   // Update all chaser lights
-  chasers3D.forEach(chaser => {
+  chasers3D.forEach((chaser) => {
     if (chaser && chaser.light) {
       chaser.light.intensity = intensity;
     }
@@ -545,6 +546,5 @@ window.render3D = {
   setOuterWallColor: setOuterWallColor,
   setPathColor: setPathColor,
   useOrthographic: () => useOrthographic,
-  initialized: false
+  initialized: false,
 };
-

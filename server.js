@@ -28,18 +28,30 @@ const OPPOSITE_DIR = { up: "down", down: "up", left: "right", right: "left" };
 // Pre-calculate positions
 const teleportPositions = [];
 const chaserSpawnPositions = [];
+const fugitiveSpawnPositions = [];
+
+// Collect spawn positions in order: red, green, blue, yellow
+// For fugitives: value 4 in order (top-left, top-right, bottom-left, bottom-right)
+// For chasers: value 3 in order (same pattern)
 for (let y = 0; y < ROWS; y++) {
   for (let x = 0; x < COLS; x++) {
     if (MAP[y][x] === 2) teleportPositions.push({ x, y });
     if (MAP[y][x] === 3) chaserSpawnPositions.push({ x, y });
+    if (MAP[y][x] === 4) fugitiveSpawnPositions.push({ x, y });
   }
 }
-const fugitiveSpawnPositions = [
-  { x: 1, y: 1 },
-  { x: 30, y: 1 },
-  { x: 1, y: 14 },
-  { x: 30, y: 14 },
-];
+
+// Sort spawn positions to ensure consistent order: red, green, blue, yellow
+// Order: top-left, top-right, bottom-left, bottom-right
+fugitiveSpawnPositions.sort((a, b) => {
+  if (a.y !== b.y) return a.y - b.y; // Sort by row first (top to bottom)
+  return a.x - b.x; // Then by column (left to right)
+});
+
+chaserSpawnPositions.sort((a, b) => {
+  if (a.y !== b.y) return a.y - b.y; // Sort by row first (top to bottom)
+  return a.x - b.x; // Then by column (left to right)
+});
 
 // ========== GAME STATE ==========
 const gameState = {
@@ -80,7 +92,7 @@ function initItems() {
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
       const cellType = MAP[y][x];
-      // Place items on regular paths (0), but not on teleports (2) or spawns (3)
+      // Place items on regular paths (0), but not on teleports (2) or spawns (3, 4)
       if (cellType === 0) {
         // Skip spawn positions
         const isSpawn =
