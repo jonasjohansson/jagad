@@ -758,7 +758,7 @@ function init() {
           window.render3D.setCameraZoom(value);
         }
       });
-    cameraZoomCtrl.hide(); // Hidden by default
+    cameraZoomCtrl.hide(); // Hidden from GUI
 
     // 3D lighting controls (only visible when 3D view is enabled)
     const ambientLightCtrl = view3DFolder
@@ -896,20 +896,22 @@ function init() {
       });
 
     // Building real image X position slider
-    buildingFolder
+    const buildingRealXCtrl = buildingFolder
       .add(guiParams, "buildingRealX", -500, 500, 1)
       .name("Building Real X")
       .onChange(() => {
         updateBuildingRealTransform();
       });
+    buildingRealXCtrl.hide(); // Hidden from GUI
 
     // Building real image Y position slider
-    buildingFolder
+    const buildingRealYCtrl = buildingFolder
       .add(guiParams, "buildingRealY", -500, 500, 1)
       .name("Building Real Y")
       .onChange(() => {
         updateBuildingRealTransform();
       });
+    buildingRealYCtrl.hide(); // Hidden from GUI
 
     // Building real image blend mode selector
     buildingFolder
