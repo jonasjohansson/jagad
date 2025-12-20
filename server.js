@@ -174,7 +174,8 @@ function initCharacters() {
 function isPath(x, y) {
   if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return false;
   const cell = MAP[y][x];
-  return cell === 0 || cell === 2 || cell === 3;
+  // Treat 0 (path), 2 (teleport), 3 (chaser spawn), and 4 (fugitive spawn) as walkable paths
+  return cell === 0 || cell === 2 || cell === 3 || cell === 4;
 }
 
 function getTargetPixelPos(gridX, gridY) {
