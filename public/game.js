@@ -431,13 +431,14 @@ function applyServerPositions(positions) {
 }
 
 // Send global speed configuration to server
-function sendSpeedConfig(fugitiveSpeed, chaserSpeed) {
+function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(
       JSON.stringify({
         type: "setSpeeds",
         fugitiveSpeed,
         chaserSpeed,
+        survivalTimeThreshold,
         // Legacy support
         pacmanSpeed: fugitiveSpeed,
         ghostSpeed: chaserSpeed,
@@ -673,6 +674,7 @@ function init() {
       fugitiveSpeed: 0.4,
       chaserSpeed: 0.4,
       playerInitials: "ABC", // 3-letter initials
+      survivalTimeThreshold: 20, // Seconds required to survive a round (default 20)
       view3D: false, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
@@ -1015,7 +1017,7 @@ function init() {
       .add(guiParams, "fugitiveSpeed", 0.2, 3, 0.1)
       .name("Fugitive Speed")
       .onChange((value) => {
-        sendSpeedConfig(value, guiParams.chaserSpeed);
+        sendSpeedConfig(value, guiParams.chaserSpeed, guiParams.survivalTimeThreshold);
       });
 
     charactersFolder

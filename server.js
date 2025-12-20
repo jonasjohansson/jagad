@@ -77,6 +77,7 @@ const gameState = {
   // Global speed multipliers for all fugitives and all chasers (default a bit slower)
   fugitiveSpeed: 0.4,
   chaserSpeed: 0.4,
+  survivalTimeThreshold: 20, // Seconds required to survive a round (default 20)
   itemsEnabled: false, // Toggle for yellow dots/items
   fugitives: [],
   chasers: [],
@@ -428,10 +429,11 @@ function checkCollisions() {
           }
 
           // Update fugitive score: add items collected this round
+          // Note: When caught, fugitive doesn't get survival point, only items
           if (fugitivePlayerData.stats && fugitive.itemsCollected !== undefined) {
             fugitivePlayerData.stats.itemsCollected += fugitive.itemsCollected;
-            // Fugitive score = total items collected
-            fugitivePlayerData.stats.fugitiveScore = fugitivePlayerData.stats.itemsCollected;
+            // Fugitive score = survival points (rounds survived) + items collected
+            fugitivePlayerData.stats.fugitiveScore = fugitivePlayerData.stats.rounds + fugitivePlayerData.stats.itemsCollected;
           }
         }
 
@@ -641,14 +643,15 @@ function gameLoop() {
           pacman.itemsCollected = 0;
         }
 
-        // Check if 30 seconds have passed (round ends at 30s OR capture)
+        // Check if survival time threshold has passed (round ends at threshold OR capture)
         if (player.stats.currentRoundStartTime) {
           const roundTime = (Date.now() - player.stats.currentRoundStartTime) / 1000;
-          if (roundTime >= 30) {
-            // Round ended by time (30 seconds) - fugitive survived
-            // Update fugitive score with items collected this round
+          if (roundTime >= gameState.survivalTimeThreshold) {
+            // Round ended by time - fugitive survived
+            // Award point for surviving the round + items collected this round
             player.stats.itemsCollected += pacman.itemsCollected || 0;
-            player.stats.fugitiveScore = player.stats.itemsCollected;
+            // Fugitive score = survival points (1 per round survived) + items collected
+            player.stats.fugitiveScore = (player.stats.rounds + 1) + player.stats.itemsCollected;
             player.stats.rounds++;
 
             // Check if player completed 10 rounds
@@ -691,9 +694,9 @@ function gameLoop() {
         if (player.stats.currentRoundStartTime) {
           const roundTime = (Date.now() - player.stats.currentRoundStartTime) / 1000;
           if (roundTime >= 30) {
-            // Round ended by time (30 seconds) - fugitive survived, chaser didn't catch
-            // Chaser gets penalty (add 30 seconds to total time)
-            player.stats.totalCaptureTime += 30000;
+            // Round ended by time - fugitive survived, chaser didn't catch
+            // Chaser gets penalty (add survival threshold time to total time)
+            player.stats.totalCaptureTime += gameState.survivalTimeThreshold * 1000;
             player.stats.chaserScore = player.stats.totalCaptureTime;
             player.stats.rounds++;
 
@@ -1072,7 +1075,7 @@ function handleJoin(ws, playerId, data) {
 }
 
 function handleSetSpeeds(data) {
-  const { pacmanSpeed, ghostSpeed, fugitiveSpeed, chaserSpeed } = data;
+  const { pacmanSpeed, ghostSpeed, fugitiveSpeed, chaserSpeed, survivalTimeThreshold } = data;
   // Support both new and legacy names
   if (typeof fugitiveSpeed === "number") {
     gameState.fugitiveSpeed = Math.max(0.2, Math.min(3, fugitiveSpeed));
@@ -1083,6 +1086,9 @@ function handleSetSpeeds(data) {
     gameState.chaserSpeed = Math.max(0.2, Math.min(3, chaserSpeed));
   } else if (typeof ghostSpeed === "number") {
     gameState.chaserSpeed = Math.max(0.2, Math.min(3, ghostSpeed));
+  }
+  if (typeof survivalTimeThreshold === "number") {
+    gameState.survivalTimeThreshold = Math.max(1, Math.min(120, survivalTimeThreshold));
   }
 }
 
