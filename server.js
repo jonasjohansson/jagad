@@ -148,37 +148,23 @@ function initCharacters() {
   // Initialize chasers in the exact order of chaserSpawnPositions
   // This ensures: index 0 = red (first spawn), 1 = green (second spawn), 2 = blue (third spawn), 3 = yellow (fourth spawn)
   gameState.chasers = chaserSpawnPositions.slice(0, 4).map((pos, i) => {
-    // Find initial direction
-    let initialTargetX = pos.x;
-    let initialTargetY = pos.y;
-    let initialDirX = 0;
-    let initialDirY = 0;
-    for (const dir of DIRECTIONS) {
-      const newX = pos.x + dir.x;
-      const newY = pos.y + dir.y;
-      if (isPath(newX, newY)) {
-        initialTargetX = newX;
-        initialTargetY = newY;
-        initialDirX = dir.x;
-        initialDirY = dir.y;
-        break;
-      }
-    }
+    // Start chasers at their spawn position without moving initially
+    // They will start moving when AI takes over or player provides input
     return {
       x: pos.x,
       y: pos.y,
       px: pos.x * CELL_SIZE + CHARACTER_OFFSET,
       py: pos.y * CELL_SIZE + CHARACTER_OFFSET,
-      targetX: initialTargetX,
-      targetY: initialTargetY,
+      targetX: pos.x, // Start at spawn position
+      targetY: pos.y, // Start at spawn position
       color: COLORS[i], // Color assignment: 0=red, 1=green, 2=blue, 3=yellow
       // Keep chasers at base speed; overridden by global chaserSpeed multiplier
       roundsCompleted: 0, // Track rounds for speed increase
       speed: 1.0,
       spawnPos: { ...pos },
       moveTimer: 0,
-      lastDirX: initialDirX,
-      lastDirY: initialDirY,
+      lastDirX: 0, // No initial direction
+      lastDirY: 0, // No initial direction
       positionHistory: [],
     };
   });

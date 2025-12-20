@@ -285,10 +285,10 @@ function createFugitive3D(color, x, y, px, py) {
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
 
-  // Set group position - use pixel coordinates if available, otherwise calculate from grid coordinates
-  // Position at center of cell to match floor positioning
-  const posX = px !== undefined ? px : x * CELL_SIZE + CELL_SIZE / 2;
-  const posZ = py !== undefined ? py : y * CELL_SIZE + CELL_SIZE / 2;
+  // Set group position - use pixel coordinates from server if available (they include CHARACTER_OFFSET)
+  // Otherwise calculate from grid coordinates using the same offset as server
+  const posX = px !== undefined ? px : x * CELL_SIZE + CHARACTER_OFFSET;
+  const posZ = py !== undefined ? py : y * CELL_SIZE + CHARACTER_OFFSET;
   group.position.set(posX, CHARACTER_SIZE / 2, posZ);
   scene.add(group);
 
@@ -331,10 +331,10 @@ function createChaser3D(color, x, y, px, py) {
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
 
-  // Set group position - use pixel coordinates if available, otherwise calculate from grid coordinates
-  // Position at center of cell to match floor positioning
-  const posX = px !== undefined ? px : x * CELL_SIZE + CELL_SIZE / 2;
-  const posZ = py !== undefined ? py : y * CELL_SIZE + CELL_SIZE / 2;
+  // Set group position - use pixel coordinates from server if available (they include CHARACTER_OFFSET)
+  // Otherwise calculate from grid coordinates using the same offset as server
+  const posX = px !== undefined ? px : x * CELL_SIZE + CHARACTER_OFFSET;
+  const posZ = py !== undefined ? py : y * CELL_SIZE + CHARACTER_OFFSET;
   group.position.set(posX, CHARACTER_SIZE / 2, posZ);
   scene.add(group);
 
