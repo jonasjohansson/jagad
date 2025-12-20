@@ -682,7 +682,7 @@ function init() {
       chaserSpeed: 0.4,
       playerInitials: "ABC", // 3-letter initials
       survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
-      chaserSpeedIncreasePerRound: 0.1, // Chaser speed increase per round (10% = 0.10)
+      chaserSpeedIncreasePerRound: 0.02, // Chaser speed increase per round (2% = 0.02)
       view3D: false, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
@@ -1045,7 +1045,7 @@ function init() {
 
     // Chaser speed increase per round control
     charactersFolder
-      .add(guiParams, "chaserSpeedIncreasePerRound", 0, 0.5, 0.01)
+      .add(guiParams, "chaserSpeedIncreasePerRound", 0, 0.05, 0.01)
       .name("Chaser Speed Increase Per Round")
       .onChange((value) => {
         sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, value);
