@@ -78,7 +78,7 @@ const gameState = {
   fugitiveSpeed: 0.4,
   chaserSpeed: 0.4,
   survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
-  chaserSpeedIncreasePerRound: 0.02, // Speed increase per round (2% = 0.02)
+  chaserSpeedIncreasePerRound: 0.01, // Speed increase per round (1% = 0.01)
   itemsEnabled: false, // Toggle for yellow dots/items
   fugitives: [],
   chasers: [],
@@ -162,7 +162,7 @@ function initCharacters() {
       color: COLORS[i], // Color assignment: 0=red, 1=green, 2=blue, 3=yellow
       // Keep chasers at base speed; overridden by global chaserSpeed multiplier
       roundsCompleted: 0, // Track rounds for speed increase
-      speedMultiplier: 1.0, // Speed multiplier starts at 1.0, becomes 1.02 after first round (with 2% increase)
+      speedMultiplier: 1.0, // Speed multiplier starts at 1.0, becomes 1.01 after first round (with 1% increase)
       speed: 1.0,
       spawnPos: { ...pos },
       moveTimer: 0,
@@ -450,8 +450,8 @@ function checkCollisions() {
           if (chaser) {
             chaser.roundsCompleted = (chaser.roundsCompleted || 0) + 1;
             // Speed multiplier: 1.0 + (roundsCompleted * chaserSpeedIncreasePerRound)
-            // After first round: 1.0 + 1 * 0.02 = 1.02 (2% faster)
-            // This multiplies the base chaserSpeed (0.4), so final speed = 0.4 * 1.02 = 0.408
+            // After first round: 1.0 + 1 * 0.01 = 1.01 (1% faster)
+            // This multiplies the base chaserSpeed (0.4), so final speed = 0.4 * 1.01 = 0.404
             chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
             console.log(
               `[SPEED] Chaser ${chaserIndex} (${chaser.color}) - CATCH: roundsCompleted=${chaser.roundsCompleted}, increasePerRound=${
@@ -819,7 +819,7 @@ function gameLoop() {
             if (chaser) {
               chaser.roundsCompleted = (chaser.roundsCompleted || 0) + 1;
               // Speed multiplier: 1.0 + (roundsCompleted * chaserSpeedIncreasePerRound)
-              // After first round: 1.0 + 1 * 0.02 = 1.02 (2% faster)
+              // After first round: 1.0 + 1 * 0.01 = 1.01 (1% faster)
               chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
               console.log(
                 `[SPEED] Chaser ${index} (${chaser.color}) - TIME END: roundsCompleted=${chaser.roundsCompleted}, increasePerRound=${
