@@ -569,6 +569,11 @@ function toggle3DView(enabled) {
       window.lightControllers.directional.show();
       window.lightControllers.point.show();
       window.lightControllers.pathColor.show();
+      window.lightControllers.cameraZoom.show();
+    }
+    // Hide 2D-only controls
+    if (window.view2DControllers) {
+      window.view2DControllers.mazeOpacity.hide();
     }
 
     // Initialize 3D wall colors and path color from current GUI params
@@ -610,6 +615,11 @@ function toggle3DView(enabled) {
       window.lightControllers.directional.hide();
       window.lightControllers.point.hide();
       window.lightControllers.pathColor.hide();
+      window.lightControllers.cameraZoom.hide();
+    }
+    // Show 2D-only controls
+    if (window.view2DControllers) {
+      window.view2DControllers.mazeOpacity.show();
     }
 
     // Cleanup 3D if needed
@@ -739,8 +749,8 @@ function init() {
         }
       });
 
-    // Camera zoom slider
-    view3DFolder
+    // Camera zoom slider (only visible when 3D view is enabled)
+    const cameraZoomCtrl = view3DFolder
       .add(guiParams, "cameraZoom", 0.5, 2.0, 0.01)
       .name("Camera Zoom")
       .onChange((value) => {
@@ -748,6 +758,7 @@ function init() {
           window.render3D.setCameraZoom(value);
         }
       });
+    cameraZoomCtrl.hide(); // Hidden by default
 
     // 3D lighting controls (only visible when 3D view is enabled)
     const ambientLightCtrl = view3DFolder
@@ -829,8 +840,8 @@ function init() {
       });
     pathColorCtrl.hide(); // Hidden by default
 
-    // Maze opacity slider
-    styleFolder
+    // Maze opacity slider (only visible in 2D mode)
+    const mazeOpacityCtrl = styleFolder
       .add(guiParams, "mazeOpacity", 0, 1, 0.01)
       .name("Maze Opacity")
       .onChange((value) => {
@@ -839,6 +850,7 @@ function init() {
           maze.style.opacity = value;
         }
       });
+    // Visible by default (2D mode is default)
 
     // Create Building folder for building image controls
     const buildingFolder = gui.addFolder("Building");
@@ -962,6 +974,10 @@ function init() {
       directional: directionalLightCtrl,
       point: pointLightCtrl,
       pathColor: pathColorCtrl,
+      cameraZoom: cameraZoomCtrl,
+    };
+    window.view2DControllers = {
+      mazeOpacity: mazeOpacityCtrl,
     };
 
     // Join Queue button (only shown when all slots are full)
@@ -972,7 +988,7 @@ function init() {
 
     // Create Characters & Scoring folder
     const charactersFolder = gui.addFolder("Characters & Scoring");
-    charactersFolder.open(); // Open by default
+    charactersFolder.close(); // Closed by default
 
     // AI Skill control
     charactersFolder
