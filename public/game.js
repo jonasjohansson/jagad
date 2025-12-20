@@ -345,6 +345,12 @@ function handleServerMessage(data) {
       break;
     case "playerLeft":
       break;
+    case "roundEnd":
+      // Flash effect when a round ends
+      if (data.chaserColorIndex >= 0 && data.fugitiveColorIndex >= 0) {
+        flashCharacters(data.chaserColorIndex, data.fugitiveColorIndex);
+      }
+      break;
     case "roundsComplete":
       // Show alert when current player completes 10 rounds
       // The server sends this message directly to the player's WebSocket, so if we receive it, it's for us
@@ -431,7 +437,7 @@ function applyServerPositions(positions) {
 }
 
 // Send global speed configuration to server
-function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold) {
+function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold, chaserSpeedIncreasePerRound) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(
       JSON.stringify({
@@ -439,6 +445,7 @@ function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold) {
         fugitiveSpeed,
         chaserSpeed,
         survivalTimeThreshold,
+        chaserSpeedIncreasePerRound,
         // Legacy support
         pacmanSpeed: fugitiveSpeed,
         ghostSpeed: chaserSpeed,
@@ -674,7 +681,8 @@ function init() {
       fugitiveSpeed: 0.4,
       chaserSpeed: 0.4,
       playerInitials: "ABC", // 3-letter initials
-      survivalTimeThreshold: 20, // Seconds required to survive a round (default 20)
+      survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
+      chaserSpeedIncreasePerRound: 0.1, // Chaser speed increase per round (10% = 0.10)
       view3D: false, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
@@ -1017,14 +1025,14 @@ function init() {
       .add(guiParams, "fugitiveSpeed", 0.2, 3, 0.1)
       .name("Fugitive Speed")
       .onChange((value) => {
-        sendSpeedConfig(value, guiParams.chaserSpeed, guiParams.survivalTimeThreshold);
+        sendSpeedConfig(value, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
       });
 
     charactersFolder
       .add(guiParams, "chaserSpeed", 0.2, 3, 0.1)
       .name("Chaser Speed")
       .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, value, guiParams.survivalTimeThreshold);
+        sendSpeedConfig(guiParams.fugitiveSpeed, value, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
       });
 
     // Survival time threshold control
@@ -1032,7 +1040,15 @@ function init() {
       .add(guiParams, "survivalTimeThreshold", 1, 120, 1)
       .name("Survival Duration (seconds)")
       .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, value);
+        sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, value, guiParams.chaserSpeedIncreasePerRound);
+      });
+
+    // Chaser speed increase per round control
+    charactersFolder
+      .add(guiParams, "chaserSpeedIncreasePerRound", 0, 0.5, 0.01)
+      .name("Chaser Speed Increase Per Round")
+      .onChange((value) => {
+        sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, value);
       });
 
     // Character selection: one entry per pacman/ghost/color
@@ -1788,6 +1804,53 @@ function updateCharacterAppearance(character) {
 function updatePosition(element, px, py) {
   element.style.left = px + "px";
   element.style.top = py + "px";
+}
+
+function flashCharacters(chaserColorIndex, fugitiveColorIndex) {
+  // Get the chaser and fugitive elements
+  const chaser = ghosts[chaserColorIndex];
+  const fugitive = pacmen[fugitiveColorIndex];
+
+  if (!chaser || !chaser.element || !fugitive || !fugitive.element) return;
+
+  // Get the color for the flash
+  const colorName = COLORS[chaserColorIndex];
+  const defaultColors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
+  let flashColor = defaultColors[chaserColorIndex];
+
+  // Check for color override
+  if (window.guiParams) {
+    const colorKey = `${colorName}Color`;
+    const overrideColor = window.guiParams[colorKey];
+    if (overrideColor && overrideColor !== defaultColors[chaserColorIndex]) {
+      flashColor = overrideColor;
+    }
+  }
+
+  // Create flash effect using box-shadow
+  const flashDuration = 300; // milliseconds
+  const originalBoxShadow = chaser.element.style.boxShadow;
+  const originalBoxShadowFugitive = fugitive.element.style.boxShadow;
+
+  // Apply flash to chaser
+  chaser.element.style.boxShadow = `0 0 20px ${flashColor}, 0 0 40px ${flashColor}, 0 0 60px ${flashColor}`;
+  chaser.element.style.transition = `box-shadow ${flashDuration}ms ease-out`;
+
+  // Apply flash to fugitive
+  fugitive.element.style.boxShadow = `0 0 20px ${flashColor}, 0 0 40px ${flashColor}, 0 0 60px ${flashColor}`;
+  fugitive.element.style.transition = `box-shadow ${flashDuration}ms ease-out`;
+
+  // Remove flash after duration
+  setTimeout(() => {
+    if (chaser.element) {
+      chaser.element.style.boxShadow = originalBoxShadow;
+      chaser.element.style.transition = "";
+    }
+    if (fugitive.element) {
+      fugitive.element.style.boxShadow = originalBoxShadowFugitive;
+      fugitive.element.style.transition = "";
+    }
+  }, flashDuration);
 }
 
 function checkCollisions() {

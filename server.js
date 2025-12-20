@@ -77,7 +77,8 @@ const gameState = {
   // Global speed multipliers for all fugitives and all chasers (default a bit slower)
   fugitiveSpeed: 0.4,
   chaserSpeed: 0.4,
-  survivalTimeThreshold: 20, // Seconds required to survive a round (default 20)
+  survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
+  chaserSpeedIncreasePerRound: 0.1, // Speed increase per round (10% = 0.10)
   itemsEnabled: false, // Toggle for yellow dots/items
   fugitives: [],
   chasers: [],
@@ -161,6 +162,7 @@ function initCharacters() {
       color: COLORS[i], // Color assignment: 0=red, 1=green, 2=blue, 3=yellow
       // Keep chasers at base speed; overridden by global chaserSpeed multiplier
       roundsCompleted: 0, // Track rounds for speed increase
+      speedMultiplier: 1.0, // Speed multiplier starts at 1.0, becomes 1.1 after first round (with 10% increase)
       speed: 1.0,
       spawnPos: { ...pos },
       moveTimer: 0,
@@ -424,9 +426,10 @@ function checkCollisions() {
           if (chaserPlayerData.stats.currentRoundStartTime) {
             const captureTime = Date.now() - chaserPlayerData.stats.currentRoundStartTime;
             chaserPlayerData.stats.totalCaptureTime += captureTime;
-            // Chaser score is total time (lower is better, but we'll display it)
-            chaserPlayerData.stats.chaserScore = chaserPlayerData.stats.totalCaptureTime;
           }
+          // Chaser gets 1 point for each catch
+          chaserPlayerData.stats.catches = (chaserPlayerData.stats.catches || 0) + 1;
+          chaserPlayerData.stats.chaserScore = chaserPlayerData.stats.catches;
 
           // Update fugitive score: add items collected this round
           // Note: When caught, fugitive doesn't get survival point, only items
@@ -442,12 +445,36 @@ function checkCollisions() {
           const [playerId, player] = chaserPlayer;
           player.stats.rounds++;
 
-          // Increase chaser speed by 1% per round
+          // Increase chaser speed by configurable percentage per round
           const chaser = gameState.chasers[chaserIndex];
           if (chaser) {
             chaser.roundsCompleted = (chaser.roundsCompleted || 0) + 1;
-            // Speed multiplier: 1.0 + (rounds * 0.01) = 1% per round
-            chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * 0.01;
+            // Speed multiplier: 1.0 + (roundsCompleted * chaserSpeedIncreasePerRound)
+            // After first round: 1.0 + 1 * 0.1 = 1.1 (10% faster)
+            // This multiplies the base chaserSpeed (0.4), so final speed = 0.4 * 1.1 = 0.44
+            chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
+          }
+
+          // Send round end flash event to both players
+          if (chaserPlayer) {
+            const [chaserPlayerId, chaserPlayerData] = chaserPlayer;
+            chaserPlayerData.ws.send(
+              JSON.stringify({
+                type: "roundEnd",
+                chaserColorIndex: chaserIndex,
+                fugitiveColorIndex: fugitiveIndex,
+              })
+            );
+          }
+          if (fugitivePlayer) {
+            const [fugitivePlayerId, fugitivePlayerData] = fugitivePlayer;
+            fugitivePlayerData.ws.send(
+              JSON.stringify({
+                type: "roundEnd",
+                chaserColorIndex: chaserIndex,
+                fugitiveColorIndex: fugitiveIndex,
+              })
+            );
           }
 
           if (player.stats.rounds >= 10) {
@@ -654,6 +681,37 @@ function gameLoop() {
             player.stats.fugitiveScore = player.stats.rounds + 1 + player.stats.itemsCollected;
             player.stats.rounds++;
 
+            // Find matching chaser for flash effect
+            const matchingChaser = gameState.chasers.find((c) => c && c.color === pacman.color);
+            const chaserIndex = matchingChaser ? gameState.chasers.indexOf(matchingChaser) : -1;
+            const fugitiveIndex = index;
+
+            // Send round end flash event
+            player.ws.send(
+              JSON.stringify({
+                type: "roundEnd",
+                chaserColorIndex: chaserIndex,
+                fugitiveColorIndex: fugitiveIndex,
+              })
+            );
+
+            // Also send to matching chaser if they exist
+            if (chaserIndex >= 0) {
+              const chaserPlayer = Array.from(gameState.players.entries()).find(
+                ([id, p]) => p.type === "chaser" && p.colorIndex === chaserIndex && p.connected
+              );
+              if (chaserPlayer) {
+                const [chaserPlayerId, chaserPlayerData] = chaserPlayer;
+                chaserPlayerData.ws.send(
+                  JSON.stringify({
+                    type: "roundEnd",
+                    chaserColorIndex: chaserIndex,
+                    fugitiveColorIndex: fugitiveIndex,
+                  })
+                );
+              }
+            }
+
             // Check if player completed 10 rounds
             if (player.stats.rounds >= 10) {
               player.stats.currentRoundStartTime = null;
@@ -697,8 +755,49 @@ function gameLoop() {
             // Round ended by time - fugitive survived, chaser didn't catch
             // Chaser gets penalty (add survival threshold time to total time)
             player.stats.totalCaptureTime += gameState.survivalTimeThreshold * 1000;
-            player.stats.chaserScore = player.stats.totalCaptureTime;
+            // Chaser score is number of catches (no point added for this round)
+            player.stats.chaserScore = player.stats.catches || 0;
             player.stats.rounds++;
+
+            // Increase chaser speed for next round
+            const chaser = gameState.chasers[index];
+            if (chaser) {
+              chaser.roundsCompleted = (chaser.roundsCompleted || 0) + 1;
+              // Speed multiplier: 1.0 + (roundsCompleted * chaserSpeedIncreasePerRound)
+              // After first round: 1.0 + 1 * 0.1 = 1.1 (10% faster)
+              chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
+            }
+
+            // Find matching fugitive for flash effect
+            const matchingFugitive = gameState.fugitives.find((f) => f && f.color === chaser.color);
+            const fugitiveIndex = matchingFugitive ? gameState.fugitives.indexOf(matchingFugitive) : -1;
+            const chaserIndex = index;
+
+            // Send round end flash event
+            player.ws.send(
+              JSON.stringify({
+                type: "roundEnd",
+                chaserColorIndex: chaserIndex,
+                fugitiveColorIndex: fugitiveIndex,
+              })
+            );
+
+            // Also send to matching fugitive if they exist
+            if (fugitiveIndex >= 0) {
+              const fugitivePlayer = Array.from(gameState.players.entries()).find(
+                ([id, p]) => p.type === "fugitive" && p.colorIndex === fugitiveIndex && p.connected
+              );
+              if (fugitivePlayer) {
+                const [fugitivePlayerId, fugitivePlayerData] = fugitivePlayer;
+                fugitivePlayerData.ws.send(
+                  JSON.stringify({
+                    type: "roundEnd",
+                    chaserColorIndex: chaserIndex,
+                    fugitiveColorIndex: fugitiveIndex,
+                  })
+                );
+              }
+            }
 
             // Check if player completed 10 rounds
             if (player.stats.rounds >= 10) {
@@ -783,7 +882,8 @@ function gameLoop() {
 
     // All chasers move with global chaser speed, multiplied by rounds completed
     const speedMultiplier = chaser.speedMultiplier || 1.0;
-    moveCharacter(chaser, gameState.chaserSpeed * speedMultiplier);
+    const finalSpeed = gameState.chaserSpeed * speedMultiplier;
+    moveCharacter(chaser, finalSpeed);
 
     if (!isAtTarget(chaser)) {
       return;
@@ -1003,11 +1103,12 @@ function handleJoin(ws, playerId, data) {
   // If this player was already controlling a character, free up their old color now that the new join is valid
   const existing = gameState.players.get(playerId);
   let playerStats = {
-    chaserScore: 0, // Total time to catch fugitive (in milliseconds, lower is better)
+    chaserScore: 0, // Number of catches (points)
+    catches: 0, // Number of times chaser caught fugitive
     fugitiveScore: 0, // Points based on evasion + items collected
     rounds: 0, // Total rounds completed
     currentRoundStartTime: null, // When current round started
-    totalCaptureTime: 0, // Total time spent capturing (for chaser scoring)
+    totalCaptureTime: 0, // Total time spent capturing (for tracking, not scoring)
     itemsCollected: 0, // Total items collected across all rounds
   };
   if (existing) {
@@ -1089,6 +1190,9 @@ function handleSetSpeeds(data) {
   }
   if (typeof survivalTimeThreshold === "number") {
     gameState.survivalTimeThreshold = Math.max(1, Math.min(120, survivalTimeThreshold));
+  }
+  if (typeof chaserSpeedIncreasePerRound === "number") {
+    gameState.chaserSpeedIncreasePerRound = Math.max(0, Math.min(0.5, chaserSpeedIncreasePerRound));
   }
 }
 

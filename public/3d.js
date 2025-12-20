@@ -297,14 +297,7 @@ function createFugitive3D(color, x, y, px, py) {
   // Create a point light as a child of the character group
   const pointLight = new THREE.PointLight(colorHex, 40, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
-  pointLight.castShadow = true; // Enable shadows so light is blocked by walls
-  pointLight.shadow.mapSize.width = 2048; // Higher shadow map resolution for better quality
-  pointLight.shadow.mapSize.height = 2048;
-  pointLight.shadow.camera.near = 0.5; // Increased near plane to avoid self-shadowing
-  pointLight.shadow.camera.far = 200;
-  pointLight.shadow.bias = 0.001; // Increased bias to prevent shadow acne
-  pointLight.shadow.normalBias = 0.05; // Increased normal bias
-  pointLight.shadow.radius = 8; // Larger soft shadow radius
+  pointLight.castShadow = false; // Don't cast shadows from avatars
   pointLight.intensity = 40; // Default intensity
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
@@ -357,14 +350,7 @@ function createChaser3D(color, x, y, px, py) {
   // Create a point light as a child of the character group
   const pointLight = new THREE.PointLight(colorHex, 40, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
-  pointLight.castShadow = true; // Enable shadows so light is blocked by walls
-  pointLight.shadow.mapSize.width = 2048; // Higher shadow map resolution for better quality
-  pointLight.shadow.mapSize.height = 2048;
-  pointLight.shadow.camera.near = 0.5; // Increased near plane to avoid self-shadowing
-  pointLight.shadow.camera.far = 200;
-  pointLight.shadow.bias = 0.001; // Increased bias to prevent shadow acne
-  pointLight.shadow.normalBias = 0.05; // Increased normal bias
-  pointLight.shadow.radius = 8; // Larger soft shadow radius
+  pointLight.castShadow = false; // Don't cast shadows from avatars
   pointLight.intensity = 40; // Default intensity
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
