@@ -582,6 +582,19 @@ function toggle3DView(enabled) {
       if (window.render3D.setPathColor) {
         window.render3D.setPathColor(guiParams.pathColor);
       }
+      // Initialize color overrides if set (only if different from default)
+      const defaultColors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
+      COLORS.forEach((colorName, colorIndex) => {
+        const colorKey = `${colorName}Color`;
+        const overrideColor = guiParams[colorKey];
+        if (overrideColor && overrideColor !== defaultColors[colorIndex] && window.render3D.setColorOverride) {
+          window.render3D.setColorOverride(colorIndex, overrideColor);
+        }
+      });
+      // Initialize camera zoom
+      if (window.render3D.setCameraZoom) {
+        window.render3D.setCameraZoom(guiParams.cameraZoom);
+      }
     }
   } else {
     // Show 2D view, hide 3D canvas
@@ -637,7 +650,8 @@ function init() {
     if (gui) gui.destroy(); // Destroy existing GUI if any
     gui = new GUI({ container: guiContainer });
 
-    const guiParams = {
+    // Make guiParams global so it can be accessed by updateCharacterAppearance
+    window.guiParams = {
       serverTarget: "Render",
       difficulty: 0.8,
       fugitiveSpeed: 0.4,
@@ -645,6 +659,7 @@ function init() {
       playerInitials: "ABC", // 3-letter initials
       view3D: false, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
+      cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
       ambientLightIntensity: 0.1, // Global ambient light intensity
       directionalLightIntensity: 0.3, // Global directional light intensity
       pointLightIntensity: 100, // Point light intensity for characters (0-400 range)
@@ -659,6 +674,10 @@ function init() {
       buildingRealY: 9, // Building real image Y position offset (px)
       buildingRealBlendMode: "hard-light", // Building real image blend mode
       mazeOpacity: 1.0, // Maze opacity (0-1)
+      redColor: "#ff0000", // Red color override
+      greenColor: "#00ff00", // Green color override
+      blueColor: "#0000ff", // Blue color override
+      yellowColor: "#ffff00", // Yellow color override
       startGameCycle: () => startGame(),
       resetGameCycle: () => restartGame(),
       joinQueue: () => joinQueue(),
@@ -717,6 +736,16 @@ function init() {
           // Set camera type based on selection
           const shouldBeOrthographic = value === "Orthographic";
           window.render3D.setCameraType(shouldBeOrthographic);
+        }
+      });
+
+    // Camera zoom slider
+    view3DFolder
+      .add(guiParams, "cameraZoom", 0.5, 2.0, 0.01)
+      .name("Camera Zoom")
+      .onChange((value) => {
+        if (view3D && window.render3D && window.render3D.setCameraZoom) {
+          window.render3D.setCameraZoom(value);
         }
       });
 
@@ -982,9 +1011,9 @@ function init() {
 
     // Add all fugitives first
     COLORS.forEach((color, i) => {
-      const colorName = color.charAt(0).toUpperCase() + color.slice(1);
-      const fugitiveName = fugitiveNames[i] || `${colorName} Fugitive`;
-      const fugitiveKey = `${colorName} Fugitive (${fugitiveName})`;
+      const teamNumber = i + 1;
+      const fugitiveName = fugitiveNames[i] || `Team ${teamNumber}`;
+      const fugitiveKey = `Team ${teamNumber} Fugitive (${fugitiveName})`;
 
       joinActions[fugitiveKey] = () => {
         joinAsCharacter("fugitive", i, guiParams.playerInitials);
@@ -996,8 +1025,8 @@ function init() {
 
     // Then add all chasers
     COLORS.forEach((color, i) => {
-      const colorName = color.charAt(0).toUpperCase() + color.slice(1);
-      const chaserKey = `${colorName} Chaser`;
+      const teamNumber = i + 1;
+      const chaserKey = `Team ${teamNumber} Chaser`;
 
       joinActions[chaserKey] = () => {
         joinAsCharacter("chaser", i, guiParams.playerInitials);
@@ -1005,6 +1034,52 @@ function init() {
 
       const chaserCtrl = charactersFolder.add(joinActions, chaserKey);
       window.characterControllers.ghost[i] = chaserCtrl;
+    });
+
+    // Color controls for each team (Team 1, Team 2, Team 3, Team 4)
+    COLORS.forEach((colorName, colorIndex) => {
+      const colorKey = `${colorName}Color`;
+      const teamNumber = colorIndex + 1;
+      const displayName = `Team ${teamNumber} Color`;
+
+      const defaultColors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
+      charactersFolder
+        .addColor(guiParams, colorKey)
+        .name(displayName)
+        .onChange((value) => {
+          // Check if value is the default color (means user wants to use default)
+          const isDefault = value === defaultColors[colorIndex];
+
+          // Update 3D characters of this color (both fugitive and chaser)
+          if (view3D && window.render3D && window.render3D.setColorOverride) {
+            window.render3D.setColorOverride(colorIndex, isDefault ? null : value);
+          }
+
+          // Update 2D fugitive of this color
+          if (pacmen[colorIndex] && pacmen[colorIndex].element) {
+            if (isDefault) {
+              // Reset to default color
+              updateCharacterAppearance(pacmen[colorIndex]);
+            } else {
+              pacmen[colorIndex].element.style.background = value;
+              pacmen[colorIndex].element.style.borderColor = value;
+              // Remove predefined color classes
+              COLORS.forEach((c) => pacmen[colorIndex].element.classList.remove(c));
+            }
+          }
+
+          // Update 2D chaser of this color
+          if (ghosts[colorIndex] && ghosts[colorIndex].element) {
+            if (isDefault) {
+              // Reset to default color
+              updateCharacterAppearance(ghosts[colorIndex]);
+            } else {
+              ghosts[colorIndex].element.style.borderColor = value;
+              // Remove predefined color classes
+              COLORS.forEach((c) => ghosts[colorIndex].element.classList.remove(c));
+            }
+          }
+        });
     });
 
     // Score display
@@ -1548,6 +1623,28 @@ function updateCharacterAppearance(character) {
 
   // Remove old color classes
   COLORS.forEach((c) => el.classList.remove(c));
+
+  // Check for color overrides first
+  if (character.color) {
+    const colorIndex = COLORS.indexOf(character.color.toLowerCase());
+    if (colorIndex >= 0 && window.guiParams) {
+      const colorKey = `${COLORS[colorIndex]}Color`;
+      const overrideColor = window.guiParams[colorKey];
+      const defaultColors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
+      // Only apply override if it's different from default
+      if (overrideColor && overrideColor !== defaultColors[colorIndex]) {
+        if (isPacman) {
+          el.style.background = overrideColor;
+          el.style.borderColor = overrideColor;
+        } else if (isGhost) {
+          el.style.borderColor = overrideColor;
+        }
+        // Remove predefined color classes
+        COLORS.forEach((c) => el.classList.remove(c));
+        return;
+      }
+    }
+  }
 
   // Update color
   if (character.color) {

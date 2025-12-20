@@ -15,6 +15,8 @@ const COLORS = ["red", "green", "blue", "yellow"];
 let scene, camera, renderer;
 let orthographicCamera, perspectiveCamera;
 let useOrthographic = true; // Default to orthographic
+let cameraZoom = 1.2; // Camera zoom level
+let baseViewSize = 0; // Base view size (calculated on init)
 let fugitives3D = [];
 let chasers3D = [];
 let items3D = [];
@@ -23,6 +25,7 @@ let fugitiveLights = []; // Point lights for fugitives
 let chaserLights = []; // Point lights for chasers
 let ambientLight3D, directionalLight3D; // Global lights for intensity control
 let innerWallMaterial3D, outerWallMaterial3D, floorMaterial3D, teleportMaterial3D; // Materials for color control
+let colorOverrides = [null, null, null, null]; // Color overrides for each color index (red, green, blue, yellow)
 
 // Initialize 3D rendering
 function init3D() {
@@ -31,7 +34,8 @@ function init3D() {
   scene.background = null; // Transparent background so building image is visible
 
   // Create both orthographic and perspective cameras
-  const viewSize = Math.max(COLS * CELL_SIZE, ROWS * CELL_SIZE) * 1.2;
+  baseViewSize = Math.max(COLS * CELL_SIZE, ROWS * CELL_SIZE) * 1.0;
+  const viewSize = baseViewSize * cameraZoom;
   const aspect = window.innerWidth / window.innerHeight;
 
   // Orthographic camera
@@ -60,6 +64,7 @@ function init3D() {
   // Calculate camera distance to fit the entire level in view
   // Using a wider field of view and positioning camera higher and further back
   perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
+  perspectiveCamera.zoom = cameraZoom;
 
   // Position camera high and at an angle to see the whole level
   const cameraHeight = levelDiagonal * 0.8; // Higher up
@@ -257,7 +262,10 @@ function createFugitive3D(color, x, y, px, py) {
 
   // Create fugitive as a simple sphere
   const geometry = new THREE.SphereGeometry(CHARACTER_SIZE / 2, 16, 16);
-  const colorHex = getColorHex(color);
+  // Find color index and use override if set, otherwise use individual color
+  const colorIndex = COLORS.indexOf(color.toLowerCase());
+  const colorHex =
+    colorIndex >= 0 && colorOverrides[colorIndex] !== null ? new THREE.Color(colorOverrides[colorIndex]).getHex() : getColorHex(color);
   const material = new THREE.MeshStandardMaterial({
     color: colorHex,
     emissive: 0x000000, // No emissive - rely on lights
@@ -314,7 +322,10 @@ function createChaser3D(color, x, y, px, py) {
 
   // Create chaser as a simple cube
   const geometry = new THREE.BoxGeometry(CHARACTER_SIZE, CHARACTER_SIZE, CHARACTER_SIZE);
-  const colorHex = getColorHex(color);
+  // Find color index and use override if set, otherwise use individual color
+  const colorIndex = COLORS.indexOf(color.toLowerCase());
+  const colorHex =
+    colorIndex >= 0 && colorOverrides[colorIndex] !== null ? new THREE.Color(colorOverrides[colorIndex]).getHex() : getColorHex(color);
   const material = new THREE.MeshStandardMaterial({
     color: colorHex,
     emissive: 0x000000, // No emissive - rely on lights
@@ -417,6 +428,19 @@ function updatePositions3D(positions) {
       // Use pixel coordinates if available for accurate positioning
       chasers3D[index] = createChaser3D(pos.color, pos.x, pos.y, pos.px, pos.py);
     } else {
+      // Update color if override is set
+      const colorIndex = COLORS.indexOf(pos.color ? pos.color.toLowerCase() : "");
+      if (colorIndex >= 0 && colorOverrides[colorIndex] !== null) {
+        const color = new THREE.Color(colorOverrides[colorIndex]);
+        chasers3D[index].mesh.children.forEach((child) => {
+          if (child instanceof THREE.Mesh && child.material) {
+            child.material.color.copy(color);
+          }
+          if (child instanceof THREE.PointLight) {
+            child.color.copy(color);
+          }
+        });
+      }
       // Update group position - convert server's px/py (with CHARACTER_OFFSET) to centered position
       if (pos.px !== undefined && pos.py !== undefined) {
         chasers3D[index].mesh.position.x = pos.px - CHARACTER_OFFSET + CELL_SIZE / 2;
@@ -453,7 +477,7 @@ function onWindowResize3D() {
 
   if (useOrthographic && orthographicCamera) {
     // Update orthographic camera bounds
-    const viewSize = Math.max(COLS * CELL_SIZE, ROWS * CELL_SIZE) * 1.2;
+    const viewSize = baseViewSize * cameraZoom;
     if (aspect >= 1) {
       orthographicCamera.left = (-viewSize * aspect) / 2;
       orthographicCamera.right = (viewSize * aspect) / 2;
@@ -468,10 +492,16 @@ function onWindowResize3D() {
     orthographicCamera.updateProjectionMatrix();
   } else if (perspectiveCamera) {
     perspectiveCamera.aspect = aspect;
+    perspectiveCamera.zoom = cameraZoom;
     perspectiveCamera.updateProjectionMatrix();
   }
 
   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function setCameraZoom(zoom) {
+  cameraZoom = zoom;
+  onWindowResize3D(); // Update camera with new zoom
 }
 
 function toggleCamera() {
@@ -564,6 +594,69 @@ function setPathColor(colorHex) {
   }
 }
 
+function setColorOverride(colorIndex, colorHex) {
+  // Store color override for this color index (null means use individual colors)
+  if (colorIndex >= 0 && colorIndex < 4) {
+    colorOverrides[colorIndex] = colorHex;
+
+    // Convert hex string to THREE.Color if not null
+    const color = colorHex !== null ? new THREE.Color(colorHex) : null;
+    const targetColorName = COLORS[colorIndex];
+
+    // Update all existing fugitives of this color
+    // We need to check positions to find which fugitive has this color
+    // For now, update by index (index should match color index based on spawn order)
+    if (fugitives3D[colorIndex] && fugitives3D[colorIndex].mesh) {
+      const fugitive = fugitives3D[colorIndex];
+      fugitive.mesh.children.forEach((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          if (color) {
+            child.material.color.copy(color);
+          } else {
+            // Reset to original color
+            const originalColor = getColorHex(targetColorName);
+            child.material.color.setHex(originalColor);
+          }
+        }
+        if (child instanceof THREE.PointLight) {
+          if (color) {
+            child.color.copy(color);
+          } else {
+            // Reset to original color
+            const originalColor = getColorHex(targetColorName);
+            child.color.setHex(originalColor);
+          }
+        }
+      });
+    }
+
+    // Update all existing chasers of this color
+    if (chasers3D[colorIndex] && chasers3D[colorIndex].mesh) {
+      const chaser = chasers3D[colorIndex];
+      chaser.mesh.children.forEach((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          if (color) {
+            child.material.color.copy(color);
+          } else {
+            // Reset to original color
+            const originalColor = getColorHex(targetColorName);
+            child.material.color.setHex(originalColor);
+          }
+        }
+        if (child instanceof THREE.PointLight) {
+          if (color) {
+            child.color.copy(color);
+          } else {
+            // Reset to original color
+            const originalColor = getColorHex(targetColorName);
+            child.color.setHex(originalColor);
+          }
+        }
+      });
+    }
+  }
+}
+
 // Export functions for use in game.js
 window.render3D = {
   init: init3D,
@@ -590,6 +683,8 @@ window.render3D = {
   setInnerWallColor: setInnerWallColor,
   setOuterWallColor: setOuterWallColor,
   setPathColor: setPathColor,
+  setColorOverride: setColorOverride,
+  setCameraZoom: setCameraZoom,
   useOrthographic: () => useOrthographic,
   initialized: false,
 };
