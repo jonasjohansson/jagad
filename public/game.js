@@ -1024,7 +1024,15 @@ function init() {
       .add(guiParams, "chaserSpeed", 0.2, 3, 0.1)
       .name("Chaser Speed")
       .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, value);
+        sendSpeedConfig(guiParams.fugitiveSpeed, value, guiParams.survivalTimeThreshold);
+      });
+
+    // Survival time threshold control
+    charactersFolder
+      .add(guiParams, "survivalTimeThreshold", 1, 120, 1)
+      .name("Survival Duration (seconds)")
+      .onChange((value) => {
+        sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, value);
       });
 
     // Character selection: one entry per pacman/ghost/color

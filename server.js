@@ -681,7 +681,7 @@ function gameLoop() {
       }
     }
 
-    // Also check for chaser (ghost) 30-second rounds
+    // Also check for chaser (ghost) survival time threshold rounds
     const isPlayerControlledGhost = Array.from(gameState.players.values()).some(
       (p) => p.type === "ghost" && p.colorIndex === index && p.connected
     );
@@ -693,7 +693,7 @@ function gameLoop() {
         const [playerId, player] = ghostPlayer;
         if (player.stats.currentRoundStartTime) {
           const roundTime = (Date.now() - player.stats.currentRoundStartTime) / 1000;
-          if (roundTime >= 30) {
+          if (roundTime >= gameState.survivalTimeThreshold) {
             // Round ended by time - fugitive survived, chaser didn't catch
             // Chaser gets penalty (add survival threshold time to total time)
             player.stats.totalCaptureTime += gameState.survivalTimeThreshold * 1000;
