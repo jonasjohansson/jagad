@@ -113,7 +113,7 @@ let playerType = "pacman"; // "pacman" or "ghost"
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
 let survivalTimeThreshold = 30; // seconds - ghost gets point after surviving this long
 let gameStarted = false;
-let view3D = false; // Toggle for 3D view
+let view3D = true; // Toggle for 3D view
 let lastTime = 0;
 let animationId = null;
 let gui = null;
@@ -683,12 +683,12 @@ function init() {
       playerInitials: "ABC", // 3-letter initials
       survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
       chaserSpeedIncreasePerRound: 0.01, // Chaser speed increase per round (1% = 0.01)
-      view3D: false, // Toggle for 3D view
+      view3D: true, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
       ambientLightIntensity: 0.1, // Global ambient light intensity
       directionalLightIntensity: 0.3, // Global directional light intensity
-      pointLightIntensity: 100, // Point light intensity for characters (0-400 range)
+      pointLightIntensity: 300, // Point light intensity for characters (0-400 range)
       pathColor: "#dddddd", // Path/floor color in hex (light gray)
       innerWallColor: "#ffffff", // Inner wall color in hex (white)
       outerWallColor: "#ffffff", // Outer wall color in hex (white)
@@ -698,7 +698,7 @@ function init() {
       buildingRealScale: 1.1, // Building real image scale (0.1-3.0)
       buildingRealX: 9, // Building real image X position offset (px)
       buildingRealY: 9, // Building real image Y position offset (px)
-      buildingRealBlendMode: "hard-light", // Building real image blend mode
+      buildingRealBlendMode: "soft-light", // Building real image blend mode
       mazeOpacity: 1.0, // Maze opacity (0-1)
       redColor: "#ff0000", // Red color override
       greenColor: "#00ff00", // Green color override
@@ -1185,6 +1185,11 @@ function init() {
 
     // Send initial speed config to server (including chaserSpeedIncreasePerRound)
     sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
+
+    // Enable 3D view on startup if default is true
+    if (guiParams.view3D) {
+      toggle3DView(true);
+    }
   }
   const maze = document.getElementById("maze");
   maze.style.width = COLS * CELL_SIZE + "px";

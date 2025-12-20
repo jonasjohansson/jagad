@@ -295,10 +295,10 @@ function createFugitive3D(color, x, y, px, py) {
   group.add(fugitive);
 
   // Create a point light as a child of the character group
-  const pointLight = new THREE.PointLight(colorHex, 40, 200);
+  const pointLight = new THREE.PointLight(colorHex, 300, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
   pointLight.castShadow = false; // Don't cast shadows from avatars
-  pointLight.intensity = 40; // Default intensity
+  pointLight.intensity = 300; // Default intensity
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
@@ -348,10 +348,10 @@ function createChaser3D(color, x, y, px, py) {
   group.add(chaser);
 
   // Create a point light as a child of the character group
-  const pointLight = new THREE.PointLight(colorHex, 40, 200);
+  const pointLight = new THREE.PointLight(colorHex, 300, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
   pointLight.castShadow = false; // Don't cast shadows from avatars
-  pointLight.intensity = 40; // Default intensity
+  pointLight.intensity = 300; // Default intensity
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
