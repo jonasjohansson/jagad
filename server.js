@@ -78,9 +78,9 @@ const gameState = {
   aiDifficulty: 0.8,
   // Global speed multipliers for all fugitives and all chasers
   fugitiveSpeed: 0.4,
-  chaserSpeed: 0.6, // Increased for more responsive movement
+  chaserSpeed: 0.6, // Constant speed for all chasers (does not increase)
   survivalTimeThreshold: 10, // Not used in new game mode
-  chaserSpeedIncreasePerRound: 0.01, // Not used in new game mode
+  chaserSpeedIncreasePerRound: 0.01, // Not used in new game mode - chaser speed remains constant
   itemsEnabled: false, // Toggle for yellow dots/items
   fugitives: [],
   chasers: [],
@@ -150,11 +150,30 @@ function initCharacters() {
     itemsCollected: 0, // Number of collectible items collected this round
   }));
 
-  // Initialize all chaser slots as null (will be created when players join them)
-  gameState.chasers[0] = null;
-  gameState.chasers[1] = null;
-  gameState.chasers[2] = null;
-  gameState.chasers[3] = null;
+  // Initialize all chaser slots (all chasers are visible from start at spawn positions)
+  chaserSpawnPositions.forEach((pos, index) => {
+    if (index < 4) {
+      gameState.chasers[index] = {
+        x: pos.x,
+        y: pos.y,
+        px: pos.x * CELL_SIZE + CHARACTER_OFFSET,
+        py: pos.y * CELL_SIZE + CHARACTER_OFFSET,
+        targetX: pos.x,
+        targetY: pos.y,
+        color: "white",
+        speed: 1.0,
+        spawnPos: { ...pos },
+        moveTimer: 0,
+        lastDirX: 0,
+        lastDirY: 0,
+        positionHistory: [],
+        dirX: 0,
+        dirY: 0,
+        nextDirX: 0,
+        nextDirY: 0,
+      };
+    }
+  });
 }
 
 // ========== GAME LOGIC FUNCTIONS ==========
@@ -1189,7 +1208,11 @@ function sendGameState(ws) {
           .filter((p) => p !== null),
         chasers: gameState.chasers
           .map((g, index) => {
-            if (!g) return null; // Don't send chasers that don't exist
+            if (!g) return null;
+            // Check if this chaser is player-controlled
+            const isPlayerControlled = Array.from(gameState.players.values()).some(
+              (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
+            );
             return {
               index: index, // Include index so client knows which chaser this is
               x: g.x,
@@ -1199,6 +1222,7 @@ function sendGameState(ws) {
               targetX: g.targetX,
               targetY: g.targetY,
               color: g.color,
+              isPlayerControlled: isPlayerControlled, // Indicate if player-controlled for opacity
             };
           })
           .filter((g) => g !== null),

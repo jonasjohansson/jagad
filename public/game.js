@@ -463,13 +463,17 @@ function applyServerPositions(positions) {
   pacmen.forEach((fugitive, index) => {
     if (fugitive && !activeFugitiveIndices.has(index)) {
       // Hide the fugitive element (it's been caught and removed)
+      // Keep the color/appearance intact so it's preserved when shown again
       if (fugitive.element) {
         fugitive.element.style.display = "none";
       }
     } else if (fugitive && activeFugitiveIndices.has(index)) {
       // Show the fugitive element if it's active again (after game reset)
+      // Restore appearance to ensure color is preserved
       if (fugitive.element) {
         fugitive.element.style.display = "";
+        // Restore appearance to ensure color and styling are preserved
+        updateCharacterAppearance(fugitive);
       }
     }
   });
