@@ -350,7 +350,7 @@ function handleServerMessage(data) {
       // Show alert when current player completes 10 rounds
       // The server sends this message directly to the player's WebSocket, so if we receive it, it's for us
       alert(
-        `You've completed 10 rounds!\n\nChaser Score: ${data.chaserScore}\nFugitive Score: ${data.fugitiveScore}\nTotal Rounds: ${data.totalRounds}`
+        `You've completed 10 rounds!\n\nChaser Score: ${data.chaserScore}\nTotal Rounds: ${data.totalRounds}`
       );
       // Clear our character selection (we've been kicked out)
       myCharacterType = null;
@@ -494,7 +494,6 @@ function updateScoreDisplay() {
   const myPlayer = connectedPlayers.get(myPlayerId);
   if (myPlayer && myPlayer.stats) {
     window.scoreDisplay.chaserScore.setValue(myPlayer.stats.chaserScore || 0);
-    window.scoreDisplay.fugitiveScore.setValue(myPlayer.stats.fugitiveScore || 0);
     window.scoreDisplay.rounds.setValue(myPlayer.stats.rounds || 0);
   }
 }
@@ -1086,12 +1085,12 @@ function init() {
 
     // Players can only join as chasers (fugitives are AI-controlled)
     // Add chasers (all are white and can catch any fugitive)
-    // Show all 4 chaser slots (0, 1, 2, 3)
+    // Show all 4 chaser slots (0, 1, 2, 3) but label them as Chaser 1, 2, 3, 4
     for (let i = 0; i < 4; i++) {
-      const chaserKey = `Chaser ${i}`;
+      const chaserKey = `Chaser ${i + 1}`; // Display as 1-based (Chaser 1, 2, 3, 4)
 
       joinActions[chaserKey] = () => {
-        joinAsCharacter("chaser", i, guiParams.playerInitials);
+        joinAsCharacter("chaser", i, guiParams.playerInitials); // Still use 0-based index internally
       };
 
       const chaserCtrl = charactersFolder.add(joinActions, chaserKey);
@@ -1175,7 +1174,6 @@ function init() {
     // Score display
     window.scoreDisplay = {
       chaserScore: charactersFolder.add({ value: 0 }, "value").name("Chaser Score").disable(),
-      fugitiveScore: charactersFolder.add({ value: 0 }, "value").name("Fugitive Score").disable(),
       rounds: charactersFolder.add({ value: 0 }, "value").name("Rounds").disable(),
     };
 
