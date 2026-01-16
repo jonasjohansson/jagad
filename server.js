@@ -529,6 +529,28 @@ function resetGame() {
   gameState.gameStartTime = null;
   gameState.caughtFugitives.clear();
   
+  // Clear all player selections - players lose their chaser selection when game resets
+  // Free up all chaser slots (except 0 which is always present)
+  gameState.availableColors.chaser = [1, 2, 3];
+  
+  // Remove chasers 1, 2, 3 (they only exist when players join)
+  gameState.chasers[1] = null;
+  gameState.chasers[2] = null;
+  gameState.chasers[3] = null;
+  
+  // Disconnect all players from their chasers
+  gameState.players.forEach((player, playerId) => {
+    if (player.type === "chaser" && player.colorIndex > 0) {
+      // Free up the chaser slot
+      if (!gameState.availableColors.chaser.includes(player.colorIndex)) {
+        gameState.availableColors.chaser.push(player.colorIndex);
+        gameState.availableColors.chaser.sort();
+      }
+      // Remove player from controlling the chaser
+      gameState.players.delete(playerId);
+    }
+  });
+  
   // Reset all characters to spawn positions
   initCharacters();
   

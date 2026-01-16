@@ -378,8 +378,17 @@ function handleServerMessage(data) {
       // A fugitive was caught - could show visual feedback here
       break;
     case "gameReset":
-      // Game was reset - clear caught state
+      // Game was reset - clear caught state and player selection
       gameStarted = false;
+      // Clear our character selection (players lose selection when game resets)
+      myCharacterType = null;
+      myColorIndex = null;
+      // Clear visual selection
+      [...pacmen, ...ghosts].forEach((char) => {
+        if (char?.element) char.element.classList.remove("selected");
+      });
+      currentPacman = null;
+      currentGhost = null;
       break;
   }
 }
