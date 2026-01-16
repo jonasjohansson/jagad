@@ -274,16 +274,11 @@ function handleServerMessage(data) {
       myColorIndex = newColorIndex;
 
       // Auto-select the character we joined as so the GUI and local selection match the server
-      const colorName = COLORS[myColorIndex].charAt(0).toUpperCase() + COLORS[myColorIndex].slice(1);
-      // Support both new and legacy type names
-      if (myCharacterType === "fugitive" || myCharacterType === "pacman") {
-        selectCharacter("pacman", colorName);
-      } else if (myCharacterType === "chaser" || myCharacterType === "ghost") {
-        selectCharacter("ghost", colorName);
+      // All chasers are white, so use white for selection
+      if (myCharacterType === "chaser" || myCharacterType === "ghost") {
+        selectCharacter("ghost", "white");
       }
-
-      // Automatically start the game when character is selected
-      startGame();
+      // Game starts automatically when first player joins (handled by server)
       break;
     }
     case "joinFailed":
@@ -368,6 +363,23 @@ function handleServerMessage(data) {
       currentGhost = null;
       // Update score display
       updateScoreDisplay();
+      break;
+    case "gameEnd":
+      // Game ended - show final score
+      const timeSeconds = (data.gameTime / 1000).toFixed(1);
+      const message = data.allCaught
+        ? `Game Over - All Fugitives Caught!\n\nTime: ${timeSeconds}s\nScore: ${data.score}\nFugitives Caught: ${data.fugitivesCaught}/${data.totalFugitives}`
+        : `Game Over - Time's Up!\n\nTime: ${timeSeconds}s\nScore: ${data.score}\nFugitives Caught: ${data.fugitivesCaught}/${data.totalFugitives}`;
+      alert(message);
+      // Update score display
+      updateScoreDisplay();
+      break;
+    case "fugitiveCaught":
+      // A fugitive was caught - could show visual feedback here
+      break;
+    case "gameReset":
+      // Game was reset - clear caught state
+      gameStarted = false;
       break;
   }
 }
@@ -688,7 +700,7 @@ function init() {
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
       ambientLightIntensity: 0.1, // Global ambient light intensity
       directionalLightIntensity: 0.3, // Global directional light intensity
-      pointLightIntensity: 300, // Point light intensity for characters (0-400 range)
+      pointLightIntensity: 100, // Point light intensity for characters (0-400 range)
       pathColor: "#dddddd", // Path/floor color in hex (light gray)
       innerWallColor: "#ffffff", // Inner wall color in hex (white)
       outerWallColor: "#ffffff", // Outer wall color in hex (white)
@@ -1063,24 +1075,10 @@ function init() {
       "Hasse & Glenn", // Yellow (index 3)
     ];
 
-    // Add all fugitives first
-    COLORS.forEach((color, i) => {
-      const teamNumber = i + 1;
-      const fugitiveName = fugitiveNames[i] || `Team ${teamNumber}`;
-      const fugitiveKey = `Team ${teamNumber} Fugitive (${fugitiveName})`;
-
-      joinActions[fugitiveKey] = () => {
-        joinAsCharacter("fugitive", i, guiParams.playerInitials);
-      };
-
-      const fugitiveCtrl = charactersFolder.add(joinActions, fugitiveKey);
-      window.characterControllers.pacman[i] = fugitiveCtrl;
-    });
-
-    // Then add all chasers
-    COLORS.forEach((color, i) => {
-      const teamNumber = i + 1;
-      const chaserKey = `Team ${teamNumber} Chaser`;
+    // Players can only join as chasers (fugitives are AI-controlled)
+    // Add chasers (all are white and can catch any fugitive)
+    for (let i = 0; i < 4; i++) {
+      const chaserKey = `Chaser ${i + 1}`;
 
       joinActions[chaserKey] = () => {
         joinAsCharacter("chaser", i, guiParams.playerInitials);
@@ -1088,7 +1086,7 @@ function init() {
 
       const chaserCtrl = charactersFolder.add(joinActions, chaserKey);
       window.characterControllers.ghost[i] = chaserCtrl;
-    });
+    }
 
     // Color controls for each team (Team 1, Team 2, Team 3, Team 4)
     COLORS.forEach((colorName, colorIndex) => {

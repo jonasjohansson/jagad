@@ -295,10 +295,10 @@ function createFugitive3D(color, x, y, px, py) {
   group.add(fugitive);
 
   // Create a point light as a child of the character group
-  const pointLight = new THREE.PointLight(colorHex, 300, 200);
+  const pointLight = new THREE.PointLight(colorHex, 100, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
   pointLight.castShadow = false; // Don't cast shadows from avatars
-  pointLight.intensity = 300; // Default intensity
+  pointLight.intensity = 100; // Default intensity
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
@@ -331,10 +331,8 @@ function createChaser3D(color, x, y, px, py) {
 
   // Create chaser as a simple cube
   const geometry = new THREE.BoxGeometry(CHARACTER_SIZE, CHARACTER_SIZE, CHARACTER_SIZE);
-  // Find color index and use override if set, otherwise use individual color
-  const colorIndex = COLORS.indexOf(color.toLowerCase());
-  const colorHex =
-    colorIndex >= 0 && colorOverrides[colorIndex] !== null ? new THREE.Color(colorOverrides[colorIndex]).getHex() : getColorHex(color);
+  // All chasers are white
+  const colorHex = 0xffffff; // White
   const material = new THREE.MeshStandardMaterial({
     color: colorHex,
     emissive: 0x000000, // No emissive - rely on lights
@@ -347,11 +345,11 @@ function createChaser3D(color, x, y, px, py) {
   chaser.receiveShadow = false; // Don't receive shadows
   group.add(chaser);
 
-  // Create a point light as a child of the character group
-  const pointLight = new THREE.PointLight(colorHex, 300, 200);
+  // Create a point light as a child of the character group (white light)
+  const pointLight = new THREE.PointLight(colorHex, 100, 200);
   pointLight.position.set(0, CHARACTER_SIZE / 2 + 2, 0); // Position relative to group, closer to character
   pointLight.castShadow = false; // Don't cast shadows from avatars
-  pointLight.intensity = 300; // Default intensity
+  pointLight.intensity = 100; // Default intensity
   pointLight.distance = 200; // Long range
   pointLight.decay = 1; // No decay (constant intensity)
   group.add(pointLight);
@@ -424,25 +422,13 @@ function updatePositions3D(positions) {
   });
 
   // Update chasers (server may still use "ghosts" name)
+  // All chasers are white
   const chaserPositions = positions.chasers || positions.ghosts || [];
   chaserPositions.forEach((pos, index) => {
     if (!chasers3D[index]) {
       // Use pixel coordinates if available for accurate positioning
-      chasers3D[index] = createChaser3D(pos.color, pos.x, pos.y, pos.px, pos.py);
+      chasers3D[index] = createChaser3D("white", pos.x, pos.y, pos.px, pos.py);
     } else {
-      // Update color if override is set
-      const colorIndex = COLORS.indexOf(pos.color ? pos.color.toLowerCase() : "");
-      if (colorIndex >= 0 && colorOverrides[colorIndex] !== null) {
-        const color = new THREE.Color(colorOverrides[colorIndex]);
-        chasers3D[index].mesh.children.forEach((child) => {
-          if (child instanceof THREE.Mesh && child.material) {
-            child.material.color.copy(color);
-          }
-          if (child instanceof THREE.PointLight) {
-            child.color.copy(color);
-          }
-        });
-      }
       // Update group position - convert server's px/py (with CHARACTER_OFFSET) to centered position
       if (pos.px !== undefined && pos.py !== undefined) {
         chasers3D[index].mesh.position.x = pos.px - CHARACTER_OFFSET + CELL_SIZE / 2;

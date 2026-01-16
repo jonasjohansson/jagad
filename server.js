@@ -69,21 +69,24 @@ const gameState = {
   players: new Map(), // playerId -> { type, colorIndex, connected, ws, pendingInput }
   nextPlayerId: 0,
   availableColors: {
-    fugitive: [0, 1, 2, 3],
-    chaser: [0, 1, 2, 3],
+    fugitive: [], // Players cannot join as fugitives (AI-controlled only)
+    chaser: [1, 2, 3], // Chaser 0 is always AI-controlled, players can join 1, 2, or 3
   },
-  gameStarted: true, // Game is always running
+  gameStarted: false, // Game starts when first player joins
+  gameStartTime: null, // When the current game started (90 seconds timer)
+  gameDuration: 90, // Game lasts 90 seconds
   aiDifficulty: 0.8,
   // Global speed multipliers for all fugitives and all chasers (default a bit slower)
   fugitiveSpeed: 0.4,
   chaserSpeed: 0.4,
-  survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
-  chaserSpeedIncreasePerRound: 0.01, // Speed increase per round (1% = 0.01)
+  survivalTimeThreshold: 10, // Not used in new game mode
+  chaserSpeedIncreasePerRound: 0.01, // Not used in new game mode
   itemsEnabled: false, // Toggle for yellow dots/items
   fugitives: [],
   chasers: [],
   items: [], // Collectible items on the map { x, y, collected: boolean }
   lastUpdate: Date.now(),
+  caughtFugitives: new Set(), // Track which fugitives have been caught
 };
 
 // Debug counters
@@ -147,30 +150,45 @@ function initCharacters() {
     itemsCollected: 0, // Number of collectible items collected this round
   }));
 
-  // Initialize chasers in the exact order of chaserSpawnPositions
-  // This ensures: index 0 = red (first spawn), 1 = green (second spawn), 2 = blue (third spawn), 3 = yellow (fourth spawn)
-  gameState.chasers = chaserSpawnPositions.slice(0, 4).map((pos, i) => {
-    // Start chasers at their spawn position without moving initially
-    // They will start moving when AI takes over or player provides input
-    return {
+  // Initialize only the first chaser (index 0) - always AI-controlled from the start
+  // Other chasers (1, 2, 3) will be created when players join them
+  if (chaserSpawnPositions.length > 0) {
+    const pos = chaserSpawnPositions[0];
+    gameState.chasers[0] = {
       x: pos.x,
       y: pos.y,
       px: pos.x * CELL_SIZE + CHARACTER_OFFSET,
       py: pos.y * CELL_SIZE + CHARACTER_OFFSET,
       targetX: pos.x, // Start at spawn position
       targetY: pos.y, // Start at spawn position
-      color: COLORS[i], // Color assignment: 0=red, 1=green, 2=blue, 3=yellow
-      // Keep chasers at base speed; overridden by global chaserSpeed multiplier
-      roundsCompleted: 0, // Track rounds for speed increase
-      speedMultiplier: 1.0, // Speed multiplier starts at 1.0, becomes 1.01 after first round (with 1% increase)
+      color: "white", // All chasers are white
       speed: 1.0,
       spawnPos: { ...pos },
       moveTimer: 0,
       lastDirX: 0, // No initial direction
       lastDirY: 0, // No initial direction
       positionHistory: [],
+      isAI: true, // Mark as AI-controlled
     };
-  });
+    
+    // Give the first chaser an initial direction so it starts moving
+    for (const dir of DIRECTIONS) {
+      const newX = pos.x + dir.x;
+      const newY = pos.y + dir.y;
+      if (isPath(newX, newY)) {
+        gameState.chasers[0].targetX = newX;
+        gameState.chasers[0].targetY = newY;
+        gameState.chasers[0].lastDirX = dir.x;
+        gameState.chasers[0].lastDirY = dir.y;
+        break;
+      }
+    }
+  }
+  
+  // Initialize other chaser slots as null (will be created when players join)
+  gameState.chasers[1] = null;
+  gameState.chasers[2] = null;
+  gameState.chasers[3] = null;
 }
 
 // ========== GAME LOGIC FUNCTIONS ==========
@@ -310,14 +328,25 @@ function determineBestMove(chaser, possibleMoves, targetFugitive) {
   return bestMove || possibleMoves[0];
 }
 
-// Simple AI for fugitives: choose a direction that tends to increase distance from the same-colored chaser
+// Simple AI for fugitives: choose a direction that tends to increase distance from the closest chaser
 function moveFugitiveAI(fugitive, index) {
-  const chaser = gameState.chasers[index];
   const possibleMoves = getPossibleMoves(fugitive);
   if (possibleMoves.length === 0) return;
 
-  // If there's no corresponding chaser, just pick a random move
-  if (!chaser) {
+  // Find the closest chaser (any chaser can catch any fugitive)
+  let closestChaser = null;
+  let closestDistance = Infinity;
+  gameState.chasers.forEach((chaser) => {
+    if (!chaser) return;
+    const distance = calculateDistanceWithWrap({ x: fugitive.x, y: fugitive.y }, { x: chaser.x, y: chaser.y });
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestChaser = chaser;
+    }
+  });
+
+  // If there's no chaser, just pick a random move
+  if (!closestChaser) {
     const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
     if (move) {
       fugitive.targetX = move.newX;
@@ -330,10 +359,10 @@ function moveFugitiveAI(fugitive, index) {
     return;
   }
 
-  // Choose the move that maximizes distance from this fugitive's matching chaser
+  // Choose the move that maximizes distance from the closest chaser
   let bestMove = possibleMoves[0];
   let bestDistance = -Infinity;
-  const chaserPos = { x: chaser.x, y: chaser.y };
+  const chaserPos = { x: closestChaser.x, y: closestChaser.y };
 
   possibleMoves.forEach((move) => {
     const movePos = { x: move.newX, y: move.newY };
@@ -361,17 +390,28 @@ function moveChaserAI(chaser) {
   chaser.positionHistory.push({ x: chaser.x, y: chaser.y });
   if (chaser.positionHistory.length > 6) chaser.positionHistory.shift();
 
-  const targetPacman = gameState.fugitives.find((p) => p && p.color === chaser.color);
+  // Find the closest uncatched fugitive (any color)
+  let targetFugitive = null;
+  let closestDistance = Infinity;
+  gameState.fugitives.forEach((fugitive, index) => {
+    if (!fugitive || gameState.caughtFugitives.has(index)) return;
+    const distance = calculateDistanceWithWrap({ x: chaser.x, y: chaser.y }, { x: fugitive.x, y: fugitive.y });
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      targetFugitive = fugitive;
+    }
+  });
+
   const possibleMoves = getPossibleMoves(chaser);
   if (possibleMoves.length === 0) {
     chaser.positionHistory = [];
     return;
   }
 
-  const chosenMove = !targetPacman
+  const chosenMove = !targetFugitive
     ? possibleMoves[Math.floor(Math.random() * possibleMoves.length)]
     : Math.random() < gameState.aiDifficulty
-    ? determineBestMove(chaser, possibleMoves, targetPacman)
+    ? determineBestMove(chaser, possibleMoves, targetFugitive)
     : (() => {
         const nonRecentMoves = possibleMoves.filter((move) => {
           if (!chaser.positionHistory?.length) return true;
@@ -404,150 +444,102 @@ function continueInCurrentDirection(chaser) {
 }
 
 function checkCollisions() {
+  if (!gameState.gameStarted || !gameState.gameStartTime) return; // Only check collisions when game is running
+
   gameState.fugitives.forEach((fugitive, fugitiveIndex) => {
-    if (!fugitive) return;
+    if (!fugitive || gameState.caughtFugitives.has(fugitiveIndex)) return; // Skip already caught fugitives
     gameState.chasers.forEach((chaser, chaserIndex) => {
       if (!chaser) return;
-      if (fugitive.color === chaser.color && fugitive.x === chaser.x && fugitive.y === chaser.y) {
-        // Capture happened - end round for both players
-        const chaserPlayer = Array.from(gameState.players.entries()).find(
-          ([id, p]) => p.type === "chaser" && p.colorIndex === chaserIndex && p.connected
-        );
-        const fugitivePlayer = Array.from(gameState.players.entries()).find(
-          ([id, p]) => p.type === "fugitive" && p.colorIndex === fugitiveIndex && p.connected
-        );
-
-        // Update chaser score: add time to catch
-        if (chaserPlayer && fugitivePlayer) {
-          const [chaserPlayerId, chaserPlayerData] = chaserPlayer;
-          const [fugitivePlayerId, fugitivePlayerData] = fugitivePlayer;
-
-          // Calculate capture time (time since round started)
-          if (chaserPlayerData.stats.currentRoundStartTime) {
-            const captureTime = Date.now() - chaserPlayerData.stats.currentRoundStartTime;
-            chaserPlayerData.stats.totalCaptureTime += captureTime;
+      // Any chaser can catch any fugitive (no color matching)
+      if (fugitive.x === chaser.x && fugitive.y === chaser.y) {
+        // Mark fugitive as caught
+        gameState.caughtFugitives.add(fugitiveIndex);
+        
+        // Calculate time to catch (from game start)
+        const catchTime = Date.now() - gameState.gameStartTime;
+        
+        // Update all chaser players' scores (lower time = better score)
+        // Score is based on how fast all fugitives are caught
+        gameState.players.forEach((player, playerId) => {
+          if (player.connected && player.type === "chaser") {
+            // Track total catch time for scoring
+            player.stats.totalCaptureTime = (player.stats.totalCaptureTime || 0) + catchTime;
+            player.stats.catches = (player.stats.catches || 0) + 1;
+            // Score = number of catches (will be finalized at game end)
+            player.stats.chaserScore = player.stats.catches;
           }
-          // Chaser gets 1 point for each catch
-          chaserPlayerData.stats.catches = (chaserPlayerData.stats.catches || 0) + 1;
-          chaserPlayerData.stats.chaserScore = chaserPlayerData.stats.catches;
+        });
 
-          // Update fugitive score: add items collected this round
-          // Note: When caught, fugitive doesn't get survival point, only items
-          if (fugitivePlayerData.stats && fugitive.itemsCollected !== undefined) {
-            fugitivePlayerData.stats.itemsCollected += fugitive.itemsCollected;
-            // Fugitive score = survival points (rounds survived) + items collected
-            fugitivePlayerData.stats.fugitiveScore = fugitivePlayerData.stats.rounds + fugitivePlayerData.stats.itemsCollected;
-          }
-        }
+        // Send catch event to all players
+        broadcast({
+          type: "fugitiveCaught",
+          fugitiveIndex: fugitiveIndex,
+          catchTime: catchTime,
+        });
 
-        // End round for both players
-        if (chaserPlayer) {
-          const [playerId, player] = chaserPlayer;
-          player.stats.rounds++;
-
-          // Increase chaser speed by configurable percentage per round
-          const chaser = gameState.chasers[chaserIndex];
-          if (chaser) {
-            chaser.roundsCompleted = (chaser.roundsCompleted || 0) + 1;
-            // Speed multiplier: 1.0 + (roundsCompleted * chaserSpeedIncreasePerRound)
-            // After first round: 1.0 + 1 * 0.01 = 1.01 (1% faster)
-            // This multiplies the base chaserSpeed (0.4), so final speed = 0.4 * 1.01 = 0.404
-            chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
-            console.log(
-              `[SPEED] Chaser ${chaserIndex} (${chaser.color}) - CATCH: roundsCompleted=${chaser.roundsCompleted}, increasePerRound=${
-                gameState.chaserSpeedIncreasePerRound
-              }, multiplier=${chaser.speedMultiplier.toFixed(2)}, baseSpeed=${gameState.chaserSpeed}, finalSpeed=${(
-                gameState.chaserSpeed * chaser.speedMultiplier
-              ).toFixed(3)}`
-            );
-          }
-
-          // Send round end flash event to both players
-          if (chaserPlayer) {
-            const [chaserPlayerId, chaserPlayerData] = chaserPlayer;
-            chaserPlayerData.ws.send(
-              JSON.stringify({
-                type: "roundEnd",
-                chaserColorIndex: chaserIndex,
-                fugitiveColorIndex: fugitiveIndex,
-              })
-            );
-          }
-          if (fugitivePlayer) {
-            const [fugitivePlayerId, fugitivePlayerData] = fugitivePlayer;
-            fugitivePlayerData.ws.send(
-              JSON.stringify({
-                type: "roundEnd",
-                chaserColorIndex: chaserIndex,
-                fugitiveColorIndex: fugitiveIndex,
-              })
-            );
-          }
-
-          if (player.stats.rounds >= 10) {
-            player.stats.currentRoundStartTime = null;
-            player.ws.send(
-              JSON.stringify({
-                type: "roundsComplete",
-                chaserScore: player.stats.chaserScore,
-                fugitiveScore: player.stats.fugitiveScore || 0,
-                totalRounds: player.stats.rounds,
-              })
-            );
-            kickPlayerFromCharacter(playerId);
-          } else {
-            // Start new round
-            player.stats.currentRoundStartTime = Date.now();
-          }
-        }
-
-        if (fugitivePlayer) {
-          const [playerId, player] = fugitivePlayer;
-          player.stats.rounds++;
-
-          if (player.stats.rounds >= 10) {
-            player.stats.currentRoundStartTime = null;
-            player.ws.send(
-              JSON.stringify({
-                type: "roundsComplete",
-                chaserScore: player.stats.chaserScore || 0,
-                fugitiveScore: player.stats.fugitiveScore,
-                totalRounds: player.stats.rounds,
-              })
-            );
-            kickPlayerFromCharacter(playerId);
-          } else {
-            // Start new round
-            player.stats.currentRoundStartTime = Date.now();
-          }
-        }
-
-        // Reset survival tracking and items for new round
-        fugitive.survivalStartTime = Date.now();
-        fugitive.lastSurvivalPointTime = null;
-        fugitive.itemsCollected = 0;
-        // Respawn all items for new round (only if items are enabled)
-        if (gameState.itemsEnabled) {
-          gameState.items.forEach((item) => (item.collected = false));
-        }
-
-        respawnCharacter(fugitive, fugitive.spawnPos);
-        // Log before respawn to verify multiplier is set
-        if (chaser) {
-          console.log(
-            `[SPEED] BEFORE RESPAWN: chaser.roundsCompleted=${chaser.roundsCompleted}, chaser.speedMultiplier=${chaser.speedMultiplier}`
-          );
-        }
-        respawnChaser(chaser, chaser.spawnPos);
-        // Log after respawn to verify multiplier is preserved
-        if (chaser) {
-          console.log(
-            `[SPEED] AFTER RESPAWN: chaser.roundsCompleted=${chaser.roundsCompleted}, chaser.speedMultiplier=${chaser.speedMultiplier}`
-          );
+        // Check if all fugitives are caught
+        if (gameState.caughtFugitives.size >= gameState.fugitives.length) {
+          endGame(true); // All fugitives caught
         }
       }
     });
   });
+}
+
+function endGame(allCaught) {
+  if (!gameState.gameStarted) return;
+  
+  gameState.gameStarted = false;
+  const gameTime = Date.now() - gameState.gameStartTime;
+  
+  // Calculate final scores for all chaser players
+  gameState.players.forEach((player, playerId) => {
+    if (player.connected && player.type === "chaser") {
+      let finalScore = 0;
+      
+      if (allCaught) {
+        // Score based on how fast all fugitives were caught (lower time = higher score)
+        // Formula: 10000 - (total time in seconds * 10)
+        // This gives higher scores for faster completions
+        const totalTimeSeconds = gameTime / 1000;
+        finalScore = Math.max(0, 10000 - Math.floor(totalTimeSeconds * 10));
+      } else {
+        // Didn't catch all fugitives - lower score based on how many were caught
+        const caughtCount = gameState.caughtFugitives.size;
+        const totalCount = gameState.fugitives.length;
+        const caughtPercentage = caughtCount / totalCount;
+        // Score = percentage of fugitives caught * 5000 (max score if all caught but slower)
+        finalScore = Math.floor(caughtPercentage * 5000);
+      }
+      
+      player.stats.chaserScore = finalScore;
+      
+      // Send game end message
+      player.ws.send(
+        JSON.stringify({
+          type: "gameEnd",
+          allCaught: allCaught,
+          gameTime: gameTime,
+          score: finalScore,
+          fugitivesCaught: gameState.caughtFugitives.size,
+          totalFugitives: gameState.fugitives.length,
+        })
+      );
+    }
+  });
+  
+  // Reset game state after a delay
+  setTimeout(() => {
+    resetGame();
+  }, 5000); // 5 second delay before reset
+}
+
+function resetGame() {
+  gameState.gameStarted = false;
+  gameState.gameStartTime = null;
+  gameState.caughtFugitives.clear();
+  initCharacters();
+  broadcast({ type: "gameReset" });
 }
 
 function respawnCharacter(character, spawnPos) {
@@ -598,6 +590,15 @@ function gameLoop() {
   const deltaTime = now - gameState.lastUpdate;
   const deltaSeconds = deltaTime / 1000;
   gameState.lastUpdate = now;
+
+  // Check if 90 seconds have passed
+  if (gameState.gameStarted && gameState.gameStartTime) {
+    const elapsed = (now - gameState.gameStartTime) / 1000;
+    if (elapsed >= gameState.gameDuration) {
+      endGame(false); // Time ran out
+      return;
+    }
+  }
 
   // Log a lightweight heartbeat about once per second
   debugTickCounter++;
@@ -669,7 +670,7 @@ function gameLoop() {
 
   // Move fugitives (always, even before game starts)
   gameState.fugitives.forEach((pacman, index) => {
-    if (!pacman) return;
+    if (!pacman || gameState.caughtFugitives.has(index)) return; // Skip caught fugitives
 
     const isPlayerControlledPacman = Array.from(gameState.players.values()).some(
       (p) => (p.type === "fugitive" || p.type === "pacman") && p.colorIndex === index && p.connected
@@ -941,20 +942,10 @@ function gameLoop() {
     const isPlayerControlled = Array.from(gameState.players.values()).some(
       (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
     );
+    const isAI = chaser.isAI || (!isPlayerControlled && index === 0); // First chaser is always AI if not player-controlled
 
-    // All chasers move with global chaser speed, multiplied by rounds completed
-    const speedMultiplier = chaser.speedMultiplier || 1.0;
-    const finalSpeed = gameState.chaserSpeed * speedMultiplier;
-    // Debug log (only log occasionally to avoid spam)
-    if (Math.random() < 0.001) {
-      // Log ~0.1% of the time
-      console.log(
-        `[SPEED] Chaser ${index} (${chaser.color}) moving: roundsCompleted=${chaser.roundsCompleted || 0}, increasePerRound=${
-          gameState.chaserSpeedIncreasePerRound
-        }, multiplier=${speedMultiplier.toFixed(2)}, baseSpeed=${gameState.chaserSpeed}, finalSpeed=${finalSpeed.toFixed(3)}`
-      );
-    }
-    moveCharacter(chaser, finalSpeed);
+    // All chasers move with global chaser speed
+    moveCharacter(chaser, gameState.chaserSpeed);
 
     if (!isAtTarget(chaser)) {
       return;
@@ -988,8 +979,8 @@ function gameLoop() {
           chaser.dirY = 0;
         }
       }
-    } else if (gameState.gameStarted) {
-      // AI chasers only move with intelligence when the game has started
+    } else if (isAI || gameState.gameStarted) {
+      // AI chasers move with intelligence (first chaser always moves, others only when game started)
       chaser.x = chaser.targetX;
       chaser.y = chaser.targetY;
       if ((chaser.lastDirX === 0 && chaser.lastDirY === 0) || (chaser.targetX === chaser.x && chaser.targetY === chaser.y)) {
@@ -1158,16 +1149,18 @@ wss.on("connection", (ws, req) => {
 function handleJoin(ws, playerId, data) {
   const { characterType, colorIndex } = data;
 
+  // Players can only join as chasers (fugitives are AI-controlled)
+  const isFugitive = characterType === "fugitive" || characterType === "pacman";
+  if (isFugitive) {
+    ws.send(JSON.stringify({ type: "joinFailed", reason: "Players can only join as chasers" }));
+    return;
+  }
+
   // Normalize character type for availableColors lookup
-  const normalizedTypeForColors =
-    characterType === "chasee" || characterType === "pacman"
-      ? "fugitive"
-      : characterType === "chaser" || characterType === "ghost"
-      ? "chaser"
-      : characterType;
+  const normalizedTypeForColors = characterType === "chaser" || characterType === "ghost" ? "chaser" : characterType;
   const availableColors = gameState.availableColors[normalizedTypeForColors];
   if (!availableColors || !availableColors.includes(colorIndex)) {
-    ws.send(JSON.stringify({ type: "joinFailed", reason: "Color already taken" }));
+    ws.send(JSON.stringify({ type: "joinFailed", reason: "Chaser slot already taken" }));
     return;
   }
 
@@ -1205,9 +1198,8 @@ function handleJoin(ws, playerId, data) {
   const playerName = data.playerName || "AI"; // Default to "AI" if not provided
 
   // Support both new names (fugitive/chaser) and legacy names (pacman/ghost)
-  const isFugitive = characterType === "fugitive" || characterType === "pacman";
   const isChaser = characterType === "chaser" || characterType === "ghost";
-  const normalizedType = isFugitive ? "fugitive" : isChaser ? "chaser" : characterType;
+  const normalizedType = "chaser"; // All players are chasers
 
   gameState.players.set(playerId, {
     type: normalizedType,
@@ -1219,22 +1211,19 @@ function handleJoin(ws, playerId, data) {
     playerName: playerName, // 3-letter initials
   });
 
-  // Start a new round when joining
-  playerStats.currentRoundStartTime = Date.now();
+  // Start game timer when first player joins
+  if (!gameState.gameStarted) {
+    gameState.gameStarted = true;
+    gameState.gameStartTime = Date.now();
+    gameState.caughtFugitives.clear();
+    broadcast({ type: "gameStarted" });
+  }
 
-  // Move character to starting position and reset tracking
-  if (isFugitive && gameState.fugitives[colorIndex]) {
-    const fugitive = gameState.fugitives[colorIndex];
-    respawnCharacter(fugitive, fugitive.spawnPos);
-    fugitive.survivalStartTime = Date.now();
-    fugitive.lastSurvivalPointTime = null;
-    fugitive.itemsCollected = 0;
-  } else if (isChaser && gameState.chasers[colorIndex]) {
+  // Move chaser to starting position
+  if (isChaser && gameState.chasers[colorIndex]) {
     const chaser = gameState.chasers[colorIndex];
     respawnChaser(chaser, chaser.spawnPos);
     chaser.positionHistory = [];
-    chaser.roundsCompleted = 0;
-    chaser.speedMultiplier = 1.0;
   }
 
   const colorIdx = availableColors.indexOf(colorIndex);
@@ -1367,15 +1356,21 @@ function sendGameState(ws) {
       itemsEnabled: gameState.itemsEnabled,
       items: gameState.itemsEnabled ? gameState.items.map((item) => ({ x: item.x, y: item.y, collected: item.collected })) : [],
       positions: {
-        fugitives: gameState.fugitives.map((p) => ({
-          x: p.x,
-          y: p.y,
-          px: p.px,
-          py: p.py,
-          targetX: p.targetX,
-          targetY: p.targetY,
-          color: p.color,
-        })),
+        fugitives: gameState.fugitives
+          .map((p, index) => {
+            // Don't send caught fugitives
+            if (gameState.caughtFugitives.has(index)) return null;
+            return {
+              x: p.x,
+              y: p.y,
+              px: p.px,
+              py: p.py,
+              targetX: p.targetX,
+              targetY: p.targetY,
+              color: p.color,
+            };
+          })
+          .filter((p) => p !== null),
         chasers: gameState.chasers.map((g) => ({
           x: g.x,
           y: g.y,
@@ -1386,24 +1381,35 @@ function sendGameState(ws) {
           color: g.color,
         })),
         // Legacy support
-        pacmen: gameState.fugitives.map((p) => ({
-          x: p.x,
-          y: p.y,
-          px: p.px,
-          py: p.py,
-          targetX: p.targetX,
-          targetY: p.targetY,
-          color: p.color,
-        })),
-        ghosts: gameState.chasers.map((g) => ({
-          x: g.x,
-          y: g.y,
-          px: g.px,
-          py: g.py,
-          targetX: g.targetX,
-          targetY: g.targetY,
-          color: g.color,
-        })),
+        pacmen: gameState.fugitives
+          .map((p, index) => {
+            // Don't send caught fugitives
+            if (gameState.caughtFugitives.has(index)) return null;
+            return {
+              x: p.x,
+              y: p.y,
+              px: p.px,
+              py: p.py,
+              targetX: p.targetX,
+              targetY: p.targetY,
+              color: p.color,
+            };
+          })
+          .filter((p) => p !== null),
+        ghosts: gameState.chasers
+          .map((g) => {
+            if (!g) return null; // Don't send chasers that don't exist yet
+            return {
+              x: g.x,
+              y: g.y,
+              px: g.px,
+              py: g.py,
+              targetX: g.targetX,
+              targetY: g.targetY,
+              color: g.color,
+            };
+          })
+          .filter((g) => g !== null),
       },
     })
   );
@@ -1439,43 +1445,65 @@ function broadcastGameState() {
     itemsEnabled: gameState.itemsEnabled,
     items: gameState.itemsEnabled ? gameState.items.map((item) => ({ x: item.x, y: item.y, collected: item.collected })) : [],
     positions: {
-      fugitives: gameState.fugitives.map((p) => ({
-        x: p.x,
-        y: p.y,
-        px: p.px,
-        py: p.py,
-        targetX: p.targetX,
-        targetY: p.targetY,
-        color: p.color,
-      })),
-      chasers: gameState.chasers.map((g) => ({
-        x: g.x,
-        y: g.y,
-        px: g.px,
-        py: g.py,
-        targetX: g.targetX,
-        targetY: g.targetY,
-        color: g.color,
-      })),
+      fugitives: gameState.fugitives
+        .map((p, index) => {
+          // Don't send caught fugitives
+          if (gameState.caughtFugitives.has(index)) return null;
+          return {
+            x: p.x,
+            y: p.y,
+            px: p.px,
+            py: p.py,
+            targetX: p.targetX,
+            targetY: p.targetY,
+            color: p.color,
+          };
+        })
+        .filter((p) => p !== null),
+      chasers: gameState.chasers
+        .map((g) => {
+          if (!g) return null; // Don't send chasers that don't exist yet
+          return {
+            x: g.x,
+            y: g.y,
+            px: g.px,
+            py: g.py,
+            targetX: g.targetX,
+            targetY: g.targetY,
+            color: g.color,
+          };
+        })
+        .filter((g) => g !== null),
       // Legacy support
-      pacmen: gameState.fugitives.map((p) => ({
-        x: p.x,
-        y: p.y,
-        px: p.px,
-        py: p.py,
-        targetX: p.targetX,
-        targetY: p.targetY,
-        color: p.color,
-      })),
-      ghosts: gameState.chasers.map((g) => ({
-        x: g.x,
-        y: g.y,
-        px: g.px,
-        py: g.py,
-        targetX: g.targetX,
-        targetY: g.targetY,
-        color: g.color,
-      })),
+      pacmen: gameState.fugitives
+        .map((p, index) => {
+          // Don't send caught fugitives
+          if (gameState.caughtFugitives.has(index)) return null;
+          return {
+            x: p.x,
+            y: p.y,
+            px: p.px,
+            py: p.py,
+            targetX: p.targetX,
+            targetY: p.targetY,
+            color: p.color,
+          };
+        })
+        .filter((p) => p !== null),
+      ghosts: gameState.chasers
+        .map((g) => {
+          if (!g) return null; // Don't send chasers that don't exist yet
+          return {
+            x: g.x,
+            y: g.y,
+            px: g.px,
+            py: g.py,
+            targetX: g.targetX,
+            targetY: g.targetY,
+            color: g.color,
+          };
+        })
+        .filter((g) => g !== null),
     },
   });
 }
