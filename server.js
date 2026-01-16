@@ -710,77 +710,82 @@ function gameLoop() {
     }
   });
 
-  // Move fugitives (always AI-controlled, even before game starts)
-  gameState.fugitives.forEach((pacman, index) => {
-    if (!pacman || gameState.caughtFugitives.has(index)) return; // Skip caught fugitives
+  // Move fugitives only when game is started
+  if (gameState.gameStarted) {
+    gameState.fugitives.forEach((pacman, index) => {
+      if (!pacman || gameState.caughtFugitives.has(index)) return; // Skip caught fugitives
 
-    // Fugitives are always AI-controlled, never player-controlled
-    // Check for item collection (fugitives collect items) - only if items are enabled
-    if (gameState.itemsEnabled) {
-      // Check if pacman is on a tile with an item
-      const item = gameState.items.find((item) => !item.collected && item.x === pacman.x && item.y === pacman.y);
-      if (item) {
-        item.collected = true;
-        pacman.itemsCollected = (pacman.itemsCollected || 0) + 1;
+      // Fugitives are always AI-controlled, never player-controlled
+      // Check for item collection (fugitives collect items) - only if items are enabled
+      if (gameState.itemsEnabled) {
+        // Check if pacman is on a tile with an item
+        const item = gameState.items.find((item) => !item.collected && item.x === pacman.x && item.y === pacman.y);
+        if (item) {
+          item.collected = true;
+          pacman.itemsCollected = (pacman.itemsCollected || 0) + 1;
+        }
       }
-    }
 
-    // Move fugitive toward its current target using global fugitive speed
-    moveCharacter(pacman, gameState.fugitiveSpeed);
+      // Move fugitive toward its current target using global fugitive speed
+      moveCharacter(pacman, gameState.fugitiveSpeed);
 
-    if (isAtTarget(pacman)) {
-      // Fugitives are always AI-controlled
-      moveFugitiveAI(pacman, index);
-    }
-  });
+      if (isAtTarget(pacman)) {
+        // Fugitives are always AI-controlled
+        moveFugitiveAI(pacman, index);
+      }
+    });
+  }
 
   // Chaser movement, survival, and collisions
   // All chasers are player-controlled only - no AI movement
-  gameState.chasers.forEach((chaser, index) => {
-    if (!chaser) return;
-    const isPlayerControlled = Array.from(gameState.players.values()).some(
-      (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
-    );
+  // Only move chasers when game is started
+  if (gameState.gameStarted) {
+    gameState.chasers.forEach((chaser, index) => {
+      if (!chaser) return;
+      const isPlayerControlled = Array.from(gameState.players.values()).some(
+        (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
+      );
 
-    // Only move chasers that are player-controlled
-    if (!isPlayerControlled) {
-      return; // Don't move chasers that aren't controlled by players
-    }
+      // Only move chasers that are player-controlled
+      if (!isPlayerControlled) {
+        return; // Don't move chasers that aren't controlled by players
+      }
 
-    // All chasers move with global chaser speed
-    moveCharacter(chaser, gameState.chaserSpeed);
+      // All chasers move with global chaser speed
+      moveCharacter(chaser, gameState.chaserSpeed);
 
-    if (!isAtTarget(chaser)) {
-      return;
-    }
+      if (!isAtTarget(chaser)) {
+        return;
+      }
 
-    // At tile center: chasers only move when player provides input
-    if (chaser.nextDirX || chaser.nextDirY) {
-      const desiredX = chaser.x + chaser.nextDirX;
-      const desiredY = chaser.y + chaser.nextDirY;
-      if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
-        chaser.dirX = chaser.nextDirX;
-        chaser.dirY = chaser.nextDirY;
-        chaser.targetX = desiredX;
-        chaser.targetY = desiredY;
-        chaser.lastDirX = chaser.dirX;
-        chaser.lastDirY = chaser.dirY;
-        // Clear the queued direction after using it
-        chaser.nextDirX = 0;
-        chaser.nextDirY = 0;
+      // At tile center: chasers only move when player provides input
+      if (chaser.nextDirX || chaser.nextDirY) {
+        const desiredX = chaser.x + chaser.nextDirX;
+        const desiredY = chaser.y + chaser.nextDirY;
+        if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
+          chaser.dirX = chaser.nextDirX;
+          chaser.dirY = chaser.nextDirY;
+          chaser.targetX = desiredX;
+          chaser.targetY = desiredY;
+          chaser.lastDirX = chaser.dirX;
+          chaser.lastDirY = chaser.dirY;
+          // Clear the queued direction after using it
+          chaser.nextDirX = 0;
+          chaser.nextDirY = 0;
+        } else {
+          // Invalid direction, clear it
+          chaser.nextDirX = 0;
+          chaser.nextDirY = 0;
+          chaser.dirX = 0;
+          chaser.dirY = 0;
+        }
       } else {
-        // Invalid direction, clear it
-        chaser.nextDirX = 0;
-        chaser.nextDirY = 0;
+        // No input, stop moving
         chaser.dirX = 0;
         chaser.dirY = 0;
       }
-    } else {
-      // No input, stop moving
-      chaser.dirX = 0;
-      chaser.dirY = 0;
-    }
-  });
+    });
+  }
 
   if (gameState.gameStarted) {
     // Only check collisions while the game is running
