@@ -278,7 +278,7 @@ function handleServerMessage(data) {
       if (myCharacterType === "chaser" || myCharacterType === "ghost") {
         selectCharacter("ghost", "white");
       }
-      // Game starts automatically when first player joins (handled by server)
+      // Game starts when "Start game cycle" button is pressed (handled by server)
       break;
     }
     case "joinFailed":
@@ -1086,8 +1086,9 @@ function init() {
 
     // Players can only join as chasers (fugitives are AI-controlled)
     // Add chasers (all are white and can catch any fugitive)
-    for (let i = 0; i < 4; i++) {
-      const chaserKey = `Chaser ${i + 1}`;
+    // Chaser 0 is always present but not available for players, so only show 1, 2, 3
+    for (let i = 1; i < 4; i++) {
+      const chaserKey = `Chaser ${i}`;
 
       joinActions[chaserKey] = () => {
         joinAsCharacter("chaser", i, guiParams.playerInitials);
@@ -1445,23 +1446,23 @@ function init() {
   // Handle player input - send direction to server
   document.addEventListener("keydown", (e) => {
     keys[e.key] = true;
-    // Only process arrow keys
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+    
+    // Map keys to directions (support both arrow keys and WASD)
+    let dir = null;
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") dir = "left";
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") dir = "right";
+    else if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") dir = "up";
+    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") dir = "down";
+    
+    // Only process movement keys
+    if (!dir) {
       return;
     }
 
     const canMove = multiplayerMode && myPlayerId && myCharacterType && myColorIndex !== null;
     if (!canMove) return;
 
-    let dir = null;
-    if (e.key === "ArrowLeft") dir = "left";
-    else if (e.key === "ArrowRight") dir = "right";
-    else if (e.key === "ArrowUp") dir = "up";
-    else if (e.key === "ArrowDown") dir = "down";
-
-    if (dir) {
-      sendInput({ dir });
-    }
+    sendInput({ dir });
   });
   document.addEventListener("keyup", (e) => {
     keys[e.key] = false;

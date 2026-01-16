@@ -70,7 +70,7 @@ const gameState = {
   nextPlayerId: 0,
   availableColors: {
     fugitive: [], // Players cannot join as fugitives (AI-controlled only)
-    chaser: [1, 2, 3], // Chaser 0 is always AI-controlled, players can join 1, 2, or 3
+    chaser: [1, 2, 3], // Chaser 0 is always present but not player-controlled, players can join 1, 2, or 3
   },
   gameStarted: false, // Game starts when first player joins
   gameStartTime: null, // When the current game started (90 seconds timer)
