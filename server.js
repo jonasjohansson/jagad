@@ -15,7 +15,7 @@ const CHARACTER_SIZE = 16;
 const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
 // Base movement speed (tuned to feel closer to the original client-side movement)
 // Higher = faster movement across the grid (increased for snappier feel)
-const BASE_MOVE_SPEED = 0.3;
+const BASE_MOVE_SPEED = 0.35; // Increased from 0.3 for faster movement
 const COLORS = ["red", "green", "blue", "yellow"];
 const DIRECTIONS = [
   { dir: "up", x: 0, y: -1 },
@@ -84,10 +84,8 @@ const gameState = {
   gameDuration: 90, // Game lasts 90 seconds
   aiDifficulty: 0.8,
   // Global speed multipliers for all fugitives and all chasers
-  fugitiveSpeed: 0.4,
-  chaserSpeed: 0.41, // Slightly faster than fugitives
-  survivalTimeThreshold: 10, // Not used in new game mode
-  chaserSpeedIncreasePerRound: 0.01, // Not used in new game mode - chaser speed remains constant
+  fugitiveSpeed: 0.45, // Increased from 0.4 for faster gameplay
+  chaserSpeed: 0.47, // Increased from 0.41, slightly faster than fugitives
   itemsEnabled: false, // Toggle for yellow dots/items
   fugitives: [],
   chasers: [],
@@ -533,8 +531,8 @@ function resetGame() {
   gameState.caughtFugitives.clear();
   
   // Reset speed settings to defaults
-  gameState.fugitiveSpeed = 0.4;
-  gameState.chaserSpeed = 0.41;
+  gameState.fugitiveSpeed = 0.45;
+  gameState.chaserSpeed = 0.47;
   
   // Clear all player selections - players lose their chaser selection when game resets
   // Free up all chaser slots
@@ -700,11 +698,12 @@ function gameLoop() {
         const dy = dirDef.y;
 
         // Store desired direction; applied at next tile center
+        // Important: Only store one direction at a time (no diagonal movement)
         chaser.nextDirX = dx;
         chaser.nextDirY = dy;
 
         // If currently stopped, try to start immediately
-        if (!chaser.dirX && !chaser.dirY) {
+        if (chaser.dirX === 0 && chaser.dirY === 0) {
           const startX = chaser.x + dx;
           const startY = chaser.y + dy;
           if (startX >= 0 && startX < COLS && startY >= 0 && startY < ROWS && isPath(startX, startY)) {
@@ -911,6 +910,9 @@ wss.on("connection", (ws, req) => {
         case "setSpeeds":
           handleSetSpeeds(data);
           break;
+        case "setGameDuration":
+          handleSetGameDuration(data);
+          break;
         case "setItemsEnabled":
           handleSetItemsEnabled(data);
           break;
@@ -1035,7 +1037,7 @@ function handleJoin(ws, playerId, data) {
 }
 
 function handleSetSpeeds(data) {
-  const { pacmanSpeed, ghostSpeed, fugitiveSpeed, chaserSpeed, survivalTimeThreshold, chaserSpeedIncreasePerRound } = data;
+  const { pacmanSpeed, ghostSpeed, fugitiveSpeed, chaserSpeed } = data;
   // Support both new and legacy names
   if (typeof fugitiveSpeed === "number") {
     gameState.fugitiveSpeed = Math.max(0.2, Math.min(3, fugitiveSpeed));
@@ -1047,12 +1049,13 @@ function handleSetSpeeds(data) {
   } else if (typeof ghostSpeed === "number") {
     gameState.chaserSpeed = Math.max(0.2, Math.min(3, ghostSpeed));
   }
-  if (typeof survivalTimeThreshold === "number") {
-    gameState.survivalTimeThreshold = Math.max(1, Math.min(120, survivalTimeThreshold));
-  }
-  if (typeof chaserSpeedIncreasePerRound === "number") {
-    gameState.chaserSpeedIncreasePerRound = Math.max(0, Math.min(0.05, chaserSpeedIncreasePerRound));
-    console.log(`[SPEED] Updated chaserSpeedIncreasePerRound to ${gameState.chaserSpeedIncreasePerRound}`);
+}
+
+function handleSetGameDuration(data) {
+  const { duration } = data;
+  if (typeof duration === "number") {
+    gameState.gameDuration = Math.max(30, Math.min(600, duration)); // 30 seconds to 10 minutes
+    console.log(`[GAME] Game duration set to ${gameState.gameDuration} seconds`);
   }
 }
 

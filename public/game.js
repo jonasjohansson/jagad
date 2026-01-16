@@ -111,7 +111,7 @@ let currentPacman = null; // null means no character selected
 let currentGhost = null; // null means no character selected
 let playerType = "pacman"; // "pacman" or "ghost"
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
-let survivalTimeThreshold = 30; // seconds - ghost gets point after surviving this long
+// Removed: survivalTimeThreshold - not used in new game mode
 let gameStarted = false;
 let view3D = true; // Toggle for 3D view
 let lastTime = 0;
@@ -399,13 +399,13 @@ function handleServerMessage(data) {
       // Game was reset - clear caught state and player selection
       gameStarted = false;
       // Reset speed settings to defaults
-      guiParams.fugitiveSpeed = 0.4;
-      guiParams.chaserSpeed = 0.41;
+      guiParams.fugitiveSpeed = 0.45;
+      guiParams.chaserSpeed = 0.47;
       // Update GUI controllers if they exist
-      if (window.fugitiveSpeedController) window.fugitiveSpeedController.setValue(0.4);
-      if (window.chaserSpeedController) window.chaserSpeedController.setValue(0.41);
+      if (window.fugitiveSpeedController) window.fugitiveSpeedController.setValue(0.45);
+      if (window.chaserSpeedController) window.chaserSpeedController.setValue(0.47);
       // Send reset speed config to server
-      sendSpeedConfig(0.4, 0.41, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
+      sendSpeedConfig(0.45, 0.47);
       // Clear our character selection (players lose selection when game resets)
       myCharacterType = null;
       myColorIndex = null;
@@ -630,15 +630,13 @@ function applyServerPositions(positions) {
 }
 
 // Send global speed configuration to server
-function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold, chaserSpeedIncreasePerRound) {
+function sendSpeedConfig(fugitiveSpeed, chaserSpeed) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(
       JSON.stringify({
         type: "setSpeeds",
         fugitiveSpeed,
         chaserSpeed,
-        survivalTimeThreshold,
-        chaserSpeedIncreasePerRound,
         // Legacy support
         pacmanSpeed: fugitiveSpeed,
         ghostSpeed: chaserSpeed,
@@ -647,15 +645,28 @@ function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold, chas
   }
 }
 
+// Send game duration to server
+function sendGameDuration(duration) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(
+      JSON.stringify({
+        type: "setGameDuration",
+        duration: duration,
+      })
+    );
+  }
+}
+
 // Send input to server (optimized - minimal payload)
 let lastInputDir = null;
 let lastInputTime = 0;
-const INPUT_THROTTLE = 50; // ms - prevent input spam
+const INPUT_THROTTLE = 16; // ms - one frame at 60fps (reduced from 50ms to allow quick direction changes)
 
 function sendInput(input) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !myPlayerId) return;
   
   // Throttle rapid duplicate inputs (prevent network spam)
+  // Only throttle if it's the SAME direction to allow quick direction changes
   const now = Date.now();
   if (input.dir === lastInputDir && now - lastInputTime < INPUT_THROTTLE) {
     return;
@@ -878,11 +889,10 @@ function init() {
     window.guiParams = {
       serverTarget: "Render",
       difficulty: 0.8,
-      fugitiveSpeed: 0.4,
-      chaserSpeed: 0.41, // Slightly faster than fugitives
+      fugitiveSpeed: 0.45, // Increased from 0.4 for faster gameplay
+      chaserSpeed: 0.47, // Increased from 0.41, slightly faster than fugitives
+      gameDuration: 90, // Game duration in seconds
       playerInitials: "ABC", // 3-letter initials
-      survivalTimeThreshold: 10, // Seconds required to survive a round (default 10)
-      chaserSpeedIncreasePerRound: 0.01, // Chaser speed increase per round (1% = 0.01)
       view3D: true, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
@@ -1221,11 +1231,11 @@ function init() {
       });
 
     // Global speed controls
-    const fugitiveSpeedCtrl = charactersFolder
+    const fugitiveSpeedCtrl =     charactersFolder
       .add(guiParams, "fugitiveSpeed", 0.2, 3, 0.01)
       .name("Fugitive Speed")
       .onChange((value) => {
-        sendSpeedConfig(value, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
+        sendSpeedConfig(value, guiParams.chaserSpeed);
       });
     window.fugitiveSpeedController = fugitiveSpeedCtrl;
 
@@ -1233,24 +1243,16 @@ function init() {
       .add(guiParams, "chaserSpeed", 0.2, 3, 0.01)
       .name("Chaser Speed")
       .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, value, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
+        sendSpeedConfig(guiParams.fugitiveSpeed, value);
       });
     window.chaserSpeedController = chaserSpeedCtrl;
 
-    // Survival time threshold control
+    // Game duration control
     charactersFolder
-      .add(guiParams, "survivalTimeThreshold", 1, 120, 1)
-      .name("Survival Duration (seconds)")
+      .add(guiParams, "gameDuration", 30, 300, 10)
+      .name("Game Duration (seconds)")
       .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, value, guiParams.chaserSpeedIncreasePerRound);
-      });
-
-    // Chaser speed increase per round control
-    charactersFolder
-      .add(guiParams, "chaserSpeedIncreasePerRound", 0, 0.05, 0.01)
-      .name("Chaser Speed Increase Per Round")
-      .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, value);
+        sendGameDuration(value);
       });
 
     // Character selection: one entry per pacman/ghost/color
@@ -1375,8 +1377,9 @@ function init() {
       }
     });
 
-    // Send initial speed config to server (including chaserSpeedIncreasePerRound)
-    sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed, guiParams.survivalTimeThreshold, guiParams.chaserSpeedIncreasePerRound);
+    // Send initial speed config and game duration to server
+    sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed);
+    sendGameDuration(guiParams.gameDuration);
 
     // Enable 3D view on startup if default is true
     if (guiParams.view3D) {
