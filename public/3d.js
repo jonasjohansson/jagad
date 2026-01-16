@@ -87,11 +87,12 @@ function init3D() {
     console.error("Canvas element not found");
     return;
   }
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x for performance
   renderer.setClearColor(0x000000, 0); // Transparent background
-  renderer.shadowMap.enabled = true; // Enable shadows so lights are blocked by walls
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+  // Shadows disabled for better performance (characters don't cast shadows anyway)
+  renderer.shadowMap.enabled = false;
 
   // Lights - minimal ambient so point lights are clearly visible
   ambientLight3D = new THREE.AmbientLight(0xffffff, 0.1);

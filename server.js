@@ -14,8 +14,8 @@ const CELL_SIZE = 20;
 const CHARACTER_SIZE = 16;
 const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
 // Base movement speed (tuned to feel closer to the original client-side movement)
-// Higher = faster movement across the grid
-const BASE_MOVE_SPEED = 0.25;
+// Higher = faster movement across the grid (increased for snappier feel)
+const BASE_MOVE_SPEED = 0.3;
 const COLORS = ["red", "green", "blue", "yellow"];
 const DIRECTIONS = [
   { dir: "up", x: 0, y: -1 },
@@ -23,6 +23,13 @@ const DIRECTIONS = [
   { dir: "left", x: -1, y: 0 },
   { dir: "right", x: 1, y: 0 },
 ];
+// Fast direction lookup map for input processing
+const DIRECTION_MAP = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+};
 const OPPOSITE_DIR = { up: "down", down: "up", left: "right", right: "left" };
 
 // Pre-calculate positions
@@ -87,6 +94,7 @@ const gameState = {
   items: [], // Collectible items on the map { x, y, collected: boolean }
   lastUpdate: Date.now(),
   caughtFugitives: new Set(), // Track which fugitives have been caught
+  lastBroadcastPositions: null, // Cache last broadcast for delta compression
 };
 
 // Debug counters
@@ -659,7 +667,7 @@ function gameLoop() {
 
       // Direction-based input: input.dir is 'left' | 'right' | 'up' | 'down'
       if (input.dir) {
-        const dirDef = DIRECTIONS.find((d) => d.dir === input.dir);
+        const dirDef = DIRECTION_MAP[input.dir];
         if (!dirDef) return;
         const dx = dirDef.x;
         const dy = dirDef.y;
@@ -686,7 +694,7 @@ function gameLoop() {
 
       // Direction-based input for chasers, same continuous style as fugitives
       if (input.dir) {
-        const dirDef = DIRECTIONS.find((d) => d.dir === input.dir);
+        const dirDef = DIRECTION_MAP[input.dir];
         if (!dirDef) return;
         const dx = dirDef.x;
         const dy = dirDef.y;
@@ -1140,12 +1148,20 @@ function handleDisconnect(playerId) {
 }
 
 function broadcast(message) {
-  const data = JSON.stringify(message);
+  const data = JSON.stringify(message); // Stringify once, reuse for all clients
+  const readyClients = [];
+  
+  // Filter ready clients first to avoid checking state multiple times
   wss.clients.forEach((client) => {
     if (client.readyState === 1) {
-      client.send(data);
+      readyClients.push(client);
     }
   });
+  
+  // Send to all ready clients
+  for (let i = 0; i < readyClients.length; i++) {
+    readyClients[i].send(data);
+  }
 }
 
 function sendGameState(ws) {
@@ -1258,6 +1274,14 @@ function sendGameState(ws) {
 }
 
 function broadcastGameState() {
+  // Pre-compute player-controlled chasers (do this once instead of per-chaser)
+  const playerControlledChasers = new Set();
+  gameState.players.forEach((player) => {
+    if ((player.type === "chaser" || player.type === "ghost") && player.connected) {
+      playerControlledChasers.add(player.colorIndex);
+    }
+  });
+
   const players = Array.from(gameState.players.entries()).map(([id, player]) => ({
     playerId: id,
     type: player.type,
@@ -1273,87 +1297,56 @@ function broadcastGameState() {
       : null,
   }));
 
+  // Build fugitive positions (only active ones)
+  const fugitivePositions = [];
+  for (let index = 0; index < gameState.fugitives.length; index++) {
+    if (gameState.caughtFugitives.has(index)) continue;
+    const p = gameState.fugitives[index];
+    fugitivePositions.push({
+      index: index,
+      x: p.x,
+      y: p.y,
+      px: p.px,
+      py: p.py,
+      color: p.color,
+    });
+  }
+
+  // Build chaser positions (use cached isPlayerControlled)
+  const chaserPositions = [];
+  for (let index = 0; index < gameState.chasers.length; index++) {
+    const g = gameState.chasers[index];
+    if (!g) continue;
+    chaserPositions.push({
+      index: index,
+      x: g.x,
+      y: g.y,
+      px: g.px,
+      py: g.py,
+      color: g.color,
+      isPlayerControlled: playerControlledChasers.has(index),
+    });
+  }
+
   broadcast({
     type: "gameState",
     players: players,
     availableColors: {
-      fugitive: [...gameState.availableColors.fugitive],
-      chaser: [...gameState.availableColors.chaser],
-      // Legacy support
-      pacman: [...gameState.availableColors.fugitive],
-      ghost: [...gameState.availableColors.chaser],
+      fugitive: gameState.availableColors.fugitive,
+      chaser: gameState.availableColors.chaser,
+      // Legacy support (reference, not copy)
+      pacman: gameState.availableColors.fugitive,
+      ghost: gameState.availableColors.chaser,
     },
     gameStarted: gameState.gameStarted,
     itemsEnabled: gameState.itemsEnabled,
     items: gameState.itemsEnabled ? gameState.items.map((item) => ({ x: item.x, y: item.y, collected: item.collected })) : [],
     positions: {
-      fugitives: gameState.fugitives
-        .map((p, index) => {
-          // Don't send caught fugitives (they're removed from the game)
-          if (gameState.caughtFugitives.has(index)) return null;
-          return {
-            index: index, // Include index so client knows which fugitive this is
-            x: p.x,
-            y: p.y,
-            px: p.px,
-            py: p.py,
-            targetX: p.targetX,
-            targetY: p.targetY,
-            color: p.color,
-          };
-        })
-        .filter((p) => p !== null),
-      chasers: gameState.chasers
-        .map((g, index) => {
-          if (!g) return null; // Don't send chasers that don't exist yet
-          return {
-            index: index, // Include index so client knows which chaser this is
-            x: g.x,
-            y: g.y,
-            px: g.px,
-            py: g.py,
-            targetX: g.targetX,
-            targetY: g.targetY,
-            color: g.color,
-          };
-        })
-        .filter((g) => g !== null),
-      // Legacy support
-      pacmen: gameState.fugitives
-        .map((p, index) => {
-          // Don't send caught fugitives
-          if (gameState.caughtFugitives.has(index)) return null;
-          return {
-            x: p.x,
-            y: p.y,
-            px: p.px,
-            py: p.py,
-            targetX: p.targetX,
-            targetY: p.targetY,
-            color: p.color,
-          };
-        })
-        .filter((p) => p !== null),
-      ghosts: gameState.chasers
-        .map((g, index) => {
-          if (!g) return null; // Don't send chasers that don't exist yet
-          // Check if this chaser is player-controlled
-          const isPlayerControlled = Array.from(gameState.players.values()).some(
-            (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
-          );
-          return {
-            index: index,
-            x: g.x,
-            y: g.y,
-            px: g.px,
-            py: g.py,
-            targetX: g.targetX,
-            targetY: g.targetY,
-            color: g.color,
-            isPlayerControlled: isPlayerControlled, // Indicate if player-controlled for opacity
-          };
-        })
-        .filter((g) => g !== null),
+      fugitives: fugitivePositions,
+      chasers: chaserPositions,
+      // Legacy support (reference same arrays)
+      pacmen: fugitivePositions,
+      ghosts: chaserPositions,
     },
   });
 }
@@ -1361,6 +1354,6 @@ function broadcastGameState() {
 // ========== START SERVER ==========
 initItems();
 initCharacters();
-setInterval(gameLoop, 16); // ~60fps game loop
+setInterval(gameLoop, 33); // ~30fps server tick rate (optimal for network updates)
 
 server.listen(PORT, () => {});

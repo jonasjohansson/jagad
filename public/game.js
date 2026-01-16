@@ -647,16 +647,24 @@ function sendSpeedConfig(fugitiveSpeed, chaserSpeed, survivalTimeThreshold, chas
   }
 }
 
-// Send input to server
+// Send input to server (optimized - minimal payload)
+let lastInputDir = null;
+let lastInputTime = 0;
+const INPUT_THROTTLE = 50; // ms - prevent input spam
+
 function sendInput(input) {
-  if (ws && ws.readyState === WebSocket.OPEN && myPlayerId) {
-    ws.send(
-      JSON.stringify({
-        type: "input",
-        input: input,
-      })
-    );
+  if (!ws || ws.readyState !== WebSocket.OPEN || !myPlayerId) return;
+  
+  // Throttle rapid duplicate inputs (prevent network spam)
+  const now = Date.now();
+  if (input.dir === lastInputDir && now - lastInputTime < INPUT_THROTTLE) {
+    return;
   }
+  
+  lastInputDir = input.dir;
+  lastInputTime = now;
+  
+  ws.send(JSON.stringify({ type: "input", input: input }));
 }
 
 // Update GUI with available colors from server
@@ -1566,8 +1574,8 @@ function init() {
     }
 
     // 2D rendering
-    // Smoothing factors
-    const OTHER_SMOOTHING = 0.25;
+    // Smoothing factors (higher = less lag, more responsive)
+    const OTHER_SMOOTHING = 0.5; // Increased from 0.25 for snappier movement
     // My own character follows the server almost exactly to minimize input latency
     const MY_SMOOTHING = 1.0;
     const SNAP_DISTANCE = 40; // pixels – snap if too far to avoid long slides
