@@ -450,7 +450,7 @@ function updatePositions3D(positions) {
     // Use index from server if provided, otherwise use array index (for backward compatibility)
     const index = pos.index !== undefined ? pos.index : arrayIndex;
     activeChaserIndices.add(index);
-    
+
     if (!chasers3D[index]) {
       // Use pixel coordinates if available for accurate positioning
       chasers3D[index] = createChaser3D("white", pos.x, pos.y, pos.px, pos.py);
@@ -465,7 +465,7 @@ function updatePositions3D(positions) {
         chasers3D[index].mesh.position.z = pos.y * CELL_SIZE + CELL_SIZE / 2;
       }
     }
-    
+
     // Update opacity based on player control (20% if not controlled, 100% if controlled)
     const isPlayerControlled = pos.isPlayerControlled === true;
     if (chasers3D[index] && chasers3D[index].mesh) {
@@ -485,7 +485,7 @@ function updatePositions3D(positions) {
       }
     }
   });
-  
+
   // Ensure all chasers are visible in 3D (create missing ones if needed)
   for (let i = 0; i < 4; i++) {
     if (!chasers3D[i] && !activeChaserIndices.has(i)) {
@@ -498,7 +498,13 @@ function updatePositions3D(positions) {
         { x: 14, y: 11 },
       ];
       const spawnPos = defaultSpawnPositions[i] || { x: 11 + i, y: 11 };
-      chasers3D[i] = createChaser3D("white", spawnPos.x, spawnPos.y, spawnPos.x * CELL_SIZE + CHARACTER_OFFSET, spawnPos.y * CELL_SIZE + CHARACTER_OFFSET);
+      chasers3D[i] = createChaser3D(
+        "white",
+        spawnPos.x,
+        spawnPos.y,
+        spawnPos.x * CELL_SIZE + CHARACTER_OFFSET,
+        spawnPos.y * CELL_SIZE + CHARACTER_OFFSET
+      );
       // Set initial opacity to 20% (not player-controlled)
       if (chasers3D[i] && chasers3D[i].mesh) {
         chasers3D[i].mesh.traverse((child) => {

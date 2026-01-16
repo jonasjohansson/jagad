@@ -1564,25 +1564,42 @@ function init() {
   }
 
   // Handle player input - send direction to server
+  // WASD always controls the first chaser (chaser 0)
   document.addEventListener("keydown", (e) => {
     keys[e.key] = true;
     
-    // Map keys to directions (support both arrow keys and WASD)
+    // Only accept WASD keys (not arrow keys)
     let dir = null;
-    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") dir = "left";
-    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") dir = "right";
-    else if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") dir = "up";
-    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") dir = "down";
+    if (e.key === "a" || e.key === "A") dir = "left";
+    else if (e.key === "d" || e.key === "D") dir = "right";
+    else if (e.key === "w" || e.key === "W") dir = "up";
+    else if (e.key === "s" || e.key === "S") dir = "down";
     
-    // Only process movement keys
+    // Only process WASD movement keys
     if (!dir) {
       return;
     }
 
-    const canMove = multiplayerMode && myPlayerId && myCharacterType && myColorIndex !== null;
-    if (!canMove) return;
-
-    sendInput({ dir });
+    // WASD always controls the first chaser (chaser 0)
+    if (!multiplayerMode || !myPlayerId) return;
+    
+    // If not already controlling chaser 0, join it automatically
+    if (myCharacterType !== "chaser" && myCharacterType !== "ghost" || myColorIndex !== 0) {
+      // Auto-join chaser 0 if not already controlling it
+      joinAsCharacter("chaser", 0, guiParams.playerInitials);
+      // Wait a moment for the join to process, then send input
+      setTimeout(() => {
+        if ((myCharacterType === "chaser" || myCharacterType === "ghost") && myColorIndex === 0) {
+          sendInput({ dir });
+        }
+      }, 50);
+      return;
+    }
+    
+    // Already controlling chaser 0, send input normally
+    if (myColorIndex === 0) {
+      sendInput({ dir });
+    }
   });
   document.addEventListener("keyup", (e) => {
     keys[e.key] = false;
