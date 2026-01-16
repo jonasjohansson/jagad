@@ -150,7 +150,7 @@ function initCharacters() {
     itemsCollected: 0, // Number of collectible items collected this round
   }));
 
-  // Initialize only the first chaser (index 0) - always AI-controlled from the start
+  // Initialize only the first chaser (index 0) - present from start but not moving
   // Other chasers (1, 2, 3) will be created when players join them
   if (chaserSpawnPositions.length > 0) {
     const pos = chaserSpawnPositions[0];
@@ -165,24 +165,14 @@ function initCharacters() {
       speed: 1.0,
       spawnPos: { ...pos },
       moveTimer: 0,
-      lastDirX: 0, // No initial direction
+      lastDirX: 0, // No initial direction - won't move until player controls it
       lastDirY: 0, // No initial direction
       positionHistory: [],
-      isAI: true, // Mark as AI-controlled
+      dirX: 0, // No movement direction
+      dirY: 0, // No movement direction
+      nextDirX: 0, // No queued direction
+      nextDirY: 0, // No queued direction
     };
-    
-    // Give the first chaser an initial direction so it starts moving
-    for (const dir of DIRECTIONS) {
-      const newX = pos.x + dir.x;
-      const newY = pos.y + dir.y;
-      if (isPath(newX, newY)) {
-        gameState.chasers[0].targetX = newX;
-        gameState.chasers[0].targetY = newY;
-        gameState.chasers[0].lastDirX = dir.x;
-        gameState.chasers[0].lastDirY = dir.y;
-        break;
-      }
-    }
   }
   
   // Initialize other chaser slots as null (will be created when players join)
@@ -937,12 +927,17 @@ function gameLoop() {
   });
 
   // Chaser movement, survival, and collisions
+  // All chasers are player-controlled only - no AI movement
   gameState.chasers.forEach((chaser, index) => {
     if (!chaser) return;
     const isPlayerControlled = Array.from(gameState.players.values()).some(
       (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
     );
-    const isAI = chaser.isAI || (!isPlayerControlled && index === 0); // First chaser is always AI if not player-controlled
+
+    // Only move chasers that are player-controlled
+    if (!isPlayerControlled) {
+      return; // Don't move chasers that aren't controlled by players
+    }
 
     // All chasers move with global chaser speed
     moveCharacter(chaser, gameState.chaserSpeed);
@@ -951,55 +946,31 @@ function gameLoop() {
       return;
     }
 
-    // At tile center: human-controlled chasers use continuous movement like fugitives,
-    // others use existing chaser AI (only when the game is started).
-    if (isPlayerControlled) {
-      let usedDesired = false;
-
-      if (chaser.nextDirX || chaser.nextDirY) {
-        const desiredX = chaser.x + chaser.nextDirX;
-        const desiredY = chaser.y + chaser.nextDirY;
-        if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
-          chaser.dirX = chaser.nextDirX;
-          chaser.dirY = chaser.nextDirY;
-          chaser.targetX = desiredX;
-          chaser.targetY = desiredY;
-          usedDesired = true;
-        }
-      }
-
-      if (!usedDesired && (chaser.dirX || chaser.dirY)) {
-        const forwardX = chaser.x + chaser.dirX;
-        const forwardY = chaser.y + chaser.dirY;
-        if (forwardX >= 0 && forwardX < COLS && forwardY >= 0 && forwardY < ROWS && isPath(forwardX, forwardY)) {
-          chaser.targetX = forwardX;
-          chaser.targetY = forwardY;
-        } else {
-          chaser.dirX = 0;
-          chaser.dirY = 0;
-        }
-      }
-    } else if (isAI || gameState.gameStarted) {
-      // AI chasers move with intelligence (first chaser always moves, others only when game started)
-      chaser.x = chaser.targetX;
-      chaser.y = chaser.targetY;
-      if ((chaser.lastDirX === 0 && chaser.lastDirY === 0) || (chaser.targetX === chaser.x && chaser.targetY === chaser.y)) {
-        moveChaserAI(chaser);
+    // At tile center: chasers only move when player provides input
+    if (chaser.nextDirX || chaser.nextDirY) {
+      const desiredX = chaser.x + chaser.nextDirX;
+      const desiredY = chaser.y + chaser.nextDirY;
+      if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
+        chaser.dirX = chaser.nextDirX;
+        chaser.dirY = chaser.nextDirY;
+        chaser.targetX = desiredX;
+        chaser.targetY = desiredY;
+        chaser.lastDirX = chaser.dirX;
+        chaser.lastDirY = chaser.dirY;
+        // Clear the queued direction after using it
+        chaser.nextDirX = 0;
+        chaser.nextDirY = 0;
       } else {
-        chaser.moveTimer += deltaTime;
-        const moveInterval = Math.max(50, 300 - gameState.aiDifficulty * 250);
-        if (chaser.moveTimer >= moveInterval) {
-          chaser.moveTimer = 0;
-          moveChaserAI(chaser);
-        } else {
-          const prevTargetX = chaser.targetX;
-          const prevTargetY = chaser.targetY;
-          continueInCurrentDirection(chaser);
-          if (chaser.targetX === prevTargetX && chaser.targetY === prevTargetY) {
-            moveChaserAI(chaser);
-          }
-        }
+        // Invalid direction, clear it
+        chaser.nextDirX = 0;
+        chaser.nextDirY = 0;
+        chaser.dirX = 0;
+        chaser.dirY = 0;
       }
+    } else {
+      // No input, stop moving
+      chaser.dirX = 0;
+      chaser.dirY = 0;
     }
   });
 
@@ -1229,7 +1200,10 @@ function handleJoin(ws, playerId, data) {
         lastDirX: 0,
         lastDirY: 0,
         positionHistory: [],
-        isAI: false, // Player-controlled
+        dirX: 0,
+        dirY: 0,
+        nextDirX: 0,
+        nextDirY: 0,
       };
       respawnChaser(gameState.chasers[colorIndex], spawnPos);
     }
@@ -1238,7 +1212,11 @@ function handleJoin(ws, playerId, data) {
     const chaser = gameState.chasers[colorIndex];
     respawnChaser(chaser, chaser.spawnPos);
     chaser.positionHistory = [];
-    chaser.isAI = false; // Mark as player-controlled
+    // Ensure movement directions are cleared
+    chaser.dirX = 0;
+    chaser.dirY = 0;
+    chaser.nextDirX = 0;
+    chaser.nextDirY = 0;
   }
 
   // Start game timer when first player joins
