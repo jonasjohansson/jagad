@@ -1175,6 +1175,14 @@ function broadcast(message) {
 }
 
 function sendGameState(ws) {
+  // Pre-compute player-controlled chasers (do this once instead of per-chaser)
+  const playerControlledChasers = new Set();
+  gameState.players.forEach((player) => {
+    if ((player.type === "chaser" || player.type === "ghost") && player.connected) {
+      playerControlledChasers.add(player.colorIndex);
+    }
+  });
+
   const players = Array.from(gameState.players.entries()).map(([id, player]) => ({
     playerId: id,
     type: player.type,
@@ -1190,94 +1198,57 @@ function sendGameState(ws) {
       : null,
   }));
 
+  // Build fugitive positions (only active ones)
+  const fugitivePositions = [];
+  for (let index = 0; index < gameState.fugitives.length; index++) {
+    if (gameState.caughtFugitives.has(index)) continue;
+    const p = gameState.fugitives[index];
+    fugitivePositions.push({
+      index: index,
+      x: p.x,
+      y: p.y,
+      px: p.px,
+      py: p.py,
+      color: p.color,
+    });
+  }
+
+  // Build chaser positions (use cached isPlayerControlled)
+  const chaserPositions = [];
+  for (let index = 0; index < gameState.chasers.length; index++) {
+    const g = gameState.chasers[index];
+    if (!g) continue;
+    chaserPositions.push({
+      index: index,
+      x: g.x,
+      y: g.y,
+      px: g.px,
+      py: g.py,
+      color: g.color,
+      isPlayerControlled: playerControlledChasers.has(index),
+    });
+  }
+
   ws.send(
     JSON.stringify({
       type: "gameState",
       players: players,
       availableColors: {
-        fugitive: [...gameState.availableColors.fugitive],
-        chaser: [...gameState.availableColors.chaser],
-        // Legacy support
-        pacman: [...gameState.availableColors.fugitive],
-        ghost: [...gameState.availableColors.chaser],
+        fugitive: gameState.availableColors.fugitive,
+        chaser: gameState.availableColors.chaser,
+        // Legacy support (reference, not copy)
+        pacman: gameState.availableColors.fugitive,
+        ghost: gameState.availableColors.chaser,
       },
       gameStarted: gameState.gameStarted,
       itemsEnabled: gameState.itemsEnabled,
       items: gameState.itemsEnabled ? gameState.items.map((item) => ({ x: item.x, y: item.y, collected: item.collected })) : [],
       positions: {
-        fugitives: gameState.fugitives
-          .map((p, index) => {
-            // Don't send caught fugitives (they're removed from the game)
-            if (gameState.caughtFugitives.has(index)) return null;
-            return {
-              index: index, // Include index so client knows which fugitive this is
-              x: p.x,
-              y: p.y,
-              px: p.px,
-              py: p.py,
-              targetX: p.targetX,
-              targetY: p.targetY,
-              color: p.color,
-            };
-          })
-          .filter((p) => p !== null),
-        chasers: gameState.chasers
-          .map((g, index) => {
-            if (!g) return null;
-            // Check if this chaser is player-controlled
-            const isPlayerControlled = Array.from(gameState.players.values()).some(
-              (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
-            );
-            return {
-              index: index, // Include index so client knows which chaser this is
-              x: g.x,
-              y: g.y,
-              px: g.px,
-              py: g.py,
-              targetX: g.targetX,
-              targetY: g.targetY,
-              color: g.color,
-              isPlayerControlled: isPlayerControlled, // Indicate if player-controlled for opacity
-            };
-          })
-          .filter((g) => g !== null),
-        // Legacy support
-        pacmen: gameState.fugitives
-          .map((p, index) => {
-            // Don't send caught fugitives (they're removed from the game)
-            if (gameState.caughtFugitives.has(index)) return null;
-            return {
-              index: index, // Include index so client knows which fugitive this is
-              x: p.x,
-              y: p.y,
-              px: p.px,
-              py: p.py,
-              targetX: p.targetX,
-              targetY: p.targetY,
-              color: p.color,
-            };
-          })
-          .filter((p) => p !== null),
-        ghosts: gameState.chasers
-          .map((g, index) => {
-            if (!g) return null; // Don't send chasers that don't exist yet
-            // Check if this chaser is player-controlled
-            const isPlayerControlled = Array.from(gameState.players.values()).some(
-              (p) => (p.type === "chaser" || p.type === "ghost") && p.colorIndex === index && p.connected
-            );
-            return {
-              index: index,
-              x: g.x,
-              y: g.y,
-              px: g.px,
-              py: g.py,
-              targetX: g.targetX,
-              targetY: g.targetY,
-              color: g.color,
-              isPlayerControlled: isPlayerControlled, // Indicate if player-controlled for opacity
-            };
-          })
-          .filter((g) => g !== null),
+        fugitives: fugitivePositions,
+        chasers: chaserPositions,
+        // Legacy support (reference same arrays)
+        pacmen: fugitivePositions,
+        ghosts: chaserPositions,
       },
     })
   );
