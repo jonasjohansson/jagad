@@ -83,25 +83,9 @@ function respawnCharacter(character, spawnPos) {
 
 function respawnGhost(ghost, spawnPos) {
   respawnCharacter(ghost, spawnPos);
-  ghost.moveTimer = 0;
   ghost.positionHistory = [];
   ghost.lastDirX = 0;
   ghost.lastDirY = 0;
-  ghost.survivalTime = 0; // Reset survival timer on respawn
-  ghost.lastSurvivalPoint = 0; // Reset survival point timer
-
-  // Find initial direction
-  for (const dir of DIRECTIONS) {
-    const newX = spawnPos.x + dir.x;
-    const newY = spawnPos.y + dir.y;
-    if (isPath(newX, newY)) {
-      ghost.targetX = newX;
-      ghost.targetY = newY;
-      ghost.lastDirX = dir.x;
-      ghost.lastDirY = dir.y;
-      break;
-    }
-  }
 }
 
 // Game state
@@ -362,26 +346,6 @@ function handleServerMessage(data) {
         flashCharacters(data.chaserColorIndex, data.fugitiveColorIndex);
       }
       break;
-    case "roundsComplete":
-      // Show alert when current player completes 10 rounds
-      // The server sends this message directly to the player's WebSocket, so if we receive it, it's for us
-      alert(
-        `You've completed 10 rounds!\n\nChaser Score: ${data.chaserScore}\nTotal Rounds: ${data.totalRounds}`
-      );
-      // Clear our character selection (we've been kicked out)
-      myCharacterType = null;
-      myColorIndex = null;
-      window.myCharacterType = null;
-      window.myColorIndex = null;
-      // Clear visual selection
-      [...pacmen, ...ghosts].forEach((char) => {
-        if (char?.element) char.element.classList.remove("selected");
-      });
-      currentPacman = null;
-      currentGhost = null;
-      // Update score display
-      updateScoreDisplay();
-      break;
     case "gameEnd":
       // Game ended - show final score
       const timeSeconds = (data.gameTime / 1000).toFixed(1);
@@ -400,12 +364,12 @@ function handleServerMessage(data) {
       gameStarted = false;
       // Reset speed settings to defaults
       guiParams.fugitiveSpeed = 0.4;
-      guiParams.chaserSpeed = 0.45;
+      guiParams.chaserSpeed = 0.41;
       // Update GUI controllers if they exist
       if (window.fugitiveSpeedController) window.fugitiveSpeedController.setValue(0.4);
-      if (window.chaserSpeedController) window.chaserSpeedController.setValue(0.45);
+      if (window.chaserSpeedController) window.chaserSpeedController.setValue(0.41);
       // Send reset speed config to server
-      sendSpeedConfig(0.4, 0.45);
+      sendSpeedConfig(0.4, 0.41);
       // Clear our character selection (players lose selection when game resets)
       myCharacterType = null;
       myColorIndex = null;
@@ -710,7 +674,6 @@ function updateScoreDisplay() {
   const myPlayer = connectedPlayers.get(myPlayerId);
   if (myPlayer && myPlayer.stats) {
     window.scoreDisplay.chaserScore.setValue(myPlayer.stats.chaserScore || 0);
-    window.scoreDisplay.rounds.setValue(myPlayer.stats.rounds || 0);
   }
 }
 
@@ -909,16 +872,7 @@ function joinAsCharacter(characterType, colorIndex, playerName = "AI") {
   }
 }
 
-// Join queue after completing 10 rounds
-function joinQueue() {
-  // Queue system: wait for an available slot
-  // For now, just show a message - full queue system to be implemented
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    // Request current game state to check availability
-    ws.send(JSON.stringify({ type: "gameState" }));
-    alert("You're in the queue! Waiting for an available slot...");
-  }
-}
+// Queue system removed - not used
 
 // Toggle between 2D and 3D view
 function toggle3DView(enabled) {
@@ -1049,7 +1003,7 @@ function init() {
       serverTarget: "Render",
       difficulty: 0.8,
       fugitiveSpeed: 0.4,
-      chaserSpeed: 0.45, // Slightly faster than fugitives
+      chaserSpeed: 0.41, // Slightly faster than fugitives
       gameDuration: 90, // Game duration in seconds
       playerInitials: "ABC", // 3-letter initials
       showDebug: false, // Show debug information
@@ -1522,7 +1476,6 @@ function init() {
     // Score display
     window.scoreDisplay = {
       chaserScore: charactersFolder.add({ value: 0 }, "value").name("Chaser Score").disable(),
-      rounds: charactersFolder.add({ value: 0 }, "value").name("Rounds").disable(),
     };
 
     // Apply team images to existing characters after GUI is initialized
@@ -1695,8 +1648,6 @@ function init() {
       targetY: initialTargetY,
       color: COLORS[i],
       speed: 1.0,
-      survivalTime: 0, // Time since last respawn in seconds
-      lastSurvivalPoint: 0, // Last time a survival point was awarded
       spawnPos: { ...pos },
       element: createCharacter("ghost", COLORS[i], pos.x, pos.y),
       moveTimer: 0,

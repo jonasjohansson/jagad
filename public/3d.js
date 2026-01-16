@@ -19,7 +19,6 @@ let cameraZoom = 1.2; // Camera zoom level
 let baseViewSize = 0; // Base view size (calculated on init)
 let fugitives3D = [];
 let chasers3D = [];
-let items3D = [];
 let mazeVoxels = [];
 let fugitiveLights = []; // Point lights for fugitives
 let chaserLights = []; // Point lights for chasers
@@ -382,20 +381,7 @@ function createChaser3D(color, x, y, px, py) {
   return { mesh: group, light: pointLight };
 }
 
-function createItem3D(x, y) {
-  // Create item as a small voxel cube
-  const itemSize = 3;
-  const voxelGeometry = new THREE.BoxGeometry(itemSize, itemSize, itemSize);
-  const voxelMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffff00,
-    emissive: 0xffff00,
-    emissiveIntensity: 1.0,
-  });
-  const item = new THREE.Mesh(voxelGeometry, voxelMaterial);
-  item.position.set(x * CELL_SIZE + CHARACTER_OFFSET, itemSize / 2 + 2, y * CELL_SIZE + CHARACTER_OFFSET);
-  scene.add(item);
-  return item;
-}
+// Items system removed - not used
 
 function getColorHex(colorName) {
   const colorMap = {
@@ -566,21 +552,7 @@ function updatePositions3D(positions) {
   });
 }
 
-function updateItems3D(itemsData) {
-  // Remove old items
-  items3D.forEach((item) => scene.remove(item));
-  items3D = [];
-
-  // Create new items
-  if (itemsData) {
-    itemsData.forEach((itemData) => {
-      if (!itemData.collected) {
-        const item = createItem3D(itemData.x, itemData.y);
-        items3D.push(item);
-      }
-    });
-  }
-}
+// Items system removed - not used
 
 function onWindowResize3D() {
   if (!camera || !renderer) return;
@@ -643,12 +615,10 @@ function cleanup3D() {
     if (chaser && chaser.mesh) scene.remove(chaser.mesh);
     if (chaser && chaser.light) scene.remove(chaser.light);
   });
-  items3D.forEach((item) => scene.remove(item));
   mazeVoxels.forEach((voxel) => scene.remove(voxel));
 
   fugitives3D = [];
   chasers3D = [];
-  items3D = [];
   mazeVoxels = [];
 
   if (renderer) {
@@ -825,7 +795,6 @@ window.render3D = {
       }
     }
   },
-  updateItems: updateItems3D,
   render: render3D,
   cleanup: cleanup3D,
   onResize: onWindowResize3D,
