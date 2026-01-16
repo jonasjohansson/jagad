@@ -424,7 +424,15 @@ function updatePositions3D(positions) {
   // Update chasers (server may still use "ghosts" name)
   // All chasers are white
   const chaserPositions = positions.chasers || positions.ghosts || [];
-  chaserPositions.forEach((pos, index) => {
+
+  // Track which chaser indices are currently active
+  const activeChaserIndices = new Set();
+
+  chaserPositions.forEach((pos, arrayIndex) => {
+    // Use index from server if provided, otherwise use array index (for backward compatibility)
+    const index = pos.index !== undefined ? pos.index : arrayIndex;
+    activeChaserIndices.add(index);
+
     if (!chasers3D[index]) {
       // Use pixel coordinates if available for accurate positioning
       chasers3D[index] = createChaser3D("white", pos.x, pos.y, pos.px, pos.py);
@@ -438,6 +446,16 @@ function updatePositions3D(positions) {
         chasers3D[index].mesh.position.x = pos.x * CELL_SIZE + CELL_SIZE / 2;
         chasers3D[index].mesh.position.z = pos.y * CELL_SIZE + CELL_SIZE / 2;
       }
+    }
+  });
+
+  // Remove chasers that are no longer active (not selected by anyone)
+  chasers3D.forEach((chaser, index) => {
+    if (chaser && !activeChaserIndices.has(index)) {
+      // Remove from scene
+      if (chaser.mesh) scene.remove(chaser.mesh);
+      // Clean up
+      chasers3D[index] = null;
     }
   });
 }

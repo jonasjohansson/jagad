@@ -70,7 +70,7 @@ const gameState = {
   nextPlayerId: 0,
   availableColors: {
     fugitive: [], // Players cannot join as fugitives (AI-controlled only)
-    chaser: [1, 2, 3], // Chaser 0 is always present but not player-controlled, players can join 1, 2, or 3
+    chaser: [0, 1, 2, 3], // All 4 chaser slots are joinable
   },
   gameStarted: false, // Game starts when first player joins
   gameStartTime: null, // When the current game started (90 seconds timer)
@@ -150,32 +150,8 @@ function initCharacters() {
     itemsCollected: 0, // Number of collectible items collected this round
   }));
 
-  // Initialize only the first chaser (index 0) - present from start but not moving
-  // Other chasers (1, 2, 3) will be created when players join them
-  if (chaserSpawnPositions.length > 0) {
-    const pos = chaserSpawnPositions[0];
-    gameState.chasers[0] = {
-      x: pos.x,
-      y: pos.y,
-      px: pos.x * CELL_SIZE + CHARACTER_OFFSET,
-      py: pos.y * CELL_SIZE + CHARACTER_OFFSET,
-      targetX: pos.x, // Start at spawn position
-      targetY: pos.y, // Start at spawn position
-      color: "white", // All chasers are white
-      speed: 1.0,
-      spawnPos: { ...pos },
-      moveTimer: 0,
-      lastDirX: 0, // No initial direction - won't move until player controls it
-      lastDirY: 0, // No initial direction
-      positionHistory: [],
-      dirX: 0, // No movement direction
-      dirY: 0, // No movement direction
-      nextDirX: 0, // No queued direction
-      nextDirY: 0, // No queued direction
-    };
-  }
-  
-  // Initialize other chaser slots as null (will be created when players join)
+  // Initialize all chaser slots as null (will be created when players join them)
+  gameState.chasers[0] = null;
   gameState.chasers[1] = null;
   gameState.chasers[2] = null;
   gameState.chasers[3] = null;
@@ -530,17 +506,18 @@ function resetGame() {
   gameState.caughtFugitives.clear();
   
   // Clear all player selections - players lose their chaser selection when game resets
-  // Free up all chaser slots (except 0 which is always present)
-  gameState.availableColors.chaser = [1, 2, 3];
+  // Free up all chaser slots
+  gameState.availableColors.chaser = [0, 1, 2, 3];
   
-  // Remove chasers 1, 2, 3 (they only exist when players join)
+  // Remove all chasers (they only exist when players join)
+  gameState.chasers[0] = null;
   gameState.chasers[1] = null;
   gameState.chasers[2] = null;
   gameState.chasers[3] = null;
   
   // Disconnect all players from their chasers
   gameState.players.forEach((player, playerId) => {
-    if (player.type === "chaser" && player.colorIndex > 0) {
+    if (player.type === "chaser") {
       // Free up the chaser slot
       if (!gameState.availableColors.chaser.includes(player.colorIndex)) {
         gameState.availableColors.chaser.push(player.colorIndex);
@@ -982,8 +959,8 @@ function handleJoin(ws, playerId, data) {
     playerName: playerName, // 3-letter initials
   });
 
-  // Create chaser if it doesn't exist (for chasers 1, 2, 3)
-  if (isChaser && !gameState.chasers[colorIndex] && colorIndex > 0) {
+  // Create chaser if it doesn't exist (for all chasers 0, 1, 2, 3)
+  if (isChaser && !gameState.chasers[colorIndex]) {
     const spawnPos = chaserSpawnPositions[colorIndex];
     if (spawnPos) {
       gameState.chasers[colorIndex] = {
@@ -1103,8 +1080,19 @@ function kickPlayerFromCharacter(playerId) {
 function handleDisconnect(playerId) {
   const player = gameState.players.get(playerId);
   if (player) {
-    gameState.availableColors[player.type].push(player.colorIndex);
-    gameState.availableColors[player.type].sort();
+    // Free up the chaser slot
+    if (player.type === "chaser") {
+      if (!gameState.availableColors.chaser.includes(player.colorIndex)) {
+        gameState.availableColors.chaser.push(player.colorIndex);
+        gameState.availableColors.chaser.sort();
+      }
+      // Remove the chaser object (it should disappear when not selected)
+      gameState.chasers[player.colorIndex] = null;
+    } else {
+      // For other types, use the old logic
+      gameState.availableColors[player.type].push(player.colorIndex);
+      gameState.availableColors[player.type].sort();
+    }
     gameState.players.delete(playerId);
     broadcast({ type: "playerLeft", playerId: playerId });
     broadcastGameState();
@@ -1166,15 +1154,21 @@ function sendGameState(ws) {
             };
           })
           .filter((p) => p !== null),
-        chasers: gameState.chasers.map((g) => ({
-          x: g.x,
-          y: g.y,
-          px: g.px,
-          py: g.py,
-          targetX: g.targetX,
-          targetY: g.targetY,
-          color: g.color,
-        })),
+        chasers: gameState.chasers
+          .map((g, index) => {
+            if (!g) return null; // Don't send chasers that don't exist
+            return {
+              index: index, // Include index so client knows which chaser this is
+              x: g.x,
+              y: g.y,
+              px: g.px,
+              py: g.py,
+              targetX: g.targetX,
+              targetY: g.targetY,
+              color: g.color,
+            };
+          })
+          .filter((g) => g !== null),
         // Legacy support
         pacmen: gameState.fugitives
           .map((p, index) => {
@@ -1256,9 +1250,10 @@ function broadcastGameState() {
         })
         .filter((p) => p !== null),
       chasers: gameState.chasers
-        .map((g) => {
+        .map((g, index) => {
           if (!g) return null; // Don't send chasers that don't exist yet
           return {
+            index: index, // Include index so client knows which chaser this is
             x: g.x,
             y: g.y,
             px: g.px,

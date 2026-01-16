@@ -767,7 +767,7 @@ function init() {
 
     // Create 2D/3D folder
     const view3DFolder = gui.addFolder("2D/3D");
-    view3DFolder.open(); // Open by default
+    view3DFolder.close(); // Closed by default
 
     // 3D view toggle
     view3DFolder
@@ -834,7 +834,7 @@ function init() {
 
     // Create Style folder for grouped controls
     const styleFolder = gui.addFolder("Style");
-    styleFolder.open(); // Open by default
+    styleFolder.close(); // Closed by default
 
     // Inner wall color control (affects both 2D borders and 3D materials)
     styleFolder
@@ -895,7 +895,7 @@ function init() {
 
     // Create Building folder for building image controls
     const buildingFolder = gui.addFolder("Building");
-    buildingFolder.open(); // Open by default
+    buildingFolder.close(); // Closed by default
 
     // Building image opacity slider
     buildingFolder
@@ -1031,7 +1031,7 @@ function init() {
 
     // Create Characters & Scoring folder
     const charactersFolder = gui.addFolder("Characters & Scoring");
-    charactersFolder.close(); // Closed by default
+    charactersFolder.open(); // Open by default
 
     // AI Skill control
     charactersFolder
@@ -1086,8 +1086,8 @@ function init() {
 
     // Players can only join as chasers (fugitives are AI-controlled)
     // Add chasers (all are white and can catch any fugitive)
-    // Chaser 0 is always present but not available for players, so only show 1, 2, 3
-    for (let i = 1; i < 4; i++) {
+    // Show all 4 chaser slots (0, 1, 2, 3)
+    for (let i = 0; i < 4; i++) {
       const chaserKey = `Chaser ${i}`;
 
       joinActions[chaserKey] = () => {
