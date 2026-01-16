@@ -76,9 +76,9 @@ const gameState = {
   gameStartTime: null, // When the current game started (90 seconds timer)
   gameDuration: 90, // Game lasts 90 seconds
   aiDifficulty: 0.8,
-  // Global speed multipliers for all fugitives and all chasers (default a bit slower)
+  // Global speed multipliers for all fugitives and all chasers
   fugitiveSpeed: 0.4,
-  chaserSpeed: 0.4,
+  chaserSpeed: 0.6, // Increased for more responsive movement
   survivalTimeThreshold: 10, // Not used in new game mode
   chaserSpeedIncreasePerRound: 0.01, // Not used in new game mode
   itemsEnabled: false, // Toggle for yellow dots/items
@@ -518,18 +518,48 @@ function endGame(allCaught) {
     }
   });
   
-  // Reset game state after a delay
+  // Reset game state after a short delay to show final scores
   setTimeout(() => {
     resetGame();
-  }, 5000); // 5 second delay before reset
+  }, 3000); // 3 second delay before reset
 }
 
 function resetGame() {
   gameState.gameStarted = false;
   gameState.gameStartTime = null;
   gameState.caughtFugitives.clear();
+  
+  // Reset all characters to spawn positions
   initCharacters();
+  
+  // Reset all chaser movement states
+  gameState.chasers.forEach((chaser, index) => {
+    if (chaser) {
+      chaser.dirX = 0;
+      chaser.dirY = 0;
+      chaser.nextDirX = 0;
+      chaser.nextDirY = 0;
+      chaser.lastDirX = 0;
+      chaser.lastDirY = 0;
+      chaser.positionHistory = [];
+    }
+  });
+  
+  // Reset all fugitive movement states
+  gameState.fugitives.forEach((fugitive) => {
+    if (fugitive) {
+      fugitive.dirX = 0;
+      fugitive.dirY = 0;
+      fugitive.nextDirX = 0;
+      fugitive.nextDirY = 0;
+      fugitive.lastDirX = 0;
+      fugitive.lastDirY = 0;
+      fugitive.positionHistory = [];
+    }
+  });
+  
   broadcast({ type: "gameReset" });
+  broadcastGameState();
 }
 
 function respawnCharacter(character, spawnPos) {
@@ -658,223 +688,13 @@ function gameLoop() {
     }
   });
 
-  // Move fugitives (always, even before game starts)
+  // Move fugitives (always AI-controlled, even before game starts)
   gameState.fugitives.forEach((pacman, index) => {
     if (!pacman || gameState.caughtFugitives.has(index)) return; // Skip caught fugitives
 
-    const isPlayerControlledPacman = Array.from(gameState.players.values()).some(
-      (p) => (p.type === "fugitive" || p.type === "pacman") && p.colorIndex === index && p.connected
-    );
-
-    // Initialize round tracking when player joins
-    if (isPlayerControlledPacman) {
-      const pacmanPlayer = Array.from(gameState.players.entries()).find(
-        ([id, p]) => (p.type === "fugitive" || p.type === "pacman") && p.colorIndex === index && p.connected
-      );
-      if (pacmanPlayer) {
-        const [playerId, player] = pacmanPlayer;
-        // Initialize round start time if not set
-        if (!player.stats.currentRoundStartTime) {
-          player.stats.currentRoundStartTime = Date.now();
-          pacman.survivalStartTime = Date.now();
-          pacman.itemsCollected = 0;
-        }
-
-        // Check if survival time threshold has passed (round ends at threshold OR capture)
-        if (player.stats.currentRoundStartTime) {
-          const roundTime = (Date.now() - player.stats.currentRoundStartTime) / 1000;
-          // Log every second to see if time is progressing
-          if (Math.floor(roundTime) !== (pacman.lastLoggedSecond || -1)) {
-            pacman.lastLoggedSecond = Math.floor(roundTime);
-            if (roundTime < gameState.survivalTimeThreshold) {
-              console.log(
-                `[ROUND] Fugitive ${index} (${pacman.color}) round time: ${roundTime.toFixed(1)}s / ${gameState.survivalTimeThreshold}s`
-              );
-            }
-          }
-          if (roundTime >= gameState.survivalTimeThreshold) {
-            console.log(
-              `[ROUND] Fugitive ${index} (${pacman.color}) survived ${roundTime.toFixed(1)}s (threshold: ${
-                gameState.survivalTimeThreshold
-              }s) - ROUND ENDING`
-            );
-            // Round ended by time - fugitive survived
-            // Award point for surviving the round + items collected this round
-            player.stats.itemsCollected += pacman.itemsCollected || 0;
-            // Fugitive score = survival points (1 per round survived) + items collected
-            player.stats.fugitiveScore = player.stats.rounds + 1 + player.stats.itemsCollected;
-            player.stats.rounds++;
-
-            // Find matching chaser for flash effect and speed increase
-            const matchingChaser = gameState.chasers.find((c) => c && c.color === pacman.color);
-            const chaserIndex = matchingChaser ? gameState.chasers.indexOf(matchingChaser) : -1;
-            const fugitiveIndex = index;
-
-            // Increase chaser speed when fugitive survives (round ends by time)
-            if (chaserIndex >= 0 && matchingChaser) {
-              const oldRounds = matchingChaser.roundsCompleted || 0;
-              matchingChaser.roundsCompleted = oldRounds + 1;
-              matchingChaser.speedMultiplier = 1.0 + matchingChaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
-              console.log(
-                `[SPEED] Chaser ${chaserIndex} (${matchingChaser.color}) - FUGITIVE SURVIVED: oldRounds=${oldRounds}, newRounds=${
-                  matchingChaser.roundsCompleted
-                }, increasePerRound=${gameState.chaserSpeedIncreasePerRound}, multiplier=${matchingChaser.speedMultiplier.toFixed(
-                  2
-                )}, baseSpeed=${gameState.chaserSpeed}, finalSpeed=${(gameState.chaserSpeed * matchingChaser.speedMultiplier).toFixed(3)}`
-              );
-              // Verify the multiplier is set BEFORE respawn
-              console.log(
-                `[SPEED] BEFORE RESPAWN: chaser.roundsCompleted=${matchingChaser.roundsCompleted}, chaser.speedMultiplier=${matchingChaser.speedMultiplier}`
-              );
-            } else {
-              console.log(
-                `[SPEED] WARNING: Could not find matching chaser for fugitive ${index} (${pacman.color}), chaserIndex=${chaserIndex}`
-              );
-            }
-
-            // Send round end flash event
-            player.ws.send(
-              JSON.stringify({
-                type: "roundEnd",
-                chaserColorIndex: chaserIndex,
-                fugitiveColorIndex: fugitiveIndex,
-              })
-            );
-
-            // Also send to matching chaser if they exist
-            if (chaserIndex >= 0) {
-              const chaserPlayer = Array.from(gameState.players.entries()).find(
-                ([id, p]) => p.type === "chaser" && p.colorIndex === chaserIndex && p.connected
-              );
-              if (chaserPlayer) {
-                const [chaserPlayerId, chaserPlayerData] = chaserPlayer;
-                chaserPlayerData.ws.send(
-                  JSON.stringify({
-                    type: "roundEnd",
-                    chaserColorIndex: chaserIndex,
-                    fugitiveColorIndex: fugitiveIndex,
-                  })
-                );
-              }
-            }
-
-            // Check if player completed 10 rounds
-            if (player.stats.rounds >= 10) {
-              player.stats.currentRoundStartTime = null;
-              player.ws.send(
-                JSON.stringify({
-                  type: "roundsComplete",
-                  chaserScore: player.stats.chaserScore || 0,
-                  fugitiveScore: player.stats.fugitiveScore,
-                  totalRounds: player.stats.rounds,
-                })
-              );
-              kickPlayerFromCharacter(playerId);
-            } else {
-              // Start new round
-              player.stats.currentRoundStartTime = Date.now();
-              pacman.survivalStartTime = Date.now();
-              pacman.itemsCollected = 0;
-              // Respawn all items for new round (only if items are enabled)
-              if (gameState.itemsEnabled) {
-                gameState.items.forEach((item) => (item.collected = false));
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Also check for chaser (ghost) survival time threshold rounds
-    const isPlayerControlledGhost = Array.from(gameState.players.values()).some(
-      (p) => p.type === "ghost" && p.colorIndex === index && p.connected
-    );
-    if (isPlayerControlledGhost) {
-      const ghostPlayer = Array.from(gameState.players.entries()).find(
-        ([id, p]) => p.type === "ghost" && p.colorIndex === index && p.connected
-      );
-      if (ghostPlayer) {
-        const [playerId, player] = ghostPlayer;
-        if (player.stats.currentRoundStartTime) {
-          const roundTime = (Date.now() - player.stats.currentRoundStartTime) / 1000;
-          if (roundTime >= gameState.survivalTimeThreshold) {
-            // Round ended by time - fugitive survived, chaser didn't catch
-            // Chaser gets penalty (add survival threshold time to total time)
-            player.stats.totalCaptureTime += gameState.survivalTimeThreshold * 1000;
-            // Chaser score is number of catches (no point added for this round)
-            player.stats.chaserScore = player.stats.catches || 0;
-            player.stats.rounds++;
-
-            // Increase chaser speed for next round
-            const chaser = gameState.chasers[index];
-            if (chaser) {
-              chaser.roundsCompleted = (chaser.roundsCompleted || 0) + 1;
-              // Speed multiplier: 1.0 + (roundsCompleted * chaserSpeedIncreasePerRound)
-              // After first round: 1.0 + 1 * 0.01 = 1.01 (1% faster)
-              chaser.speedMultiplier = 1.0 + chaser.roundsCompleted * gameState.chaserSpeedIncreasePerRound;
-              console.log(
-                `[SPEED] Chaser ${index} (${chaser.color}) - TIME END: roundsCompleted=${chaser.roundsCompleted}, increasePerRound=${
-                  gameState.chaserSpeedIncreasePerRound
-                }, multiplier=${chaser.speedMultiplier.toFixed(2)}, baseSpeed=${gameState.chaserSpeed}, finalSpeed=${(
-                  gameState.chaserSpeed * chaser.speedMultiplier
-                ).toFixed(3)}`
-              );
-            }
-
-            // Find matching fugitive for flash effect
-            const matchingFugitive = gameState.fugitives.find((f) => f && f.color === chaser.color);
-            const fugitiveIndex = matchingFugitive ? gameState.fugitives.indexOf(matchingFugitive) : -1;
-            const chaserIndex = index;
-
-            // Send round end flash event
-            player.ws.send(
-              JSON.stringify({
-                type: "roundEnd",
-                chaserColorIndex: chaserIndex,
-                fugitiveColorIndex: fugitiveIndex,
-              })
-            );
-
-            // Also send to matching fugitive if they exist
-            if (fugitiveIndex >= 0) {
-              const fugitivePlayer = Array.from(gameState.players.entries()).find(
-                ([id, p]) => p.type === "fugitive" && p.colorIndex === fugitiveIndex && p.connected
-              );
-              if (fugitivePlayer) {
-                const [fugitivePlayerId, fugitivePlayerData] = fugitivePlayer;
-                fugitivePlayerData.ws.send(
-                  JSON.stringify({
-                    type: "roundEnd",
-                    chaserColorIndex: chaserIndex,
-                    fugitiveColorIndex: fugitiveIndex,
-                  })
-                );
-              }
-            }
-
-            // Check if player completed 10 rounds
-            if (player.stats.rounds >= 10) {
-              player.stats.currentRoundStartTime = null;
-              player.ws.send(
-                JSON.stringify({
-                  type: "roundsComplete",
-                  chaserScore: player.stats.chaserScore,
-                  fugitiveScore: player.stats.fugitiveScore || 0,
-                  totalRounds: player.stats.rounds,
-                })
-              );
-              kickPlayerFromCharacter(playerId);
-            } else {
-              // Start new round
-              player.stats.currentRoundStartTime = Date.now();
-            }
-          }
-        }
-      }
-    }
-
+    // Fugitives are always AI-controlled, never player-controlled
     // Check for item collection (fugitives collect items) - only if items are enabled
-    if (gameState.itemsEnabled && isPlayerControlledPacman) {
+    if (gameState.itemsEnabled) {
       // Check if pacman is on a tile with an item
       const item = gameState.items.find((item) => !item.collected && item.x === pacman.x && item.y === pacman.y);
       if (item) {
@@ -887,42 +707,8 @@ function gameLoop() {
     moveCharacter(pacman, gameState.fugitiveSpeed);
 
     if (isAtTarget(pacman)) {
-      if (!gameState.gameStarted || isPlayerControlledPacman) {
-        // Human-controlled or pre-start pacmen: Pacman-style continuous movement.
-        // When we reach the center of a tile, first try to turn to the desired direction,
-        // otherwise continue straight in the current direction until a wall.
-        let usedDesired = false;
-
-        // Try to apply queued direction first (allows buffered turns)
-        if (pacman.nextDirX || pacman.nextDirY) {
-          const desiredX = pacman.x + pacman.nextDirX;
-          const desiredY = pacman.y + pacman.nextDirY;
-          if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
-            pacman.dirX = pacman.nextDirX;
-            pacman.dirY = pacman.nextDirY;
-            pacman.targetX = desiredX;
-            pacman.targetY = desiredY;
-            usedDesired = true;
-          }
-        }
-
-        // If desired direction isn't possible, try to continue straight
-        if (!usedDesired && (pacman.dirX || pacman.dirY)) {
-          const forwardX = pacman.x + pacman.dirX;
-          const forwardY = pacman.y + pacman.dirY;
-          if (forwardX >= 0 && forwardX < COLS && forwardY >= 0 && forwardY < ROWS && isPath(forwardX, forwardY)) {
-            pacman.targetX = forwardX;
-            pacman.targetY = forwardY;
-          } else {
-            // Hit a wall; stop until a new valid direction is given
-            pacman.dirX = 0;
-            pacman.dirY = 0;
-          }
-        }
-      } else {
-        // Game started and this pacman is NOT player-controlled: let AI move it
-        moveFugitiveAI(pacman, index);
-      }
+      // Fugitives are always AI-controlled
+      moveFugitiveAI(pacman, index);
     }
   });
 
@@ -1074,25 +860,12 @@ wss.on("connection", (ws, req) => {
           handleSetItemsEnabled(data);
           break;
         case "startGame":
-          gameState.gameStarted = true;
-          // Initialize survival tracking for all player-controlled pacmen
-          gameState.players.forEach((player, playerId) => {
-            if (player.connected && (player.type === "fugitive" || player.type === "pacman") && gameState.fugitives[player.colorIndex]) {
-              const pacman = gameState.fugitives[player.colorIndex];
-              pacman.survivalStartTime = Date.now();
-              pacman.lastSurvivalPointTime = null;
-              if (player.stats) {
-                player.stats.currentRoundStartTime = Date.now();
-              }
-            }
-          });
-          // Force ghosts to get new directions immediately
-          gameState.chasers.forEach((ghost) => {
-            if (ghost && isAtTarget(ghost)) {
-              moveChaserAI(ghost);
-            }
-          });
-          broadcast({ type: "gameStarted" });
+          if (!gameState.gameStarted) {
+            gameState.gameStarted = true;
+            gameState.gameStartTime = Date.now();
+            gameState.caughtFugitives.clear();
+            broadcast({ type: "gameStarted" });
+          }
           break;
         case "restartGame":
           gameState.gameStarted = false;
@@ -1219,13 +992,7 @@ function handleJoin(ws, playerId, data) {
     chaser.nextDirY = 0;
   }
 
-  // Start game timer when first player joins
-  if (!gameState.gameStarted) {
-    gameState.gameStarted = true;
-    gameState.gameStartTime = Date.now();
-    gameState.caughtFugitives.clear();
-    broadcast({ type: "gameStarted" });
-  }
+  // Don't start game automatically - wait for "Start game" button
 
   const colorIdx = availableColors.indexOf(colorIndex);
   if (colorIdx > -1) {
