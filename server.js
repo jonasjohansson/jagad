@@ -1211,19 +1211,42 @@ function handleJoin(ws, playerId, data) {
     playerName: playerName, // 3-letter initials
   });
 
+  // Create chaser if it doesn't exist (for chasers 1, 2, 3)
+  if (isChaser && !gameState.chasers[colorIndex] && colorIndex > 0) {
+    const spawnPos = chaserSpawnPositions[colorIndex];
+    if (spawnPos) {
+      gameState.chasers[colorIndex] = {
+        x: spawnPos.x,
+        y: spawnPos.y,
+        px: spawnPos.x * CELL_SIZE + CHARACTER_OFFSET,
+        py: spawnPos.y * CELL_SIZE + CHARACTER_OFFSET,
+        targetX: spawnPos.x,
+        targetY: spawnPos.y,
+        color: "white",
+        speed: 1.0,
+        spawnPos: { ...spawnPos },
+        moveTimer: 0,
+        lastDirX: 0,
+        lastDirY: 0,
+        positionHistory: [],
+        isAI: false, // Player-controlled
+      };
+      respawnChaser(gameState.chasers[colorIndex], spawnPos);
+    }
+  } else if (isChaser && gameState.chasers[colorIndex]) {
+    // Chaser already exists, just respawn it
+    const chaser = gameState.chasers[colorIndex];
+    respawnChaser(chaser, chaser.spawnPos);
+    chaser.positionHistory = [];
+    chaser.isAI = false; // Mark as player-controlled
+  }
+
   // Start game timer when first player joins
   if (!gameState.gameStarted) {
     gameState.gameStarted = true;
     gameState.gameStartTime = Date.now();
     gameState.caughtFugitives.clear();
     broadcast({ type: "gameStarted" });
-  }
-
-  // Move chaser to starting position
-  if (isChaser && gameState.chasers[colorIndex]) {
-    const chaser = gameState.chasers[colorIndex];
-    respawnChaser(chaser, chaser.spawnPos);
-    chaser.positionHistory = [];
   }
 
   const colorIdx = availableColors.indexOf(colorIndex);
