@@ -735,8 +735,9 @@ function gameLoop() {
         return;
       }
 
-      // At tile center: chasers only move when player provides input
+      // At tile center: chasers continue in current direction or change based on input
       if (chaser.nextDirX || chaser.nextDirY) {
+        // Player provided new input - try to change direction
         const desiredX = chaser.x + chaser.nextDirX;
         const desiredY = chaser.y + chaser.nextDirY;
         if (desiredX >= 0 && desiredX < COLS && desiredY >= 0 && desiredY < ROWS && isPath(desiredX, desiredY)) {
@@ -750,16 +751,35 @@ function gameLoop() {
           chaser.nextDirX = 0;
           chaser.nextDirY = 0;
         } else {
-          // Invalid direction, clear it
+          // Invalid direction, clear it but continue in current direction
           chaser.nextDirX = 0;
           chaser.nextDirY = 0;
+          // Continue in current direction if possible
+          if (chaser.dirX || chaser.dirY) {
+            const continueX = chaser.x + chaser.dirX;
+            const continueY = chaser.y + chaser.dirY;
+            if (continueX >= 0 && continueX < COLS && continueY >= 0 && continueY < ROWS && isPath(continueX, continueY)) {
+              chaser.targetX = continueX;
+              chaser.targetY = continueY;
+            } else {
+              // Can't continue, stop
+              chaser.dirX = 0;
+              chaser.dirY = 0;
+            }
+          }
+        }
+      } else if (chaser.dirX || chaser.dirY) {
+        // No new input, but already moving - continue in current direction
+        const continueX = chaser.x + chaser.dirX;
+        const continueY = chaser.y + chaser.dirY;
+        if (continueX >= 0 && continueX < COLS && continueY >= 0 && continueY < ROWS && isPath(continueX, continueY)) {
+          chaser.targetX = continueX;
+          chaser.targetY = continueY;
+        } else {
+          // Can't continue, stop
           chaser.dirX = 0;
           chaser.dirY = 0;
         }
-      } else {
-        // No input, stop moving
-        chaser.dirX = 0;
-        chaser.dirY = 0;
       }
     });
   }
@@ -1080,6 +1100,12 @@ function kickPlayerFromCharacter(playerId) {
 function handleDisconnect(playerId) {
   const player = gameState.players.get(playerId);
   if (player) {
+    // Check if this is the last chaser player (before removing them)
+    const chaserPlayers = Array.from(gameState.players.values()).filter(
+      (p) => (p.type === "chaser" || p.type === "ghost") && p.connected
+    );
+    const isLastChaser = chaserPlayers.length === 1 && (player.type === "chaser" || player.type === "ghost");
+    
     // Free up the chaser slot
     if (player.type === "chaser") {
       if (!gameState.availableColors.chaser.includes(player.colorIndex)) {
@@ -1095,7 +1121,13 @@ function handleDisconnect(playerId) {
     }
     gameState.players.delete(playerId);
     broadcast({ type: "playerLeft", playerId: playerId });
-    broadcastGameState();
+    
+    // If this was the last chaser and the game is running, reset the game
+    if (isLastChaser && gameState.gameStarted) {
+      resetGame();
+    } else {
+      broadcastGameState();
+    }
   }
 }
 
