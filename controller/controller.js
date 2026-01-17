@@ -4,6 +4,7 @@ import { initDpad, getCurrentDirection } from "../shared/dpad.js";
 // Constants
 const REMOTE_SERVER_ADDRESS = "https://pacman-server-239p.onrender.com";
 const LOCAL_SERVER_ADDRESS = "http://localhost:3000";
+const INPUT_THROTTLE = 50; // Throttle input to prevent excessive messages
 const DEBUG = false; // Set to true to enable debug logging
 
 // Get server address from URL parameter or default
@@ -44,6 +45,7 @@ let availableChasers = [0, 1, 2, 3];
 let playerNames = new Map(); // colorIndex -> playerName
 let takenChasers = new Set(); // colorIndex -> Set of chasers taken by other players (selected or joined)
 let lastInputTime = 0;
+let currentDir = null; // Current direction being sent to server
 let isFirstPlayer = false;
 // Track previous state to avoid unnecessary updates
 let previousAvailableChasers = [];
