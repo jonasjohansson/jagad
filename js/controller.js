@@ -27,6 +27,7 @@ let previousPlayerNames = new Map();
 let previousMyColorIndex = null;
 let previousGameStarted = false;
 let previousSelectedChaserIndex = null;
+let gameEndHandled = false; // Prevent multiple gameEnd alerts
 
 // DOM elements (cached) - initialized after DOM is ready
 let elements = {};
@@ -71,7 +72,10 @@ function initWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (DEBUG && data.type !== "gameState") {
+        // Always log gameEnd messages for debugging
+        if (data.type === "gameEnd") {
+          console.log("[WebSocket] Received gameEnd message:", data);
+        } else if (DEBUG && data.type !== "gameState") {
           console.log("[WebSocket] Received:", data.type);
         }
         handleServerMessage(data);
@@ -275,6 +279,14 @@ function handleServerMessage(data) {
     case "gameEnd":
       // Game ended - show alert with score and reload page
       console.log("[gameEnd] Handler called with data:", data);
+      
+      // Prevent multiple gameEnd handlers from running simultaneously
+      if (gameEndHandled) {
+        console.log("[gameEnd] Already handled, ignoring duplicate message");
+        return;
+      }
+      gameEndHandled = true;
+      
       try {
         gameStarted = false;
         previousGameStarted = false;
@@ -301,22 +313,30 @@ function handleServerMessage(data) {
         }
         
         console.log("[gameEnd] About to show alert with message:", message);
-        // Show alert - alert() is a blocking call, so execution pauses here
-        // until the user clicks OK. Only then will the code continue to reload.
-        alert(message);
-        console.log("[gameEnd] Alert dismissed, reloading page...");
         
-        // This line only executes AFTER the user clicks OK on the alert
-        // Reload the page ONLY after alert is dismissed
-        window.location.reload();
+        // Use setTimeout to ensure alert is shown in the next event loop tick
+        // This prevents any potential race conditions with page reload
+        setTimeout(() => {
+          // Show alert - alert() is a blocking call, so execution pauses here
+          // until the user clicks OK. Only then will the code continue to reload.
+          alert(message);
+          console.log("[gameEnd] Alert dismissed, reloading page...");
+          
+          // This line only executes AFTER the user clicks OK on the alert
+          // Reload the page ONLY after alert is dismissed
+          window.location.reload();
+        }, 0);
       } catch (error) {
         console.error("[gameEnd] Error handling game end:", error);
         // Fallback: show simple alert and reload
-        alert("Game Over! Your score: " + (data.score || 0));
-        window.location.reload();
+        setTimeout(() => {
+          alert("Game Over! Your score: " + (data.score || 0));
+          window.location.reload();
+        }, 0);
       }
       break;
     case "gameReset":
+    case "gameRestarted":
       gameStarted = false;
       previousGameStarted = false;
       myColorIndex = null;
@@ -325,6 +345,7 @@ function handleServerMessage(data) {
       selectedChaserName = null;
       pendingStartGame = false;
       isFirstPlayer = false;
+      gameEndHandled = false; // Reset flag when game resets
       // Reset score display to show current score
       updateScoreDisplay();
       updateChaserButtons();

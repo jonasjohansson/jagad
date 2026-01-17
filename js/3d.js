@@ -15,7 +15,7 @@ const COLORS = ["red", "green", "blue", "yellow"];
 let scene, camera, renderer;
 let orthographicCamera, perspectiveCamera;
 let useOrthographic = true; // Default to orthographic
-let cameraZoom = 1.45; // Camera zoom level
+let cameraZoom = 1.6; // Camera zoom level
 let baseViewSize = 0; // Base view size (calculated on init)
 let fugitives3D = [];
 let chasers3D = [];

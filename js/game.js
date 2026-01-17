@@ -1197,7 +1197,7 @@ function init() {
     window.guiParams = {
       view3D: true, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
-      cameraZoom: 1.45, // Camera zoom level (0.5 to 2.0)
+      cameraZoom: 1.6, // Camera zoom level (0.5 to 2.0)
       ambientLightIntensity: 0.1, // Global ambient light intensity
       directionalLightIntensity: 0.3, // Global directional light intensity
       pointLightIntensity: 100, // Point light intensity for characters (0-400 range)
