@@ -1,0 +1,293 @@
+@import url("../global.css");
+
+body {
+  background: #555555;
+  color: white;
+  height: 100vh;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+.game-layout {
+  display: grid;
+  grid-template-columns: 250px 1fr 200px;
+  height: 100vh;
+  width: 100vw;
+}
+
+.left-panel {
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  border-right: 1px solid black;
+  overflow-y: auto;
+}
+
+.info-text {
+  font-size: var(--font-size);
+  line-height: 1.5;
+  text-transform: none;
+}
+
+.score-display {
+  font-size: var(--font-size);
+  text-transform: uppercase;
+}
+
+.play-btn {
+  padding: var(--spacing-md);
+  border: 1px solid black;
+  background: white;
+  color: black;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-size: var(--font-size);
+  text-align: center;
+}
+
+.play-btn:hover {
+  background: black;
+  color: white;
+}
+
+.game-center {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+#game-container {
+  position: relative;
+}
+
+#maze {
+  position: relative;
+  background: #000;
+}
+
+#webgl-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  cursor: grab;
+}
+
+#webgl-canvas:active {
+  cursor: grabbing;
+}
+
+#building-image,
+#building-real-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  pointer-events: none;
+}
+
+.right-panel {
+  padding: var(--spacing-md);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-left: 1px solid black;
+}
+
+.joystick-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  touch-action: none;
+}
+
+.joystick-base {
+  width: 200px;
+  height: 200px;
+  background: white;
+  border: var(--border-width) solid black;
+  position: relative;
+  touch-action: none;
+}
+
+.joystick-base::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: var(--border-width);
+  background: black;
+  transform: translateY(-50%);
+}
+
+.joystick-base::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: var(--border-width);
+  background: black;
+  transform: translateX(-50%);
+}
+
+.joystick-handle {
+  width: 60px;
+  height: 60px;
+  background: black;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 0.1s;
+  touch-action: none;
+}
+
+.joystick-handle.active {
+  background: black;
+}
+
+@media (max-width: 600px) {
+  .joystick-base {
+    width: 250px;
+    height: 250px;
+  }
+
+  .joystick-handle {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+/* Cell styles from game */
+.cell {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+}
+
+.wall {
+  background: transparent;
+  border: none;
+}
+
+.wall.border-top {
+  border-top: 2px double white;
+}
+
+.wall.border-right {
+  border-right: 2px double white;
+}
+
+.wall.border-bottom {
+  border-bottom: 2px double white;
+}
+
+.wall.border-left {
+  border-left: 2px double white;
+}
+
+.wall.outer-wall.border-top {
+  border-top: 2px double white;
+}
+
+.wall.outer-wall.border-right {
+  border-right: 2px double white;
+}
+
+.wall.outer-wall.border-bottom {
+  border-bottom: 2px double white;
+}
+
+.wall.outer-wall.border-left {
+  border-left: 2px double white;
+}
+
+.wall.edge-top {
+  border-top: 2px double white;
+}
+
+.wall.edge-right {
+  border-right: 2px double white;
+}
+
+.wall.edge-bottom {
+  border-bottom: 2px double white;
+}
+
+.wall.edge-left {
+  border-left: 2px double white;
+}
+
+.wall.corner-top-right {
+  border-top-right-radius: 4px;
+}
+
+.wall.corner-top-left {
+  border-top-left-radius: 4px;
+}
+
+.wall.corner-bottom-right {
+  border-bottom-right-radius: 4px;
+}
+
+.wall.corner-bottom-left {
+  border-bottom-left-radius: 4px;
+}
+
+.path {
+  background: #000;
+}
+
+.teleport {
+  background: #000;
+  border: 1px solid white;
+}
+
+.pacman {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  z-index: 10;
+}
+
+.pacman.red {
+  background: #ff0000;
+}
+
+.pacman.green {
+  background: #00ff00;
+}
+
+.pacman.blue {
+  background: #2121ff;
+}
+
+.pacman.yellow {
+  background: #ffdf00;
+}
+
+.ghost {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: transparent;
+  z-index: 10;
+}
+
+.ghost.white {
+  border-color: white;
+}

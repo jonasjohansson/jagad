@@ -862,6 +862,41 @@ const server = http.createServer((req, res) => {
   }
 
   // API endpoint for highscore
+  // POST endpoint to save highscore (for online solo games)
+  if (req.url === "/api/highscore" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        const data = JSON.parse(body);
+        const { score, playerName, isTeamGame } = data;
+        if (typeof score === "number" && playerName) {
+          saveHighscore(score, playerName, isTeamGame);
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          });
+          res.end(JSON.stringify({ success: true }));
+        } else {
+          res.writeHead(400, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          });
+          res.end(JSON.stringify({ success: false, error: "Invalid data" }));
+        }
+      } catch (error) {
+        res.writeHead(500, {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+    });
+    return;
+  }
+
   if (req.url === "/api/highscore" && req.method === "GET") {
     const highscore = loadHighscore();
     res.writeHead(200, {

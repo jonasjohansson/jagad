@@ -21,8 +21,14 @@ function getHTTPServerAddress() {
     }
   }
   
-  // Default: use remote server
-  return REMOTE_SERVER_ADDRESS;
+  // Default: use current origin (works for both localhost and deployed sites)
+  // This allows the highscore page to work on any domain without hardcoding
+  if (window.location.origin === "http://localhost" || window.location.origin.startsWith("http://localhost:")) {
+    return LOCAL_SERVER_ADDRESS;
+  }
+  
+  // For deployed sites, use the current origin
+  return window.location.origin;
 }
 
 async function loadHighscore() {

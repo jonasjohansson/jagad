@@ -1,9 +1,9 @@
+// Import shared D-pad component
+import { initDpad, getCurrentDirection } from "../shared/dpad.js";
+
 // Constants
 const REMOTE_SERVER_ADDRESS = "https://pacman-server-239p.onrender.com";
 const LOCAL_SERVER_ADDRESS = "http://localhost:3000";
-const INPUT_THROTTLE = 50;
-const JOYSTICK_THRESHOLD = 30;
-const JOYSTICK_OFFSET = 40;
 const DEBUG = false; // Set to true to enable debug logging
 
 // Get server address from URL parameter or default
@@ -31,14 +31,6 @@ function getServerFromURL() {
   return REMOTE_SERVER_ADDRESS;
 }
 
-// Key to direction mapping
-const KEY_TO_DIR = {
-  w: "up",
-  s: "down",
-  a: "left",
-  d: "right"
-};
-
 // State
 let ws = null;
 let myPlayerId = null;
@@ -52,11 +44,7 @@ let availableChasers = [0, 1, 2, 3];
 let playerNames = new Map(); // colorIndex -> playerName
 let takenChasers = new Set(); // colorIndex -> Set of chasers taken by other players (selected or joined)
 let lastInputTime = 0;
-let currentDir = null;
-let joystickActive = false;
 let isFirstPlayer = false;
-let activeTouch = null;
-const keys = {};
 // Track previous state to avoid unnecessary updates
 let previousAvailableChasers = [];
 let previousPlayerNames = new Map();
@@ -555,130 +543,10 @@ function joinAsChaser() {
   }));
 }
 
-// Joystick
-function resetJoystick() {
-  elements.joystickHandle.style.transform = "translate(-50%, -50%)";
-  elements.joystickHandle.classList.remove("active");
-  currentDir = null;
-  joystickActive = false;
-}
-
-function updateJoystick(x, y) {
-  const center = getJoystickCenter();
-  const deltaX = x - center.x;
-  const deltaY = y - center.y;
-  const dir = calculateDirection(deltaX, deltaY);
-
+// D-pad callback - called when direction changes
+function onDpadDirectionChange(dir) {
   if (dir) {
-    const moveX = Math.max(-center.maxDistance, Math.min(center.maxDistance, deltaX));
-    const moveY = Math.max(-center.maxDistance, Math.min(center.maxDistance, deltaY));
-    elements.joystickHandle.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
-    elements.joystickHandle.classList.add("active");
-    currentDir = dir;
     sendInput(dir);
-  } else {
-    resetJoystick();
-  }
-}
-
-function updateJoystickFromKey(dir) {
-  if (!dir) {
-    resetJoystick();
-    return;
-  }
-  
-  const center = getJoystickCenter();
-  const moveX = dir === "left" ? -center.maxDistance : dir === "right" ? center.maxDistance : 0;
-  const moveY = dir === "up" ? -center.maxDistance : dir === "down" ? center.maxDistance : 0;
-  
-  elements.joystickHandle.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
-  elements.joystickHandle.classList.add("active");
-  currentDir = dir;
-}
-
-// Input handlers
-function handleKeyDown(e) {
-  const dir = KEY_TO_DIR[e.key.toLowerCase()];
-  if (!dir) return;
-  
-  e.preventDefault();
-  e.stopPropagation();
-  keys[e.key.toLowerCase()] = true;
-  updateJoystickFromKey(dir);
-  sendInput(dir);
-}
-
-function handleKeyUp(e) {
-  const key = e.key.toLowerCase();
-  if (!KEY_TO_DIR[key]) return;
-  
-  e.preventDefault();
-  e.stopPropagation();
-  keys[key] = false;
-  
-  // Find next active direction
-  const activeKey = Object.keys(keys).find(k => keys[k] && KEY_TO_DIR[k]);
-  if (activeKey) {
-    updateJoystickFromKey(KEY_TO_DIR[activeKey]);
-  } else {
-    resetJoystick();
-  }
-}
-
-function handleTouchStart(e) {
-  e.preventDefault();
-  if (e.touches.length > 0) {
-    activeTouch = e.touches[0].identifier;
-    const touch = e.touches[0];
-    joystickActive = true;
-    updateJoystick(touch.clientX, touch.clientY);
-  }
-}
-
-function handleTouchMove(e) {
-  e.preventDefault();
-  if (activeTouch === null) return;
-  
-  const touch = Array.from(e.touches).find(t => t.identifier === activeTouch);
-  if (!touch) return;
-  
-  updateJoystick(touch.clientX, touch.clientY);
-  // Input is already sent in updateJoystick, no need to send again here
-}
-
-function handleTouchEnd(e) {
-  e.preventDefault();
-  if (activeTouch !== null) {
-    const touch = Array.from(e.changedTouches).find(t => t.identifier === activeTouch);
-    if (touch) {
-      resetJoystick();
-      activeTouch = null;
-    }
-  }
-}
-
-function handleTouchCancel(e) {
-  e.preventDefault();
-  resetJoystick();
-  activeTouch = null;
-}
-
-function handleMouseDown(e) {
-  e.preventDefault();
-  joystickActive = true;
-  updateJoystick(e.clientX, e.clientY);
-}
-
-function handleMouseMove(e) {
-  if (!joystickActive) return;
-  updateJoystick(e.clientX, e.clientY);
-  // Input is already sent in updateJoystick, no need to send again here
-}
-
-function handleMouseUp(e) {
-  if (joystickActive) {
-    resetJoystick();
-    joystickActive = false;
   }
 }
 
@@ -696,8 +564,6 @@ function initElements() {
 
 // Initialize event listeners
 function initEventListeners() {
-  if (!elements.joystickBase) return;
-
   elements.chaserButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       const indexStr = btn.dataset.index;
@@ -723,27 +589,10 @@ function initEventListeners() {
     });
   });
 
-  document.addEventListener("keydown", handleKeyDown, true);
-  document.addEventListener("keyup", handleKeyUp, true);
-
-  // Continuous input while key is held
-  setInterval(() => {
-    if (!gameStarted || !myPlayerId || myColorIndex === null) return;
-    
-    const activeKey = Object.entries(keys).find(([k, pressed]) => pressed && KEY_TO_DIR[k])?.[0];
-    if (activeKey) {
-      sendInput(KEY_TO_DIR[activeKey]);
-    }
-  }, INPUT_THROTTLE);
-
-  elements.joystickBase.addEventListener("touchstart", handleTouchStart);
-  elements.joystickBase.addEventListener("touchmove", handleTouchMove);
-  elements.joystickBase.addEventListener("touchend", handleTouchEnd);
-  elements.joystickBase.addEventListener("touchcancel", handleTouchCancel);
-  elements.joystickBase.addEventListener("mousedown", handleMouseDown);
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-  document.addEventListener("contextmenu", (e) => e.preventDefault());
+  // Initialize shared D-pad component
+  if (elements.joystickBase && elements.joystickHandle) {
+    initDpad("joystick-base", "joystick-handle", onDpadDirectionChange);
+  }
 }
 
 // Initialize when DOM is ready

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Online Game</title>
+    <link rel="stylesheet" href="www.css" />
+  </head>
+  <body>
+    <div class="game-layout">
+      <!-- Left side: Info and Score -->
+      <div class="left-panel">
+        <div class="info-text" id="info-text">
+          Welcome to the Jagad game! This is a solo online version. Your goal is to catch all the fugitives as fast as possible. Click "Play" to start.
+        </div>
+        <div class="score-display" id="score-display" style="display: none;">
+          Score: <span id="score-value">0</span>
+        </div>
+        <button id="play-btn" class="play-btn">Play</button>
+      </div>
+
+      <!-- Center: Game visuals -->
+      <div class="game-center">
+        <div id="game-container">
+          <div id="maze"></div>
+        </div>
+      </div>
+
+      <!-- Right side: Joystick -->
+      <div class="right-panel">
+        <div class="joystick-container" id="joystick-container">
+          <div class="joystick-base" id="joystick-base">
+            <div class="joystick-handle" id="joystick-handle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="../game/map.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.21"></script>
+    <script>
+      // Load team configuration before game initializes
+      window.teamConfig = { teams: [] }; // Default empty config
+      fetch("../game/team-config.json")
+        .then(response => response.json())
+        .then(data => {
+          window.teamConfig = data;
+        })
+        .catch(error => {
+          console.error("Error loading team config:", error);
+        });
+    </script>
+    <script type="module" src="../game/3d.js"></script>
+    <script type="module" src="www.js"></script>
+  </body>
+</html>
