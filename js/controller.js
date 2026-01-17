@@ -292,16 +292,16 @@ function handleServerMessage(data) {
       
       let message;
       if (data.allCaught) {
-        message = `🎮 GAME OVER - ALL FUGITIVES CAUGHT!\n\n` +
-                  `Your Score: ${score.toLocaleString()}\n` +
-                  `Time: ${timeSeconds}s\n` +
-                  `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
-                  `Great job! Click OK to play again.`;
+        message = `GAME OVER - ALL FUGITIVES CAUGHT\n\n` +
+                  `Score: ${score.toLocaleString()}\n` +
+                  `Time: ${timeSeconds} seconds\n` +
+                  `Fugitives Caught: ${fugitivesCaught} of ${totalFugitives}\n\n` +
+                  `Click OK to play again.`;
       } else {
-        message = `🎮 GAME OVER - TIME'S UP!\n\n` +
-                  `Your Score: ${score.toLocaleString()}\n` +
-                  `Time: ${timeSeconds}s\n` +
-                  `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+        message = `GAME OVER - TIME'S UP\n\n` +
+                  `Score: ${score.toLocaleString()}\n` +
+                  `Time: ${timeSeconds} seconds\n` +
+                  `Fugitives Caught: ${fugitivesCaught} of ${totalFugitives}\n\n` +
                   `Click OK to play again.`;
       }
       
