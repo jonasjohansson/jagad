@@ -280,43 +280,44 @@ function handleServerMessage(data) {
       // Game ended - show alert with score and reload page
       console.log("[gameEnd] Handler called with data:", data);
       
-      // Prevent multiple gameEnd handlers from running simultaneously
+      // Prevent multiple gameEnd handlers from running simultaneously on THIS controller
       if (gameEndHandled) {
-        console.log("[gameEnd] Already handled, ignoring duplicate message");
-        return;
+        console.log("[gameEnd] Already handled on this controller, ignoring duplicate message");
+        break; // Use break instead of return to stay in switch statement
       }
       gameEndHandled = true;
       
-      try {
-        gameStarted = false;
-        previousGameStarted = false;
-        
-        // Show alert with score information
-        const timeSeconds = ((data.gameTime || 0) / 1000).toFixed(1);
-        const score = data.score || 0;
-        const fugitivesCaught = data.fugitivesCaught || 0;
-        const totalFugitives = data.totalFugitives || 0;
-        
-        let message;
-        if (data.allCaught) {
-          message = `🎮 GAME OVER - ALL FUGITIVES CAUGHT!\n\n` +
-                    `Your Score: ${score.toLocaleString()}\n` +
-                    `Time: ${timeSeconds}s\n` +
-                    `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
-                    `Great job! Click OK to play again.`;
-        } else {
-          message = `🎮 GAME OVER - TIME'S UP!\n\n` +
-                    `Your Score: ${score.toLocaleString()}\n` +
-                    `Time: ${timeSeconds}s\n` +
-                    `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
-                    `Click OK to play again.`;
-        }
-        
-        console.log("[gameEnd] About to show alert with message:", message);
-        
-        // Use setTimeout to ensure alert is shown in the next event loop tick
-        // This prevents any potential race conditions with page reload
-        setTimeout(() => {
+      // Immediately update state
+      gameStarted = false;
+      previousGameStarted = false;
+      
+      // Show alert with score information
+      const timeSeconds = ((data.gameTime || 0) / 1000).toFixed(1);
+      const score = data.score || 0;
+      const fugitivesCaught = data.fugitivesCaught || 0;
+      const totalFugitives = data.totalFugitives || 0;
+      
+      let message;
+      if (data.allCaught) {
+        message = `🎮 GAME OVER - ALL FUGITIVES CAUGHT!\n\n` +
+                  `Your Score: ${score.toLocaleString()}\n` +
+                  `Time: ${timeSeconds}s\n` +
+                  `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+                  `Great job! Click OK to play again.`;
+      } else {
+        message = `🎮 GAME OVER - TIME'S UP!\n\n` +
+                  `Your Score: ${score.toLocaleString()}\n` +
+                  `Time: ${timeSeconds}s\n` +
+                  `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+                  `Click OK to play again.`;
+      }
+      
+      console.log("[gameEnd] About to show alert with message:", message);
+      
+      // Use setTimeout to ensure alert is shown in the next event loop tick
+      // This prevents any potential race conditions with page reload
+      setTimeout(() => {
+        try {
           // Show alert - alert() is a blocking call, so execution pauses here
           // until the user clicks OK. Only then will the code continue to reload.
           alert(message);
@@ -325,15 +326,13 @@ function handleServerMessage(data) {
           // This line only executes AFTER the user clicks OK on the alert
           // Reload the page ONLY after alert is dismissed
           window.location.reload();
-        }, 0);
-      } catch (error) {
-        console.error("[gameEnd] Error handling game end:", error);
-        // Fallback: show simple alert and reload
-        setTimeout(() => {
+        } catch (error) {
+          console.error("[gameEnd] Error showing alert:", error);
+          // Fallback: show simple alert and reload
           alert("Game Over! Your score: " + (data.score || 0));
           window.location.reload();
-        }, 0);
-      }
+        }
+      }, 100); // Small delay to ensure message is processed
       break;
     case "gameReset":
     case "gameRestarted":
