@@ -1,0 +1,66 @@
+@import url("../global.css");
+
+body {
+  background: white;
+  color: black;
+  text-transform: uppercase;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.highscore-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  border: var(--border-width) solid black;
+}
+
+.highscore-title {
+  padding: var(--spacing-lg);
+  text-align: center;
+  text-transform: uppercase;
+  border-bottom: var(--border-width) solid black;
+}
+
+.highscore-item {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  border-bottom: var(--border-width) solid black;
+}
+
+.highscore-item:last-child {
+  border-bottom: none;
+}
+
+.score {
+  text-align: center;
+}
+
+.player-name {
+  text-align: center;
+}
+
+.game-type {
+  text-align: center;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.no-highscore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  color: #666;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+}

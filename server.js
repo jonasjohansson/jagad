@@ -798,8 +798,20 @@ const server = http.createServer((req, res) => {
   // API endpoint for highscore
   if (req.url === "/api/highscore" && req.method === "GET") {
     const highscore = loadHighscore();
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    });
     res.end(JSON.stringify(highscore), "utf-8");
+    return;
+  }
+
+  // Handle favicon requests
+  if (req.url === "/favicon.ico") {
+    res.writeHead(204, { "Content-Type": "image/x-icon" });
+    res.end();
     return;
   }
 

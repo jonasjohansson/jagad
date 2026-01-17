@@ -32,9 +32,19 @@ async function loadHighscore() {
   
   try {
     const serverAddress = getHTTPServerAddress();
-    const response = await fetch(`${serverAddress}/api/highscore`);
+    const response = await fetch(`${serverAddress}/api/highscore`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
     
     if (!response.ok) {
+      // If 404, the endpoint might not be deployed yet
+      if (response.status === 404) {
+        loadingEl.textContent = "Highscore endpoint not available. Server may need to be updated.";
+        return;
+      }
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
@@ -53,13 +63,15 @@ async function loadHighscore() {
           <div class="game-type">${data.isTeamGame ? "Team Game" : "Solo Game"}</div>
         </div>
       `;
+      contentEl.style.display = "grid";
     } else {
       contentEl.style.display = "none";
       noHighscoreEl.style.display = "block";
     }
   } catch (error) {
     console.error("Error loading highscore:", error);
-    loadingEl.textContent = "Error loading highscore";
+    loadingEl.style.display = "block";
+    loadingEl.textContent = `Error loading highscore: ${error.message}. Make sure the server is running and has the latest code deployed.`;
   }
 }
 

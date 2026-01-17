@@ -4,65 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Highscore</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: system-ui, sans-serif;
-      background: white;
-      color: black;
-      padding: 2rem;
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 2rem;
-      text-transform: uppercase;
-      font-size: 2rem;
-    }
-    .highscore-container {
-      border: 1px solid black;
-      padding: 1.5rem;
-    }
-    .highscore-item {
-      padding: 1rem;
-      border-bottom: 1px solid black;
-    }
-    .highscore-item:last-child {
-      border-bottom: none;
-    }
-    .score {
-      font-size: 1.5rem;
-      font-weight: bold;
-      margin-bottom: 0.5rem;
-    }
-    .player-name {
-      font-size: 1.2rem;
-      margin-bottom: 0.25rem;
-    }
-    .game-type {
-      font-size: 0.9rem;
-      color: #666;
-      text-transform: uppercase;
-    }
-    .no-highscore {
-      text-align: center;
-      padding: 2rem;
-      color: #666;
-    }
-    .loading {
-      text-align: center;
-      padding: 2rem;
-    }
-  </style>
+  <link rel="stylesheet" href="highscore.css">
 </head>
 <body>
-  <h1>Highscore</h1>
   <div class="highscore-container">
+    <h1 class="highscore-title">Highscore</h1>
     <div id="loading" class="loading">Loading...</div>
     <div id="highscore-content" style="display: none;"></div>
     <div id="no-highscore" class="no-highscore" style="display: none;">No highscore yet</div>

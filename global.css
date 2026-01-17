@@ -1,0 +1,16 @@
+@import url("reset.css");
+
+:root {
+  --spacing-xs: 8px;
+  --spacing-sm: 10px;
+  --spacing-md: 15px;
+  --spacing-lg: 20px;
+  --border-width: 1px;
+  --font-size: 18px;
+}
+
+* {
+  font-family: system-ui, sans-serif;
+  font-size: var(--font-size);
+  font-weight: normal;
+}
