@@ -93,7 +93,7 @@ function initWebSocket() {
 }
 
 function handleServerMessage(data) {
-  // Only log gameEnd messages for debugging
+  // Always log gameEnd messages for debugging
   if (data.type === "gameEnd") {
     console.log("[handleServerMessage] ===== ENTERING gameEnd HANDLER =====", data);
   }
@@ -274,6 +274,7 @@ function handleServerMessage(data) {
       break;
     case "gameEnd":
       // Game ended - show alert with score and reload page
+      console.log("[gameEnd] Handler called with data:", data);
       try {
         gameStarted = false;
         previousGameStarted = false;
@@ -299,9 +300,11 @@ function handleServerMessage(data) {
                     `Click OK to play again.`;
         }
         
+        console.log("[gameEnd] About to show alert with message:", message);
         // Show alert - alert() is a blocking call, so execution pauses here
         // until the user clicks OK. Only then will the code continue to reload.
         alert(message);
+        console.log("[gameEnd] Alert dismissed, reloading page...");
         
         // This line only executes AFTER the user clicks OK on the alert
         // Reload the page ONLY after alert is dismissed
