@@ -169,6 +169,13 @@ function restartGame() {
   }
 }
 
+function endGame() {
+  // End the game manually
+  if (multiplayerMode && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "endGame" }));
+  }
+}
+
 function selectCharacter(type, colorName) {
   const colorIndex = COLORS.indexOf(colorName.toLowerCase());
   if (colorIndex === -1) return;
@@ -307,6 +314,110 @@ function handleServerMessage(data) {
     }
     case "joinFailed":
       break;
+    case "aiDifficultyChanged":
+      if (data.difficulty !== undefined) {
+        aiDifficulty = data.difficulty;
+      }
+      break;
+    case "view3DChanged":
+      if (data.view3D !== undefined) {
+        view3D = data.view3D;
+        toggle3DView(data.view3D);
+      }
+      break;
+    case "camera3DChanged":
+      if (data.cameraType !== undefined && view3D && window.render3D && window.render3D.setCameraType) {
+        const shouldBeOrthographic = data.cameraType === "Orthographic";
+        window.render3D.setCameraType(shouldBeOrthographic);
+      }
+      break;
+    case "cameraZoomChanged":
+      if (data.zoom !== undefined && view3D && window.render3D && window.render3D.setCameraZoom) {
+        window.render3D.setCameraZoom(data.zoom);
+      }
+      break;
+    case "ambientLightChanged":
+      if (data.intensity !== undefined && view3D && window.render3D && window.render3D.setAmbientLight) {
+        window.render3D.setAmbientLight(data.intensity);
+      }
+      break;
+    case "directionalLightChanged":
+      if (data.intensity !== undefined && view3D && window.render3D && window.render3D.setDirectionalLight) {
+        window.render3D.setDirectionalLight(data.intensity);
+      }
+      break;
+    case "pointLightChanged":
+      if (data.intensity !== undefined && view3D && window.render3D && window.render3D.setPointLightIntensity) {
+        window.render3D.setPointLightIntensity(data.intensity);
+      }
+      break;
+    case "pathColorChanged":
+      if (data.color !== undefined && view3D && window.render3D && window.render3D.setPathColor) {
+        window.render3D.setPathColor(data.color);
+      }
+      break;
+    case "innerWallColorChanged":
+      if (data.color !== undefined) {
+        document.documentElement.style.setProperty("--color-inner-wall-border", data.color);
+        if (view3D && window.render3D && window.render3D.setInnerWallColor) {
+          window.render3D.setInnerWallColor(data.color);
+        }
+      }
+      break;
+    case "outerWallColorChanged":
+      if (data.color !== undefined) {
+        document.documentElement.style.setProperty("--color-outer-wall-border", data.color);
+        if (view3D && window.render3D && window.render3D.setOuterWallColor) {
+          window.render3D.setOuterWallColor(data.color);
+        }
+      }
+      break;
+    case "bodyBgColorChanged":
+      if (data.color !== undefined) {
+        document.body.style.backgroundColor = data.color;
+      }
+      break;
+    case "mazeOpacityChanged":
+      if (data.opacity !== undefined) {
+        const maze = document.getElementById("maze");
+        if (maze) {
+          maze.style.opacity = data.opacity;
+        }
+      }
+      break;
+    case "buildingOpacityChanged":
+      if (data.opacity !== undefined) {
+        const buildingImage = document.getElementById("building-image");
+        if (buildingImage) {
+          buildingImage.style.opacity = data.opacity;
+        }
+      }
+      break;
+    case "buildingRealOpacityChanged":
+      if (data.opacity !== undefined) {
+        const buildingRealImage = document.getElementById("building-real-image");
+        if (buildingRealImage) {
+          buildingRealImage.style.opacity = data.opacity;
+        }
+      }
+      break;
+    case "buildingRealScaleChanged":
+      if (data.scale !== undefined) {
+        const buildingRealImage = document.getElementById("building-real-image");
+        if (buildingRealImage) {
+          const translate = `translate(calc(-50% + 9px), calc(-50% + 9px))`;
+          buildingRealImage.style.transform = `${translate} scale(${data.scale})`;
+        }
+      }
+      break;
+    case "buildingRealBlendModeChanged":
+      if (data.blendMode !== undefined) {
+        const buildingRealImage = document.getElementById("building-real-image");
+        if (buildingRealImage) {
+          buildingRealImage.style.mixBlendMode = data.blendMode;
+        }
+      }
+      break;
     case "gameState":
       // Update connected players map
       connectedPlayers.clear();
@@ -329,6 +440,14 @@ function handleServerMessage(data) {
         updateScoreDisplay();
       }
       
+      // Update game code display
+      if (data.gameCode) {
+        const gameCodeDisplay = document.getElementById("game-code-display");
+        if (gameCodeDisplay) {
+          gameCodeDisplay.textContent = data.gameCode;
+        }
+      }
+
       // Update chaser selections (players who selected but haven't joined yet)
       if (data.chaserSelections) {
         chaserSelections.clear();
@@ -345,7 +464,7 @@ function handleServerMessage(data) {
       
       // Update GUI with available colors and names
       if (data.availableColors) {
-        updateAvailableColors(data.availableColors);
+        // Chaser selection is now handled via controller, not game GUI
       }
       // Apply server's authoritative game state (positions)
       if (data.positions) {
@@ -391,12 +510,8 @@ function handleServerMessage(data) {
       }
       break;
     case "gameEnd":
-      // Game ended - show final score
-      const timeSeconds = (data.gameTime / 1000).toFixed(1);
-      const message = data.allCaught
-        ? `Game Over - All Fugitives Caught!\n\nTime: ${timeSeconds}s\nScore: ${data.score}\nFugitives Caught: ${data.fugitivesCaught}/${data.totalFugitives}`
-        : `Game Over - Time's Up!\n\nTime: ${timeSeconds}s\nScore: ${data.score}\nFugitives Caught: ${data.fugitivesCaught}/${data.totalFugitives}`;
-      alert(message);
+      // Game ended - update UI (alert is shown on controller, not here)
+      gameStarted = false;
       // Update score display
       updateScoreDisplay();
       break;
@@ -410,17 +525,6 @@ function handleServerMessage(data) {
       // Clear chaser selections and player names
       chaserSelections.clear();
       playerNames.clear();
-      // Reset speed settings to defaults
-      guiParams.fugitiveSpeed = 0.4;
-      guiParams.chaserSpeed = 0.41;
-      // Reset display values
-      if (window.guiParams) {
-        window.guiParams.currentFugitiveSpeed = 0.4;
-        window.guiParams.currentAISkill = aiDifficulty;
-      }
-      // Update GUI controllers if they exist
-      if (window.fugitiveSpeedController) window.fugitiveSpeedController.setValue(0.4);
-      if (window.chaserSpeedController) window.chaserSpeedController.setValue(0.41);
       // Send reset speed config to server
       sendSpeedConfig(0.4, 0.41);
       // Clear our character selection (players lose selection when game resets)
@@ -440,15 +544,6 @@ function handleServerMessage(data) {
           ghost.element.style.opacity = "0.2";
         }
       });
-      // Reset chaser button names in GUI
-      if (window.characterControllers && window.characterControllers.ghost) {
-        for (let i = 0; i < 4; i++) {
-          const ctrl = window.characterControllers.ghost[i];
-          if (ctrl) {
-            ctrl.name(`Chaser ${i + 1}`);
-          }
-        }
-      }
       // Also update 3D opacities
       if (view3D && window.render3D && window.render3D.updateChaserOpacity) {
         for (let i = 0; i < 4; i++) {
@@ -546,9 +641,7 @@ function applyServerPositions(positions) {
 
   // Update display-only fugitive speed and AI skill
   // Update current fugitive speed display
-  if (window.guiParams) {
-    window.guiParams.currentFugitiveSpeed = guiParams.fugitiveSpeed;
-  }
+  // Speed display removed - settings now in admin page
 
   // Check if only 1 fugitive is left - if so, set AI skill to max (1.0)
   const activeFugitiveCount = activeFugitiveIndices.size;
@@ -780,7 +873,7 @@ function sendInput(input) {
   
   // DEBUG: Track input timing
   inputSentTime = now;
-  if (guiParams.showDebug) {
+  if (false) { // Debug display removed
     console.log(`[INPUT] Sent ${input.dir} at ${now}`);
   }
   
@@ -875,7 +968,7 @@ function updateDebugDisplay() {
   
   debugDiv.innerHTML = html;
   
-  if (guiParams.showDebug) {
+  if (false) { // Debug display removed
     setTimeout(updateDebugDisplay, 100); // Update every 100ms
   }
 }
@@ -942,7 +1035,7 @@ function updateDebugDisplay() {
   
   debugDiv.innerHTML = html;
   
-  if (guiParams.showDebug) {
+  if (false) { // Debug display removed
     setTimeout(updateDebugDisplay, 100); // Update every 100ms
   }
 }
@@ -1146,7 +1239,11 @@ function init() {
   // Initialize WebSocket connection
   initWebSocket();
 
-  // Initialize GUI
+  // Initialize default settings
+  view3D = true;
+  aiDifficulty = 0.8;
+  
+  // Initialize GUI for 2D/3D, Style, and Building settings only
   if (typeof lil !== "undefined" && typeof lil.GUI !== "undefined") {
     const guiContainer = document.getElementById("gui-container");
     const GUI = lil.GUI;
@@ -1155,14 +1252,6 @@ function init() {
 
     // Make guiParams global so it can be accessed by updateCharacterAppearance
     window.guiParams = {
-      difficulty: 0.8,
-      fugitiveSpeed: 0.4,
-      chaserSpeed: 0.41, // Slightly faster than fugitives
-      currentFugitiveSpeed: 0.4, // Display-only: current fugitive speed
-      currentAISkill: 0.8, // Display-only: current AI skill
-      gameDuration: 90, // Game duration in seconds
-      playerInitials: "ABC", // 3-letter initials
-      showDebug: false, // Show debug information
       view3D: true, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
       cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
@@ -1180,34 +1269,7 @@ function init() {
       buildingRealY: 9, // Building real image Y position offset (px)
       buildingRealBlendMode: "soft-light", // Building real image blend mode
       mazeOpacity: 1.0, // Maze opacity (0-1)
-      startGameCycle: () => startGame(),
-      resetGameCycle: () => restartGame(),
-      joinQueue: () => joinQueue(),
     };
-
-    // Main controls at root (no folders)
-    gui
-      .add(guiParams, "playerInitials")
-      .name("Initials (3 letters)")
-      .onChange((value) => {
-        // Validate and sanitize to 3 uppercase letters
-        const sanitized = value
-          .toUpperCase()
-          .replace(/[^A-Z]/g, "")
-          .slice(0, 3);
-        guiParams.playerInitials = sanitized;
-        if (value !== sanitized) {
-          // Update the GUI control if value was changed
-          const controllers = gui.controllers;
-          const initialsCtrl = controllers.find((c) => c.property === "playerInitials");
-          if (initialsCtrl) initialsCtrl.updateDisplay();
-        }
-      });
-
-    // Game cycle controls
-    gui.add(guiParams, "startGameCycle").name("Start Game");
-    gui.add(guiParams, "resetGameCycle").name("Reset Game");
-
 
     // Create 2D/3D folder
     const view3DFolder = gui.addFolder("2D/3D");
@@ -1243,7 +1305,6 @@ function init() {
           window.render3D.setCameraZoom(value);
         }
       });
-    cameraZoomCtrl.hide(); // Hidden from GUI
 
     // 3D lighting controls (only visible when 3D view is enabled)
     const ambientLightCtrl = view3DFolder
@@ -1254,7 +1315,6 @@ function init() {
           window.render3D.setAmbientLight(value);
         }
       });
-    ambientLightCtrl.hide(); // Hidden by default
 
     const directionalLightCtrl = view3DFolder
       .add(guiParams, "directionalLightIntensity", 0, 2, 0.1)
@@ -1264,7 +1324,6 @@ function init() {
           window.render3D.setDirectionalLight(value);
         }
       });
-    directionalLightCtrl.hide(); // Hidden by default
 
     const pointLightCtrl = view3DFolder
       .add(guiParams, "pointLightIntensity", 0, 400, 1)
@@ -1274,7 +1333,6 @@ function init() {
           window.render3D.setPointLightIntensity(value);
         }
       });
-    pointLightCtrl.hide(); // Hidden by default
 
     // Create Style folder for grouped controls
     const styleFolder = gui.addFolder("Style");
@@ -1323,7 +1381,6 @@ function init() {
           window.render3D.setPathColor(value);
         }
       });
-    pathColorCtrl.hide(); // Hidden by default
 
     // Maze opacity slider (only visible in 2D mode)
     const mazeOpacityCtrl = styleFolder
@@ -1467,113 +1524,6 @@ function init() {
       mazeOpacity: mazeOpacityCtrl,
     };
 
-    // Join Queue button (only shown when all slots are full)
-    window.joinQueueController = gui.add(guiParams, "joinQueue").name("Join Queue");
-    window.joinQueueController.hide(); // Hidden by default
-
-    // Auto-join is now handled via character selection UI and server availability
-
-    // Create Characters & Scoring folder
-    const charactersFolder = gui.addFolder("Characters & Scoring");
-    charactersFolder.open(); // Open by default
-
-    // AI Skill control
-    charactersFolder
-      .add(guiParams, "difficulty", 0, 1, 0.1)
-      .name("AI Skill")
-      .onChange((value) => {
-        aiDifficulty = value;
-        // Update display (unless only 1 fugitive is left, then it stays at max)
-        if (window.guiParams) {
-          // Check active fugitive count - if only 1 left, keep it at max
-          const activeCount = pacmen.filter((f, i) => {
-            return f && f.element && f.element.style.display !== "none";
-          }).length;
-          if (activeCount === 1 && gameStarted) {
-            window.guiParams.currentAISkill = 1.0;
-          } else {
-            window.guiParams.currentAISkill = value;
-          }
-        }
-      });
-
-    // Display-only: Current Fugitive Speed
-    const currentFugitiveSpeedDisplay = charactersFolder
-      .add(guiParams, "currentFugitiveSpeed")
-      .name("Current Fugitive Speed")
-      .listen();
-    currentFugitiveSpeedDisplay.domElement.querySelector("input").disabled = true;
-    window.currentFugitiveSpeedDisplay = currentFugitiveSpeedDisplay;
-
-    // Display-only: Current AI Skill
-    const currentAISkillDisplay = charactersFolder
-      .add(guiParams, "currentAISkill")
-      .name("Current AI Skill")
-      .listen();
-    currentAISkillDisplay.domElement.querySelector("input").disabled = true;
-    window.currentAISkillDisplay = currentAISkillDisplay;
-
-    // Global speed controls
-    const fugitiveSpeedCtrl =     charactersFolder
-      .add(guiParams, "fugitiveSpeed", 0.2, 3, 0.01)
-      .name("Fugitive Speed")
-      .onChange((value) => {
-        sendSpeedConfig(value, guiParams.chaserSpeed);
-        // Update display
-        if (window.guiParams) {
-          window.guiParams.currentFugitiveSpeed = value;
-        }
-      });
-    window.fugitiveSpeedController = fugitiveSpeedCtrl;
-
-    const chaserSpeedCtrl = charactersFolder
-      .add(guiParams, "chaserSpeed", 0.2, 3, 0.01)
-      .name("Chaser Speed")
-      .onChange((value) => {
-        sendSpeedConfig(guiParams.fugitiveSpeed, value);
-      });
-    window.chaserSpeedController = chaserSpeedCtrl;
-
-    // Game duration control
-    charactersFolder
-      .add(guiParams, "gameDuration", 30, 300, 10)
-      .name("Game Duration (seconds)")
-      .onChange((value) => {
-        sendGameDuration(value);
-      });
-
-    // Character selection: one entry per pacman/ghost/color
-    const joinActions = {};
-    window.characterControllers = { pacman: [], ghost: [] };
-
-    // Names for each fugitive color
-    const fugitiveNames = [
-      "Viktor & Samir", // Red (index 0)
-      "Maria & Sara", // Green (index 1)
-      "Anja & Filippa", // Blue (index 2)
-      "Hasse & Glenn", // Yellow (index 3)
-    ];
-
-    // Players can only join as chasers (fugitives are AI-controlled)
-    // Add chasers (all are white and can catch any fugitive)
-    // Show all 4 chaser slots (0, 1, 2, 3) but label them as Chaser 1, 2, 3, 4
-    for (let i = 0; i < 4; i++) {
-      const chaserKey = `Chaser ${i + 1}`; // Display as 1-based (Chaser 1, 2, 3, 4)
-
-      joinActions[chaserKey] = () => {
-        joinAsCharacter("chaser", i, guiParams.playerInitials); // Still use 0-based index internally
-      };
-
-      const chaserCtrl = charactersFolder.add(joinActions, chaserKey);
-      window.characterControllers.ghost[i] = chaserCtrl;
-    }
-
-
-    // Score display (team score - same for all chasers)
-    window.scoreDisplay = {
-      chaserScore: charactersFolder.add({ value: 0 }, "value").name("Chaser Team Score").disable(),
-    };
-
     // Apply team images from config to existing characters after GUI is initialized
     if (window.teamConfig && window.teamConfig.teams) {
       window.teamConfig.teams.forEach((team) => {
@@ -1585,10 +1535,6 @@ function init() {
         }
       });
     }
-
-    // Send initial speed config and game duration to server
-    sendSpeedConfig(guiParams.fugitiveSpeed, guiParams.chaserSpeed);
-    sendGameDuration(guiParams.gameDuration);
 
     // Enable 3D view on startup if default is true
     if (guiParams.view3D) {

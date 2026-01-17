@@ -131,6 +131,7 @@ function initWebSocket() {
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+      console.log("[WebSocket] Connection opened");
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "gameState" }));
       }
@@ -138,20 +139,37 @@ function initWebSocket() {
 
     ws.onmessage = (event) => {
       try {
-        handleServerMessage(JSON.parse(event.data));
+        const data = JSON.parse(event.data);
+        // Only log important messages (not gameState which is sent frequently)
+        if (data.type === "gameEnd") {
+          console.log("[WebSocket] ===== GAME END MESSAGE RECEIVED IN ONMESSAGE =====", data);
+        } else if (data.type !== "gameState") {
+          // Log other messages except gameState
+          console.log("[WebSocket] Received message type:", data.type);
+        }
+        handleServerMessage(data);
       } catch (error) {
-        console.error("Error parsing message:", error);
+        console.error("Error parsing message:", error, event.data);
       }
     };
 
-    ws.onerror = (error) => console.error("WebSocket error:", error);
-    ws.onclose = () => setTimeout(initWebSocket, 3000);
+    ws.onerror = (error) => {
+      console.error("[WebSocket] Error:", error);
+    };
+    ws.onclose = () => {
+      console.log("[WebSocket] Connection closed, reconnecting in 3 seconds...");
+      setTimeout(initWebSocket, 3000);
+    };
   } catch (error) {
     console.error("Error connecting:", error);
   }
 }
 
 function handleServerMessage(data) {
+  // Only log gameEnd messages for debugging
+  if (data.type === "gameEnd") {
+    console.log("[handleServerMessage] ===== ENTERING gameEnd HANDLER =====", data);
+  }
   switch (data.type) {
     case "connected":
       myPlayerId = data.playerId;
@@ -178,6 +196,9 @@ function handleServerMessage(data) {
         pendingStartGame = false;
         ws.send(JSON.stringify({ type: "startGame" }));
       }
+      break;
+    case "joinFailed":
+      alert(data.reason || "Failed to join game. Please try again.");
       break;
     case "gameState":
       let playerNamesChanged = false;
@@ -325,28 +346,44 @@ function handleServerMessage(data) {
       elements.chaserSelect?.classList.remove("game-started");
       break;
     case "gameEnd":
-      // Game ended - show score in first row instead of alert
-      if (myColorIndex !== null) {
-        const timeSeconds = (data.gameTime / 1000).toFixed(1);
-        const message = data.allCaught
-          ? `All Fugitives Caught! Time: ${timeSeconds}s | Score: ${data.score} | Caught: ${data.fugitivesCaught}/${data.totalFugitives}`
-          : `Time's Up! Time: ${timeSeconds}s | Score: ${data.score} | Caught: ${data.fugitivesCaught}/${data.totalFugitives}`;
+      // Game ended - show alert with score and reload page
+      try {
+        gameStarted = false;
+        previousGameStarted = false;
         
-        // Update score display with game end message
-        if (elements.scoreValue) {
-          elements.scoreValue.textContent = message;
+        // Show alert with score information
+        const timeSeconds = ((data.gameTime || 0) / 1000).toFixed(1);
+        const score = data.score || 0;
+        const fugitivesCaught = data.fugitivesCaught || 0;
+        const totalFugitives = data.totalFugitives || 0;
+        
+        let message;
+        if (data.allCaught) {
+          message = `🎮 GAME OVER - ALL FUGITIVES CAUGHT!\n\n` +
+                    `Your Score: ${score.toLocaleString()}\n` +
+                    `Time: ${timeSeconds}s\n` +
+                    `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+                    `Great job! Click OK to play again.`;
+        } else {
+          message = `🎮 GAME OVER - TIME'S UP!\n\n` +
+                    `Your Score: ${score.toLocaleString()}\n` +
+                    `Time: ${timeSeconds}s\n` +
+                    `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+                    `Click OK to play again.`;
         }
         
-        // Prompt for initials
-        const initials = promptForInitials();
+        // Show alert - alert() is a blocking call, so execution pauses here
+        // until the user clicks OK. Only then will the code continue to reload.
+        alert(message);
         
-        // Send initials to server for highscore (if this is the first player)
-        if (isFirstPlayer && ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "updatePlayerName",
-            playerName: initials,
-          }));
-        }
+        // This line only executes AFTER the user clicks OK on the alert
+        // Reload the page ONLY after alert is dismissed
+        window.location.reload();
+      } catch (error) {
+        console.error("[gameEnd] Error handling game end:", error);
+        // Fallback: show simple alert and reload
+        alert("Game Over! Your score: " + (data.score || 0));
+        window.location.reload();
       }
       break;
     case "gameReset":
@@ -363,6 +400,12 @@ function handleServerMessage(data) {
       updateChaserButtons();
       updateUI();
       elements.chaserSelect?.classList.remove("game-started");
+      break;
+    default:
+      // Log any unhandled message types for debugging
+      if (data.type && data.type !== "playerLeft" && data.type !== "fugitiveCaught") {
+        console.log("[handleServerMessage] Unhandled message type:", data.type, data);
+      }
       break;
   }
 }
@@ -489,11 +532,26 @@ function joinAsChaser() {
   if (selectedChaserIndex === null) return;
   if (!availableChasers.includes(selectedChaserIndex)) return;
 
+  // Prompt for game code
+  const gameCode = prompt("Enter the 2-digit game code:");
+  if (!gameCode) {
+    // User cancelled or entered nothing
+    return;
+  }
+  
+  // Validate and normalize the code (ensure 2 digits, pad with 0 if needed)
+  const normalizedCode = gameCode.trim().padStart(2, '0').slice(0, 2);
+  if (!/^\d{2}$/.test(normalizedCode)) {
+    alert("Invalid code. Please enter a 2-digit number (00-99).");
+    return;
+  }
+
   ws.send(JSON.stringify({
     type: "join",
     characterType: "chaser",
     colorIndex: selectedChaserIndex,
     playerName: selectedChaserName,
+    gameCode: normalizedCode,
   }));
 }
 
@@ -702,3 +760,10 @@ if (document.readyState === "loading") {
   updateUI();
   initWebSocket();
 }
+
+// Test function to verify alert works - can be called from console: testAlert()
+window.testAlert = function() {
+  console.log("[TEST] Testing alert function...");
+  alert("Test alert - if you see this, alerts work!");
+  console.log("[TEST] Alert was shown and dismissed");
+};

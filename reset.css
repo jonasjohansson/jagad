@@ -22,4 +22,7 @@ strong, b {
 
 button, input, textarea, select {
   font-weight: normal;
+  border: none;
+  outline: none;
+  box-shadow: none;
 }

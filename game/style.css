@@ -48,6 +48,16 @@ body {
   z-index: var(--z-gui);
 }
 
+#game-code-display {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: var(--z-gui);
+  color: var(--color-text);
+  font-size: var(--font-size);
+  font-family: inherit;
+}
+
 #game-container {
   position: relative;
 }

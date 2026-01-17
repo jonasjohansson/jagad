@@ -94,6 +94,7 @@ const gameState = {
   firstPlayerName: null, // Name of player who started the game
   isTeamGame: false, // Whether multiple chasers are playing
   chaserSelections: new Map(), // colorIndex -> { playerId, playerName } - tracks selections before joining
+  gameCode: null, // 2-digit code (00-99) for joining games
 };
 
 // Debug counters
@@ -405,10 +406,15 @@ function checkCollisions() {
 }
 
 function endGame(allCaught) {
-  if (!gameState.gameStarted) return;
+  console.log("[endGame] Called with allCaught:", allCaught, "gameStarted:", gameState.gameStarted);
+  if (!gameState.gameStarted) {
+    console.log("[endGame] Game not started, returning early");
+    return;
+  }
 
   gameState.gameStarted = false;
   const gameTime = Date.now() - gameState.gameStartTime;
+  console.log("[endGame] Game time:", gameTime, "ms");
 
   // Calculate final team score (all chasers share the same score)
   // Use the cumulative score from individual catches, with bonus for completing all
@@ -436,24 +442,24 @@ function endGame(allCaught) {
     teamScore = Math.floor(teamScore * caughtPercentage);
   }
 
-  // Set the same team score for all chasers and send game end message
+  // Set the same team score for all chasers
   gameState.players.forEach((player, playerId) => {
     if (player.connected && player.type === "chaser") {
       player.stats.chaserScore = teamScore;
-
-      // Send game end message
-      player.ws.send(
-        JSON.stringify({
-          type: "gameEnd",
-          allCaught: allCaught,
-          gameTime: gameTime,
-          score: teamScore,
-          fugitivesCaught: gameState.caughtFugitives.size,
-          totalFugitives: gameState.fugitives.length,
-        })
-      );
     }
   });
+
+  // Broadcast game end message to all connected clients (including controllers)
+  const gameEndMessage = {
+    type: "gameEnd",
+    allCaught: allCaught,
+    gameTime: gameTime,
+    score: teamScore,
+    fugitivesCaught: gameState.caughtFugitives.size,
+    totalFugitives: gameState.fugitives.length,
+  };
+  console.log("[endGame] Broadcasting gameEnd message:", gameEndMessage);
+  broadcast(gameEndMessage);
 
   // Save highscore if this is a new record
   // Collect all chaser player names for team games
@@ -474,10 +480,19 @@ function endGame(allCaught) {
   }
   saveHighscore(teamScore, playerNames, gameState.isTeamGame);
 
+  // Regenerate game code for the next game session
+  gameState.gameCode = generateGameCode();
+  console.log(`[endGame] Generated new game code for next session: ${gameState.gameCode}`);
+
   // Reset game state after a short delay to show final scores
   setTimeout(() => {
     resetGame();
   }, 3000); // 3 second delay before reset
+}
+
+// Generate a random 2-digit code (00-99)
+function generateGameCode() {
+  return Math.floor(Math.random() * 100).toString().padStart(2, '0');
 }
 
 function resetGame() {
@@ -487,6 +502,12 @@ function resetGame() {
   gameState.firstPlayerId = null;
   gameState.firstPlayerName = null;
   gameState.isTeamGame = false;
+  // Keep the same game code (already regenerated in endGame)
+  
+  // Clear all chaser selections when game resets
+  if (gameState.chaserSelections) {
+    gameState.chaserSelections.clear();
+  }
   
   // Reset speed settings to defaults
   gameState.fugitiveSpeed = 0.4;
@@ -941,10 +962,93 @@ wss.on("connection", (ws, req) => {
         case "setGameDuration":
           handleSetGameDuration(data);
           break;
+        case "setAIDifficulty":
+          if (data.difficulty !== undefined) {
+            gameState.aiDifficulty = data.difficulty;
+            broadcast({ type: "aiDifficultyChanged", difficulty: data.difficulty });
+          }
+          break;
+        case "setView3D":
+          if (data.view3D !== undefined) {
+            broadcast({ type: "view3DChanged", view3D: data.view3D });
+          }
+          break;
+        case "setCamera3D":
+          if (data.cameraType !== undefined) {
+            broadcast({ type: "camera3DChanged", cameraType: data.cameraType });
+          }
+          break;
+        case "setCameraZoom":
+          if (data.zoom !== undefined) {
+            broadcast({ type: "cameraZoomChanged", zoom: data.zoom });
+          }
+          break;
+        case "setAmbientLight":
+          if (data.intensity !== undefined) {
+            broadcast({ type: "ambientLightChanged", intensity: data.intensity });
+          }
+          break;
+        case "setDirectionalLight":
+          if (data.intensity !== undefined) {
+            broadcast({ type: "directionalLightChanged", intensity: data.intensity });
+          }
+          break;
+        case "setPointLight":
+          if (data.intensity !== undefined) {
+            broadcast({ type: "pointLightChanged", intensity: data.intensity });
+          }
+          break;
+        case "setPathColor":
+          if (data.color !== undefined) {
+            broadcast({ type: "pathColorChanged", color: data.color });
+          }
+          break;
+        case "setInnerWallColor":
+          if (data.color !== undefined) {
+            broadcast({ type: "innerWallColorChanged", color: data.color });
+          }
+          break;
+        case "setOuterWallColor":
+          if (data.color !== undefined) {
+            broadcast({ type: "outerWallColorChanged", color: data.color });
+          }
+          break;
+        case "setBodyBgColor":
+          if (data.color !== undefined) {
+            broadcast({ type: "bodyBgColorChanged", color: data.color });
+          }
+          break;
+        case "setMazeOpacity":
+          if (data.opacity !== undefined) {
+            broadcast({ type: "mazeOpacityChanged", opacity: data.opacity });
+          }
+          break;
+        case "setBuildingOpacity":
+          if (data.opacity !== undefined) {
+            broadcast({ type: "buildingOpacityChanged", opacity: data.opacity });
+          }
+          break;
+        case "setBuildingRealOpacity":
+          if (data.opacity !== undefined) {
+            broadcast({ type: "buildingRealOpacityChanged", opacity: data.opacity });
+          }
+          break;
+        case "setBuildingRealScale":
+          if (data.scale !== undefined) {
+            broadcast({ type: "buildingRealScaleChanged", scale: data.scale });
+          }
+          break;
+        case "setBuildingRealBlendMode":
+          if (data.blendMode !== undefined) {
+            broadcast({ type: "buildingRealBlendModeChanged", blendMode: data.blendMode });
+          }
+          break;
         case "startGame":
           if (!gameState.gameStarted) {
             gameState.gameStarted = true;
             gameState.gameStartTime = Date.now();
+            
+            // Keep the same game code for the entire server session (don't regenerate on start)
             
             // Track first player (the one who clicked start)
             gameState.firstPlayerId = playerId;
@@ -978,6 +1082,16 @@ wss.on("connection", (ws, req) => {
           initCharacters();
           broadcast({ type: "gameRestarted" });
           break;
+        case "endGame":
+          // Manually end the game (same as natural end)
+          console.log("[server] Received endGame message from player", playerId);
+          if (gameState.gameStarted) {
+            console.log("[server] Ending game manually...");
+            endGame(false); // false = not all caught, time's up
+          } else {
+            console.log("[server] Cannot end game - game not started");
+          }
+          break;
         case "gameState":
           sendGameState(ws);
           break;
@@ -1008,6 +1122,35 @@ wss.on("connection", (ws, req) => {
 
 // ========== MESSAGE HANDLERS ==========
 function handleJoin(ws, playerId, data) {
+  // Validate game code if provided
+  if (data.gameCode !== undefined) {
+    // Ensure gameState.gameCode is initialized (fallback only - should already be set on server startup)
+    if (!gameState.gameCode) {
+      gameState.gameCode = generateGameCode();
+      console.log(`[handleJoin] Generated initial game code for server session: ${gameState.gameCode}`);
+    }
+    
+    // Normalize both codes to strings and compare
+    const serverCode = String(gameState.gameCode).trim().padStart(2, '0');
+    const clientCode = String(data.gameCode).trim().padStart(2, '0');
+    
+    console.log(`[handleJoin] Code validation - Server: "${serverCode}" (type: ${typeof serverCode}), Client: "${clientCode}" (type: ${typeof data.gameCode}), Match: ${serverCode === clientCode}`);
+    
+    if (serverCode !== clientCode) {
+      ws.send(JSON.stringify({ 
+        type: "joinFailed", 
+        reason: `Invalid game code. Expected: ${serverCode}, Got: ${clientCode}` 
+      }));
+      return;
+    }
+  } else {
+    // Require game code for joining
+    ws.send(JSON.stringify({ 
+      type: "joinFailed", 
+      reason: "Game code required. Please enter the 2-digit code." 
+    }));
+    return;
+  }
   const { characterType, colorIndex } = data;
 
   // Players can only join as chasers (fugitives are AI-controlled)
@@ -1142,21 +1285,21 @@ function handleSetSpeeds(data) {
   const { pacmanSpeed, ghostSpeed, fugitiveSpeed, chaserSpeed } = data;
   // Support both new and legacy names
   if (typeof fugitiveSpeed === "number") {
-    gameState.fugitiveSpeed = Math.max(0.2, Math.min(3, fugitiveSpeed));
+    gameState.fugitiveSpeed = Math.max(0.3, Math.min(1, fugitiveSpeed));
   } else if (typeof pacmanSpeed === "number") {
-    gameState.fugitiveSpeed = Math.max(0.2, Math.min(3, pacmanSpeed));
+    gameState.fugitiveSpeed = Math.max(0.3, Math.min(1, pacmanSpeed));
   }
   if (typeof chaserSpeed === "number") {
-    gameState.chaserSpeed = Math.max(0.2, Math.min(3, chaserSpeed));
+    gameState.chaserSpeed = Math.max(0.3, Math.min(1, chaserSpeed));
   } else if (typeof ghostSpeed === "number") {
-    gameState.chaserSpeed = Math.max(0.2, Math.min(3, ghostSpeed));
+    gameState.chaserSpeed = Math.max(0.3, Math.min(1, ghostSpeed));
   }
 }
 
 function handleSetGameDuration(data) {
   const { duration } = data;
   if (typeof duration === "number") {
-    gameState.gameDuration = Math.max(30, Math.min(600, duration)); // 30 seconds to 10 minutes
+    gameState.gameDuration = Math.max(10, Math.min(120, duration)); // 10 seconds to 120 seconds
     console.log(`[GAME] Game duration set to ${gameState.gameDuration} seconds`);
   }
 }
@@ -1228,11 +1371,20 @@ function handleDisconnect(playerId) {
 
 function broadcast(message) {
   const data = JSON.stringify(message); // Stringify once, reuse for all clients
+  let clientCount = 0;
   wss.clients.forEach((client) => {
     if (client.readyState === 1) {
-      client.send(data);
+      clientCount++;
+      try {
+        client.send(data);
+      } catch (error) {
+        console.error("[broadcast] Error sending to client:", error);
+      }
     }
   });
+  if (message.type === "gameEnd") {
+    console.log(`[broadcast] Sent gameEnd message to ${clientCount} connected clients`);
+  }
 }
 
 function sendGameState(ws) {
@@ -1313,6 +1465,7 @@ function sendGameState(ws) {
       },
       chaserSelections: chaserSelections, // Selections before joining
       gameStarted: gameState.gameStarted,
+      gameCode: gameState.gameCode, // 2-digit code for joining
       positions: {
         fugitives: fugitivePositions,
         chasers: chaserPositions,
@@ -1401,6 +1554,7 @@ function broadcastGameState() {
     },
     chaserSelections: chaserSelections, // Selections before joining
     gameStarted: gameState.gameStarted,
+    gameCode: gameState.gameCode, // 2-digit code for joining
     positions: {
       fugitives: fugitivePositions,
       chasers: chaserPositions,
@@ -1441,6 +1595,11 @@ function initializeHighscore() {
 
 // ========== START SERVER ==========
 initializeHighscore();
+// Initialize game code on server startup
+if (!gameState.gameCode) {
+  gameState.gameCode = generateGameCode();
+  console.log(`[Server] Initialized game code: ${gameState.gameCode}`);
+}
 initCharacters();
 setInterval(gameLoop, 16); // ~60fps game loop (smoother updates)
 
