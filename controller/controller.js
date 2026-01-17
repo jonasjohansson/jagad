@@ -226,10 +226,25 @@ function updateChaserButtons() {
 function updateStartButton() {
   if (!elements.startBtn) return;
   
-  const isEnabled = isFirstPlayer && !gameStarted;
-  elements.startBtn.textContent = isEnabled ? "Start" : "Select";
-  elements.startBtn.disabled = !isEnabled;
-  elements.startBtn.classList.toggle("disabled", !isEnabled);
+  // Check if there are available chasers
+  const hasAvailableChasers = availableChasers.length > 0;
+  
+  if (isFirstPlayer && !gameStarted) {
+    // First player can start the game
+    elements.startBtn.textContent = "Start";
+    elements.startBtn.disabled = false;
+    elements.startBtn.classList.remove("disabled");
+  } else if (gameStarted && hasAvailableChasers && myColorIndex === null) {
+    // Game is active and there are free spots - show "Join"
+    elements.startBtn.textContent = "Join";
+    elements.startBtn.disabled = false;
+    elements.startBtn.classList.remove("disabled");
+  } else {
+    // Default: show "Select" when game hasn't started and not first player
+    elements.startBtn.textContent = "Select";
+    elements.startBtn.disabled = !hasAvailableChasers || myColorIndex !== null;
+    elements.startBtn.classList.toggle("disabled", !hasAvailableChasers || myColorIndex !== null);
+  }
 }
 
 function updateInitialsInput() {
@@ -437,7 +452,16 @@ function initEventListeners() {
       const indexStr = btn.dataset.index;
       if (indexStr === "start") {
         if (isFirstPlayer && !gameStarted && ws?.readyState === WebSocket.OPEN) {
+          // First player starts the game
           ws.send(JSON.stringify({ type: "startGame" }));
+        } else if (gameStarted && availableChasers.length > 0 && myColorIndex === null && ws?.readyState === WebSocket.OPEN) {
+          // Join as first available chaser when game is active
+          const firstAvailable = availableChasers[0];
+          joinAsChaser(firstAvailable);
+        } else if (!gameStarted && availableChasers.length > 0 && myColorIndex === null && ws?.readyState === WebSocket.OPEN) {
+          // Select first available chaser when game hasn't started
+          const firstAvailable = availableChasers[0];
+          joinAsChaser(firstAvailable);
         }
       } else {
         const index = parseInt(indexStr, 10);
