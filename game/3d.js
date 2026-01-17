@@ -15,7 +15,7 @@ const COLORS = ["red", "green", "blue", "yellow"];
 let scene, camera, renderer;
 let orthographicCamera, perspectiveCamera;
 let useOrthographic = true; // Default to orthographic
-let cameraZoom = 1.2; // Camera zoom level
+let cameraZoom = 1.56; // Camera zoom level
 let baseViewSize = 0; // Base view size (calculated on init)
 let fugitives3D = [];
 let chasers3D = [];
@@ -36,6 +36,7 @@ function init3D() {
   // Create both orthographic and perspective cameras
   baseViewSize = Math.max(COLS * CELL_SIZE, ROWS * CELL_SIZE) * 1.0;
   const viewSize = baseViewSize * cameraZoom;
+  // Use window dimensions for initial aspect ratio (canvas may be hidden)
   const aspect = window.innerWidth / window.innerHeight;
 
   // Orthographic camera
@@ -87,6 +88,7 @@ function init3D() {
     return;
   }
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+  // Use window dimensions for initial renderer size (canvas may be hidden)
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x for performance
   renderer.setClearColor(0x000000, 0); // Transparent background
@@ -557,7 +559,14 @@ function updatePositions3D(positions) {
 function onWindowResize3D() {
   if (!camera || !renderer) return;
 
-  const aspect = window.innerWidth / window.innerHeight;
+  const canvas = document.getElementById("webgl-canvas");
+  if (!canvas) return;
+  
+  // Canvas is positioned absolutely and sized to match game dimensions
+  // Use the actual canvas dimensions (which match the game size)
+  const canvasWidth = canvas.clientWidth || (COLS * CELL_SIZE);
+  const canvasHeight = canvas.clientHeight || (ROWS * CELL_SIZE);
+  const aspect = canvasWidth / canvasHeight;
 
   if (useOrthographic && orthographicCamera) {
     // Update orthographic camera bounds
@@ -580,7 +589,7 @@ function onWindowResize3D() {
     perspectiveCamera.updateProjectionMatrix();
   }
 
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(canvasWidth, canvasHeight);
 }
 
 function setCameraZoom(zoom) {

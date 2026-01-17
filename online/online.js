@@ -101,6 +101,60 @@ function respawnCharacter(character, spawnPos) {
   updatePosition(character.element, character.px, character.py);
 }
 
+// Calculate scale to fit game in center column
+function calculateGameScale() {
+  const gameCenter = document.querySelector(".game-center");
+  if (!gameCenter) return 1;
+  
+  const availableWidth = gameCenter.clientWidth;
+  const availableHeight = gameCenter.clientHeight;
+  const gameWidth = COLS * CELL_SIZE;
+  const gameHeight = ROWS * CELL_SIZE;
+  
+  const scaleX = availableWidth / gameWidth;
+  const scaleY = availableHeight / gameHeight;
+  const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
+  
+  return scale;
+}
+
+// Apply scale to game container
+function updateGameScale() {
+  const gameContainer = document.getElementById("game-container");
+  const canvas = document.getElementById("webgl-canvas");
+  const buildingImage = document.getElementById("building-image");
+  const buildingRealImage = document.getElementById("building-real-image");
+  
+  const scale = calculateGameScale();
+  
+  if (gameContainer) {
+    gameContainer.style.transform = `scale(${scale})`;
+    gameContainer.style.transformOrigin = "center center";
+  }
+  
+  // Scale canvas and building images to match
+  if (canvas) {
+    canvas.style.width = COLS * CELL_SIZE + "px";
+    canvas.style.height = ROWS * CELL_SIZE + "px";
+    canvas.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  }
+  
+  if (buildingImage) {
+    buildingImage.style.width = COLS * CELL_SIZE + "px";
+    buildingImage.style.height = ROWS * CELL_SIZE + "px";
+    buildingImage.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  }
+  
+  if (buildingRealImage) {
+    buildingRealImage.style.width = COLS * CELL_SIZE + "px";
+    buildingRealImage.style.height = ROWS * CELL_SIZE + "px";
+    // Building real transform includes position and scale from GUI
+    const guiParams = window.guiParams || {};
+    const translate = `translate(calc(-50% + ${(guiParams.buildingRealX || 9) * scale}px), calc(-50% + ${(guiParams.buildingRealY || 9) * scale}px))`;
+    buildingRealImage.style.transform = `${translate} scale(${(guiParams.buildingRealScale || 1.1) * scale})`;
+  }
+}
+
 // Initialize maze
 function initMaze() {
   const maze = document.getElementById("maze");
@@ -519,14 +573,45 @@ function gameLoop() {
   }
   
   // Render
-  if (view3D && window.render3D) {
-    // Update 3D positions
+  if (view3D && window.render3D && window.render3D.initialized) {
+    // Update 3D positions - format matches what 3d.js expects
     const positions = {
-      pacmen: pacmen.map(p => ({ x: p.x, y: p.y, px: p.px, py: p.py })),
-      ghosts: ghosts.map(g => ({ x: g.x, y: g.y, px: g.px, py: g.py })),
+      fugitives: pacmen.map((p, index) => ({
+        x: p.x,
+        y: p.y,
+        px: p.px,
+        py: p.py,
+        color: COLORS[index] || "red",
+      })),
+      chasers: ghosts.map((g, index) => ({
+        x: g.x,
+        y: g.y,
+        px: g.px,
+        py: g.py,
+        color: g.color || "white",
+      })),
+      // Also include legacy names for compatibility
+      pacmen: pacmen.map((p, index) => ({
+        x: p.x,
+        y: p.y,
+        px: p.px,
+        py: p.py,
+        color: COLORS[index] || "red",
+      })),
+      ghosts: ghosts.map((g, index) => ({
+        x: g.x,
+        y: g.y,
+        px: g.px,
+        py: g.py,
+        color: g.color || "white",
+      })),
     };
-    window.render3D.updatePositions(positions);
-    window.render3D.render();
+    if (window.render3D.updatePositions) {
+      window.render3D.updatePositions(positions);
+    }
+    if (window.render3D.render) {
+      window.render3D.render();
+    }
   } else {
     // Render 2D
     pacmen.forEach((pacman) => {
@@ -766,24 +851,15 @@ function initGUI() {
   });
 
   buildingFolder.add(guiParams, "buildingRealScale", 0.1, 3.0, 0.01).name("Building Real Scale").onChange((value) => {
-    const img = document.getElementById("building-real-image");
-    if (img) img.style.transform = `translate(-50%, -50%) scale(${value})`;
+    updateGameScale(); // Recalculate scale with new building scale
   });
 
-  buildingFolder.add(guiParams, "buildingRealX", -50, 50, 1).name("Building Real X").onChange((value) => {
-    const img = document.getElementById("building-real-image");
-    if (img) {
-      const currentY = guiParams.buildingRealY || 9;
-      img.style.transform = `translate(calc(-50% + ${value}px), calc(-50% + ${currentY}px)) scale(${guiParams.buildingRealScale || 1.1})`;
-    }
+  buildingFolder.add(guiParams, "buildingRealX", -50, 50, 1).name("Building Real X").onChange(() => {
+    updateGameScale(); // Recalculate scale with new position
   });
 
-  buildingFolder.add(guiParams, "buildingRealY", -50, 50, 1).name("Building Real Y").onChange((value) => {
-    const img = document.getElementById("building-real-image");
-    if (img) {
-      const currentX = guiParams.buildingRealX || 9;
-      img.style.transform = `translate(calc(-50% + ${currentX}px), calc(-50% + ${value}px)) scale(${guiParams.buildingRealScale || 1.1})`;
-    }
+  buildingFolder.add(guiParams, "buildingRealY", -50, 50, 1).name("Building Real Y").onChange(() => {
+    updateGameScale(); // Recalculate scale with new position
   });
 
   buildingFolder.add(guiParams, "buildingRealBlendMode", ["normal", "multiply", "screen", "overlay", "soft-light", "hard-light"]).name("Building Real Blend").onChange((value) => {
@@ -802,9 +878,8 @@ function initGUI() {
   const buildingRealImage = document.getElementById("building-real-image");
   if (buildingRealImage) {
     buildingRealImage.style.opacity = guiParams.buildingRealOpacity;
-    const translate = `translate(calc(-50% + ${guiParams.buildingRealX}px), calc(-50% + ${guiParams.buildingRealY}px))`;
-    buildingRealImage.style.transform = `${translate} scale(${guiParams.buildingRealScale})`;
     buildingRealImage.style.mixBlendMode = guiParams.buildingRealBlendMode;
+    // Initial scale will be set by updateGameScale()
   }
   const maze = document.getElementById("maze");
   if (maze) {
@@ -819,7 +894,21 @@ function initGUI() {
 document.addEventListener("DOMContentLoaded", () => {
   initMaze();
   initCharacters();
+  
+  // Initialize GUI first (sets up 3D view)
   initGUI();
+  
+  // Calculate and apply initial scale
+  updateGameScale();
+  
+  // Update scale on window resize
+  window.addEventListener("resize", () => {
+    updateGameScale();
+    // Also update 3D renderer if needed
+    if (window.render3D && window.render3D.onResize) {
+      window.render3D.onResize();
+    }
+  });
   
   // Initialize shared D-pad component
   initDpad("joystick-base", "joystick-handle", onDpadDirectionChange);
@@ -827,6 +916,43 @@ document.addEventListener("DOMContentLoaded", () => {
   const playBtn = document.getElementById("play-btn");
   if (playBtn) {
     playBtn.addEventListener("click", startGame);
+  }
+  
+  // Initialize 3D positions for initial render
+  if (view3D && window.render3D && window.render3D.initialized) {
+    const positions = {
+      fugitives: pacmen.map((p, index) => ({
+        x: p.x,
+        y: p.y,
+        px: p.px,
+        py: p.py,
+        color: COLORS[index] || "red",
+      })),
+      chasers: ghosts.map((g, index) => ({
+        x: g.x,
+        y: g.y,
+        px: g.px,
+        py: g.py,
+        color: g.color || "white",
+      })),
+      pacmen: pacmen.map((p, index) => ({
+        x: p.x,
+        y: p.y,
+        px: p.px,
+        py: p.py,
+        color: COLORS[index] || "red",
+      })),
+      ghosts: ghosts.map((g, index) => ({
+        x: g.x,
+        y: g.y,
+        px: g.px,
+        py: g.py,
+        color: g.color || "white",
+      })),
+    };
+    if (window.render3D.updatePositions) {
+      window.render3D.updatePositions(positions);
+    }
   }
   
   // Start game loop

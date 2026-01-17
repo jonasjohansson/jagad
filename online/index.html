@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Online Game</title>
-    <link rel="stylesheet" href="www.css" />
+    <link rel="stylesheet" href="online.css" />
   </head>
   <body>
     <div class="game-layout">
@@ -21,9 +21,19 @@
 
       <!-- Center: Game visuals -->
       <div class="game-center">
+        <div id="gui-container"></div>
+        <canvas id="webgl-canvas" style="display: none"></canvas>
         <div id="game-container">
           <div id="maze"></div>
         </div>
+        <img
+          id="building-image"
+          src="../assets/building.png"
+          alt="Building level" />
+        <img
+          id="building-real-image"
+          src="../assets/building-real.png"
+          alt="Building real" />
       </div>
 
       <!-- Right side: Joystick -->
@@ -50,6 +60,6 @@
         });
     </script>
     <script type="module" src="../game/3d.js"></script>
-    <script type="module" src="www.js"></script>
+    <script type="module" src="online.js"></script>
   </body>
 </html>
