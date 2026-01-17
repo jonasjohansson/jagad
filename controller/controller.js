@@ -4,6 +4,7 @@ const LOCAL_SERVER_ADDRESS = "http://localhost:3000";
 const INPUT_THROTTLE = 50;
 const JOYSTICK_THRESHOLD = 30;
 const JOYSTICK_OFFSET = 40;
+const DEBUG = false; // Set to true to enable debug logging
 
 // Get server address from URL parameter or default
 function getServerFromURL() {
@@ -71,11 +72,6 @@ function getServerAddress() {
   return getServerFromURL();
 }
 
-function getInitials() {
-  // Default initials, will be prompted when game ends
-  return "JGD";
-}
-
 function promptForInitials() {
   let initials = "";
   while (!initials || initials.length === 0) {
@@ -113,20 +109,7 @@ function getJoystickCenter() {
 }
 
 function sendInput(dir) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.log("[sendInput] WebSocket not ready", ws?.readyState);
-    return;
-  }
-  if (!myPlayerId) {
-    console.log("[sendInput] No myPlayerId");
-    return;
-  }
-  if (myColorIndex === null) {
-    console.log("[sendInput] myColorIndex is null");
-    return;
-  }
-  if (!gameStarted) {
-    console.log("[sendInput] Game not started yet");
+  if (!ws || ws.readyState !== WebSocket.OPEN || !myPlayerId || myColorIndex === null || !gameStarted) {
     return;
   }
 
@@ -136,7 +119,7 @@ function sendInput(dir) {
   lastInputTime = now;
   currentDir = dir;
   
-  console.log("[sendInput] Sending input", dir, "for chaser", myColorIndex);
+  if (DEBUG) console.log("[sendInput] Sending input", dir, "for chaser", myColorIndex);
   ws.send(JSON.stringify({ type: "input", input: { dir } }));
 }
 
@@ -174,7 +157,7 @@ function handleServerMessage(data) {
       myPlayerId = data.playerId;
       break;
     case "joined":
-      console.log("[joined] Player joined as chaser", data.colorIndex, "myColorIndex was:", myColorIndex);
+      if (DEBUG) console.log("[joined] Player joined as chaser", data.colorIndex);
       myColorIndex = data.colorIndex;
       previousMyColorIndex = data.colorIndex;
       // Clear selection since we're now joined
@@ -188,12 +171,10 @@ function handleServerMessage(data) {
       }
       updateUI();
       updateChaserButtons();
-      // Force update start button when joining
       updateStartButton();
       
       // If we were trying to start the game, do it now that we're joined
       if (pendingStartGame && !gameStarted && ws?.readyState === WebSocket.OPEN) {
-        console.log("[joined] Starting game after join");
         pendingStartGame = false;
         ws.send(JSON.stringify({ type: "startGame" }));
       }
@@ -233,44 +214,43 @@ function handleServerMessage(data) {
         }
         isFirstPlayer = playerCount === 1 && myPlayerId && connectedPlayers.has(myPlayerId);
         
-        // Track which chasers are taken (by other players)
+        // Track which chasers are taken (by other players) and process selections
         const newTakenChasers = new Set();
         
-        // Add joined chasers to taken set
+        // Process players and selections in a single pass where possible
         data.players.forEach((player) => {
-          if (player.connected && player.colorIndex !== null && player.colorIndex !== undefined) {
-            // Only mark as taken if it's not our own chaser
+          if (player.connected && player.colorIndex != null) {
+            // Mark as taken if it's not our own chaser
             if (player.playerId !== myPlayerId) {
               newTakenChasers.add(player.colorIndex);
             }
           }
         });
         
-        // Also add names from chaser selections (players who selected but haven't joined yet)
+        // Process chaser selections
         if (data.chaserSelections) {
-          Object.entries(data.chaserSelections).forEach(([colorIndexStr, selection]) => {
+          for (const [colorIndexStr, selection] of Object.entries(data.chaserSelections)) {
             const colorIndex = parseInt(colorIndexStr, 10);
-            if (!isNaN(colorIndex) && selection.playerName) {
-              // Only add if not already joined (not in newPlayerNames)
-              if (!newPlayerNames.has(colorIndex)) {
-                newPlayerNames.set(colorIndex, selection.playerName);
-              }
-              // Mark as taken if it's not our own selection
-              if (selectedChaserIndex !== colorIndex) {
-                newTakenChasers.add(colorIndex);
-              }
+            if (isNaN(colorIndex) || !selection.playerName) continue;
+            
+            // Only add if not already joined
+            if (!newPlayerNames.has(colorIndex)) {
+              newPlayerNames.set(colorIndex, selection.playerName);
             }
-          });
+            // Mark as taken if it's not our own selection
+            if (selectedChaserIndex !== colorIndex) {
+              newTakenChasers.add(colorIndex);
+            }
+          }
         }
         
         // Update taken chasers
         takenChasers = newTakenChasers;
         
-        // Check if player names changed
+        // Check if player names changed (optimized comparison)
         playerNamesChanged = 
           newPlayerNames.size !== previousPlayerNames.size ||
-          Array.from(newPlayerNames.entries()).some(([key, val]) => previousPlayerNames.get(key) !== val) ||
-          Array.from(previousPlayerNames.entries()).some(([key, val]) => newPlayerNames.get(key) !== val);
+          (newPlayerNames.size > 0 && Array.from(newPlayerNames.entries()).some(([key, val]) => previousPlayerNames.get(key) !== val));
         
         if (playerNamesChanged) {
           playerNames = newPlayerNames;
@@ -282,10 +262,8 @@ function handleServerMessage(data) {
       
       // Update gameStarted state from server
       if (data.gameStarted !== undefined) {
-        const wasGameStarted = gameStarted;
         gameStarted = data.gameStarted;
-        if (gameStarted !== wasGameStarted) {
-          console.log("[gameState] gameStarted changed:", wasGameStarted, "->", gameStarted);
+        if (gameStarted !== previousGameStarted) {
           previousGameStarted = gameStarted;
         }
       }
@@ -314,7 +292,6 @@ function handleServerMessage(data) {
       const selectedChaserIndexChanged = selectedChaserIndex !== previousSelectedChaserIndex;
       
       if (myColorIndexChanged) {
-        console.log("[gameState] myColorIndex changed:", previousMyColorIndex, "->", myColorIndex);
         previousMyColorIndex = myColorIndex;
       }
       if (gameStartedChanged) {
@@ -330,14 +307,11 @@ function handleServerMessage(data) {
       }
       break;
     case "gameStarted":
-      console.log("[gameStarted] Game started, myColorIndex:", myColorIndex, "selectedChaserIndex:", selectedChaserIndex);
       gameStarted = true;
       previousGameStarted = true;
-      pendingStartGame = false; // Clear pending flag since game has started
+      pendingStartGame = false;
       elements.chaserSelect?.classList.add("game-started");
-      // Update start button since game state changed
       updateStartButton();
-      // Update chaser buttons to disable them if player has joined
       updateChaserButtons();
       // Request latest game state to get updated available chasers
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -399,6 +373,9 @@ function updateUI() {
 }
 
 function updateChaserButtons() {
+  const hasJoined = myColorIndex !== null;
+  const hasSelection = selectedChaserIndex !== null;
+  
   elements.chaserButtons.forEach((btn) => {
     const indexStr = btn.dataset.index;
     if (indexStr === "start") return;
@@ -409,36 +386,25 @@ function updateChaserButtons() {
     const isAvailable = availableChasers.includes(index);
     const isJoined = myColorIndex === index;
     const isSelected = selectedChaserIndex === index;
-    const isTakenByOthers = takenChasers.has(index); // Taken by other players (selected or joined)
+    const isTakenByOthers = takenChasers.has(index);
     const playerName = playerNames.get(index);
     
+    // Update button text
+    btn.textContent = playerName ? `${index + 1}: ${playerName}` : `${index + 1}`;
+    
+    // Determine button state (optimized order: most restrictive first)
     btn.classList.remove("available", "taken", "selected");
     
-    // Update button text with player name if available
-    if (playerName) {
-      btn.textContent = `${index + 1}: ${playerName}`;
-    } else {
-      btn.textContent = `${index + 1}`;
-    }
-    
-    if (isJoined) {
-      // Player has joined as this chaser - disable all chaser buttons (can't change after joining)
-      btn.classList.add("selected");
-      btn.disabled = true; // Disable to prevent changing chaser after joining
-    } else if (myColorIndex !== null) {
-      // Player has already joined a different chaser - disable all chaser buttons
-      btn.classList.add("taken");
+    if (isJoined || hasJoined) {
+      // Player has joined (this or another chaser) - disable all buttons
+      btn.classList.add(isJoined ? "selected" : "taken");
       btn.disabled = true;
     } else if (isSelected) {
       // Player has selected this chaser but not yet joined
       btn.classList.add("selected");
       btn.disabled = false;
-    } else if (isTakenByOthers) {
-      // Chaser is taken by another player (selected or joined) - disable
-      btn.classList.add("taken");
-      btn.disabled = true;
-    } else if (selectedChaserIndex !== null) {
-      // Player has selected a different chaser - disable all others
+    } else if (isTakenByOthers || (hasSelection && !isAvailable)) {
+      // Taken by others or unavailable when player has a selection
       btn.classList.add("taken");
       btn.disabled = true;
     } else if (isAvailable) {
@@ -464,15 +430,6 @@ function updateStartButton() {
   
   elements.startBtn.textContent = "Play";
   
-  // Debug logging (only log when state actually changes to avoid spam)
-  // Removed constant logging - uncomment if needed for debugging
-  // console.log("[updateStartButton]", {
-  //   selectedChaserIndex,
-  //   myColorIndex,
-  //   gameStarted,
-  //   shouldEnable: selectedChaserIndex !== null && myColorIndex === null
-  // });
-  
   if (selectedChaserIndex !== null && myColorIndex === null) {
     // Player has selected a chaser and hasn't joined yet - can click "Play" (even if game has started)
     elements.startBtn.disabled = false;
@@ -486,16 +443,17 @@ function updateStartButton() {
 
 
 function updateScoreDisplay() {
-  let teamScore = 0;
+  if (!elements.scoreValue) return;
+  
+  // Find first chaser's score (all chasers share the same team score)
   for (const player of connectedPlayers.values()) {
-    if ((player.type === "chaser" || player.type === "ghost") && player.stats?.chaserScore) {
-      teamScore = player.stats.chaserScore;
-      break;
+    if ((player.type === "chaser" || player.type === "ghost") && player.stats?.chaserScore != null) {
+      elements.scoreValue.textContent = player.stats.chaserScore;
+      return;
     }
   }
-  if (elements.scoreValue) {
-    elements.scoreValue.textContent = teamScore;
-  }
+  // Default to 0 if no score found
+  elements.scoreValue.textContent = 0;
 }
 
 function selectChaser(colorIndex) {
@@ -601,9 +559,9 @@ function handleKeyUp(e) {
   keys[key] = false;
   
   // Find next active direction
-  const dir = Object.entries(keys).find(([k, pressed]) => pressed && KEY_TO_DIR[k])?.[0];
-  if (dir) {
-    updateJoystickFromKey(KEY_TO_DIR[dir]);
+  const activeKey = Object.keys(keys).find(k => keys[k] && KEY_TO_DIR[k]);
+  if (activeKey) {
+    updateJoystickFromKey(KEY_TO_DIR[activeKey]);
   } else {
     resetJoystick();
   }
@@ -627,16 +585,7 @@ function handleTouchMove(e) {
   if (!touch) return;
   
   updateJoystick(touch.clientX, touch.clientY);
-  
-  // Send input continuously while dragging
-  const center = getJoystickCenter();
-  const dir = calculateDirection(touch.clientX - center.x, touch.clientY - center.y);
-  if (dir) {
-    const now = Date.now();
-    if (now - lastInputTime >= INPUT_THROTTLE) {
-      sendInput(dir);
-    }
-  }
+  // Input is already sent in updateJoystick, no need to send again here
 }
 
 function handleTouchEnd(e) {
@@ -664,18 +613,8 @@ function handleMouseDown(e) {
 
 function handleMouseMove(e) {
   if (!joystickActive) return;
-  
   updateJoystick(e.clientX, e.clientY);
-  
-  // Send input continuously while dragging
-  const center = getJoystickCenter();
-  const dir = calculateDirection(e.clientX - center.x, e.clientY - center.y);
-  if (dir && currentDir === dir) {
-    const now = Date.now();
-    if (now - lastInputTime >= INPUT_THROTTLE) {
-      sendInput(dir);
-    }
-  }
+  // Input is already sent in updateJoystick, no need to send again here
 }
 
 function handleMouseUp(e) {
@@ -705,51 +644,22 @@ function initEventListeners() {
     btn.addEventListener("click", () => {
       const indexStr = btn.dataset.index;
       if (indexStr === "start") {
-        console.log("[Play button click]", {
-          selectedChaserIndex,
-          myColorIndex,
-          gameStarted,
-          wsReady: ws?.readyState === WebSocket.OPEN
-        });
-        
         if (selectedChaserIndex !== null && myColorIndex === null && ws?.readyState === WebSocket.OPEN) {
           // Player has selected a chaser and hasn't joined yet - click "Play"
           if (!gameStarted) {
             // Game hasn't started - join and start the game
-            console.log("[Play button click] Joining and starting game");
             pendingStartGame = true;
             joinAsChaser();
           } else {
             // Game has already started - just join
-            console.log("[Play button click] Joining existing game");
             joinAsChaser();
           }
-        } else {
-          console.log("[Play button click] Cannot join", {
-            hasSelection: selectedChaserIndex !== null,
-            notJoined: myColorIndex === null,
-            wsReady: ws?.readyState === WebSocket.OPEN
-          });
         }
       } else {
         const index = parseInt(indexStr, 10);
-        // Only allow selecting if:
-        // - Valid index
-        // - Chaser is available
-        // - Not already selected
-        // - Player hasn't joined yet (myColorIndex === null)
+        // Only allow selecting if all conditions are met
         if (!isNaN(index) && availableChasers.includes(index) && selectedChaserIndex !== index && myColorIndex === null && !takenChasers.has(index)) {
-          console.log("[chaser button click] Selecting chaser", index, "myColorIndex:", myColorIndex);
           selectChaser(index);
-        } else {
-          console.log("[chaser button click] Cannot select chaser", {
-            index,
-            isValid: !isNaN(index),
-            isAvailable: availableChasers.includes(index),
-            notSelected: selectedChaserIndex !== index,
-            notJoined: myColorIndex === null,
-            notTaken: !takenChasers.has(index)
-          });
         }
       }
     });

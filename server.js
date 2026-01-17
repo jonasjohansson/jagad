@@ -456,7 +456,23 @@ function endGame(allCaught) {
   });
 
   // Save highscore if this is a new record
-  saveHighscore(teamScore, gameState.firstPlayerName, gameState.isTeamGame);
+  // Collect all chaser player names for team games
+  let playerNames = gameState.firstPlayerName || "Unknown";
+  if (gameState.isTeamGame) {
+    const chaserNames = [];
+    gameState.players.forEach((player, playerId) => {
+      if (player.connected && player.type === "chaser" && player.playerName) {
+        chaserNames.push(player.playerName);
+      }
+    });
+    // If we have multiple chasers, join their names with commas
+    if (chaserNames.length > 1) {
+      playerNames = chaserNames.join(", ");
+    } else if (chaserNames.length === 1) {
+      playerNames = chaserNames[0];
+    }
+  }
+  saveHighscore(teamScore, playerNames, gameState.isTeamGame);
 
   // Reset game state after a short delay to show final scores
   setTimeout(() => {
@@ -757,28 +773,56 @@ function loadHighscore() {
   try {
     if (fs.existsSync(HIGHSCORE_FILE)) {
       const data = fs.readFileSync(HIGHSCORE_FILE, "utf8");
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      // Handle legacy format (single score object)
+      if (parsed.score !== undefined && !Array.isArray(parsed)) {
+        return [parsed];
+      }
+      // Return array of scores (top 10)
+      return Array.isArray(parsed) ? parsed : [];
     }
   } catch (error) {
     console.error("Error loading highscore:", error);
   }
-  return { score: 0, playerName: null, isTeamGame: false };
+  // Return empty array if no highscore file exists (will be initialized with test data)
+  return [];
 }
 
 function saveHighscore(score, playerName, isTeamGame) {
   try {
-    const current = loadHighscore();
-    // Only save if this is a new highscore
-    if (score > current.score) {
-      const highscoreData = {
-        score: score,
-        playerName: playerName || "Unknown",
-        isTeamGame: isTeamGame,
-        date: new Date().toISOString(),
-      };
-      fs.writeFileSync(HIGHSCORE_FILE, JSON.stringify(highscoreData, null, 2), "utf8");
-      console.log(`New highscore saved: ${score} by ${playerName} (${isTeamGame ? "Team" : "Solo"})`);
+    let highscores = loadHighscore();
+    
+    // Handle legacy format (single score object)
+    if (!Array.isArray(highscores) && highscores.score !== undefined) {
+      highscores = [highscores];
     }
+    
+    // Ensure highscores is an array
+    if (!Array.isArray(highscores)) {
+      highscores = [];
+    }
+    
+    // Create new score entry
+    const newScore = {
+      score: score,
+      playerName: playerName || "Unknown",
+      isTeamGame: isTeamGame,
+      date: new Date().toISOString(),
+    };
+    
+    // Add new score to array
+    highscores.push(newScore);
+    
+    // Sort by score (descending) and keep only top 10
+    highscores.sort((a, b) => b.score - a.score);
+    highscores = highscores.slice(0, 10);
+    
+    // Find the rank of the newly added score
+    const rank = highscores.findIndex(s => s.score === score && s.playerName === (playerName || "Unknown")) + 1;
+    
+    // Save to file
+    fs.writeFileSync(HIGHSCORE_FILE, JSON.stringify(highscores, null, 2), "utf8");
+    console.log(`Highscore saved: ${score} by ${playerName} (${isTeamGame ? "Team" : "Solo"}) - Rank ${rank}`);
   } catch (error) {
     console.error("Error saving highscore:", error);
   }
@@ -1367,7 +1411,36 @@ function broadcastGameState() {
   });
 }
 
+// ========== INITIALIZE TEST HIGHSCORE ==========
+// Initialize highscore file with test data if it doesn't exist or is empty
+function initializeHighscore() {
+  try {
+    const current = loadHighscore();
+    // If no highscore exists or array is empty, initialize with test data
+    if (!current || current.length === 0) {
+      // Create realistic but low test scores with JGD initials (all solo games)
+      const testHighscores = [
+        { score: 1250, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 1180, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 1120, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 1050, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 980, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 920, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 850, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 780, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 720, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+        { score: 650, playerName: "JGD", isTeamGame: false, date: new Date().toISOString() },
+      ];
+      fs.writeFileSync(HIGHSCORE_FILE, JSON.stringify(testHighscores, null, 2), "utf8");
+      console.log("Initialized highscore file with 10 test scores (JGD)");
+    }
+  } catch (error) {
+    console.error("Error initializing highscore file:", error);
+  }
+}
+
 // ========== START SERVER ==========
+initializeHighscore();
 initCharacters();
 setInterval(gameLoop, 16); // ~60fps game loop (smoother updates)
 

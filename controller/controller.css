@@ -19,6 +19,7 @@ body {
   padding: var(--spacing-md);
   text-align: center;
   flex-shrink: 0;
+  text-transform: none; /* Override body's uppercase */
 }
 
 .top-bar {

@@ -98,6 +98,8 @@ let aiDifficulty = 0.8; // 0 = easy, 1 = hard
 // Removed: survivalTimeThreshold - not used in new game mode
 let gameStarted = false;
 let view3D = true; // Toggle for 3D view
+let chaserSelections = new Map(); // colorIndex -> playerName (for chasers selected but not yet joined)
+let playerNames = new Map(); // colorIndex -> playerName (for joined players)
 let lastTime = 0;
 let animationId = null;
 let gui = null;
@@ -308,6 +310,7 @@ function handleServerMessage(data) {
     case "gameState":
       // Update connected players map
       connectedPlayers.clear();
+      playerNames.clear();
       if (data.players) {
         data.players.forEach((player) => {
           if (player.connected) {
@@ -316,12 +319,31 @@ function handleServerMessage(data) {
               colorIndex: player.colorIndex,
               stats: player.stats || null,
             });
+            // Store player names for joined players
+            if (player.colorIndex !== null && player.colorIndex !== undefined && player.playerName) {
+              playerNames.set(player.colorIndex, player.playerName);
+            }
           }
         });
         // Update score display if we have stats
         updateScoreDisplay();
       }
-      // Update GUI with available colors
+      
+      // Update chaser selections (players who selected but haven't joined yet)
+      if (data.chaserSelections) {
+        chaserSelections.clear();
+        Object.entries(data.chaserSelections).forEach(([colorIndexStr, selection]) => {
+          const colorIndex = parseInt(colorIndexStr, 10);
+          if (!isNaN(colorIndex) && selection.playerName) {
+            // Only add if not already joined
+            if (!playerNames.has(colorIndex)) {
+              chaserSelections.set(colorIndex, selection.playerName);
+            }
+          }
+        });
+      }
+      
+      // Update GUI with available colors and names
       if (data.availableColors) {
         updateAvailableColors(data.availableColors);
       }
@@ -385,6 +407,9 @@ function handleServerMessage(data) {
     case "gameReset":
       // Game was reset - clear caught state and player selection
       gameStarted = false;
+      // Clear chaser selections and player names
+      chaserSelections.clear();
+      playerNames.clear();
       // Reset speed settings to defaults
       guiParams.fugitiveSpeed = 0.4;
       guiParams.chaserSpeed = 0.41;
@@ -415,6 +440,15 @@ function handleServerMessage(data) {
           ghost.element.style.opacity = "0.2";
         }
       });
+      // Reset chaser button names in GUI
+      if (window.characterControllers && window.characterControllers.ghost) {
+        for (let i = 0; i < 4; i++) {
+          const ctrl = window.characterControllers.ghost[i];
+          if (ctrl) {
+            ctrl.name(`Chaser ${i + 1}`);
+          }
+        }
+      }
       // Also update 3D opacities
       if (view3D && window.render3D && window.render3D.updateChaserOpacity) {
         for (let i = 0; i < 4; i++) {
@@ -921,11 +955,36 @@ function updateAvailableColors(availableColors) {
       for (let i = 0; i < controllers.length; i++) {
         const ctrl = controllers[i];
         if (!ctrl) continue;
-        const isAvailable = availableColors[type] && availableColors[type].includes(i);
-        if (isAvailable) {
-          ctrl.enable();
+        
+        // For chasers (ghost type), check both availability and selections
+        if (type === "ghost") {
+          const isAvailable = availableColors[type] && availableColors[type].includes(i);
+          const isSelected = chaserSelections.has(i); // Selected but not yet joined
+          const isJoined = playerNames.has(i); // Already joined
+          const isTaken = isSelected || isJoined; // Taken by someone (selected or joined)
+          
+          // Update button name to show player name if selected or joined
+          const playerName = playerNames.get(i) || chaserSelections.get(i);
+          if (playerName) {
+            ctrl.name(`Chaser ${i + 1}: ${playerName}`);
+          } else {
+            ctrl.name(`Chaser ${i + 1}`);
+          }
+          
+          // Disable if taken, enable if available and not taken
+          if (isTaken || !isAvailable) {
+            ctrl.disable();
+          } else {
+            ctrl.enable();
+          }
         } else {
-          ctrl.disable();
+          // For fugitives (pacman type), just check availability
+          const isAvailable = availableColors[type] && availableColors[type].includes(i);
+          if (isAvailable) {
+            ctrl.enable();
+          } else {
+            ctrl.disable();
+          }
         }
       }
     });

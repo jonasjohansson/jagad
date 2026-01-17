@@ -52,18 +52,22 @@ async function loadHighscore() {
     
     loadingEl.style.display = "none";
     
-    if (data && data.score !== undefined && data.score > 0) {
-      contentEl.style.display = "block";
+    // Handle both array and legacy single object format
+    const highscores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
+    
+    if (highscores.length > 0) {
+      contentEl.style.display = "grid";
       noHighscoreEl.style.display = "none";
       
-      contentEl.innerHTML = `
+      // Generate HTML for all scores with enumeration
+      contentEl.innerHTML = highscores.map((entry, index) => `
         <div class="highscore-item">
-          <div class="score">${data.score.toLocaleString()}</div>
-          <div class="player-name">${data.playerName || "Unknown"}</div>
-          <div class="game-type">${data.isTeamGame ? "Team Game" : "Solo Game"}</div>
+          <div class="rank">${index + 1}</div>
+          <div class="score">${entry.score.toLocaleString()}</div>
+          <div class="player-name">${entry.playerName || "Unknown"}</div>
+          <div class="game-type">${entry.isTeamGame ? "Team Game" : "Solo Game"}</div>
         </div>
-      `;
-      contentEl.style.display = "grid";
+      `).join("");
     } else {
       contentEl.style.display = "none";
       noHighscoreEl.style.display = "block";

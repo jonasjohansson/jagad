@@ -24,16 +24,29 @@ body {
   border-bottom: var(--border-width) solid black;
 }
 
-.highscore-item {
+#highscore-content {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-lg);
+  overflow-y: auto;
+}
+
+.highscore-item {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1fr;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
   border-bottom: var(--border-width) solid black;
+  align-items: center;
 }
 
 .highscore-item:last-child {
   border-bottom: none;
+}
+
+.rank {
+  text-align: center;
+  min-width: 2em;
+  font-weight: normal;
 }
 
 .score {
