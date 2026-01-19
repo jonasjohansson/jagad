@@ -1,4 +1,4 @@
-@import url("../global.css");
+@import url("./global.css");
 
 * {
   -webkit-tap-highlight-color: transparent;
@@ -34,8 +34,7 @@ body {
 
 .chaser-select {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 0;
   border-bottom: var(--border-width) solid black;
   flex-shrink: 0;
@@ -47,8 +46,8 @@ body {
 
 
 .chaser-btn.start-btn {
-  grid-column: 5;
-  grid-row: 2;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .score-display {
@@ -56,12 +55,12 @@ body {
   text-align: center;
   border-top: var(--border-width) solid black;
   border-left: var(--border-width) solid black;
-  border-right: none;
+  border-right: var(--border-width) solid black;
   border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  grid-column: 1 / 6;
+  grid-column: 1;
   grid-row: 1;
 }
 
@@ -73,8 +72,8 @@ body {
   padding: var(--spacing-lg);
   background: white;
   border-top: var(--border-width) solid black;
-  border-left: var(--border-width) solid black;
-  border-right: none;
+  border-left: none;
+  border-right: var(--border-width) solid black;
   border-bottom: none;
   color: black;
   cursor: pointer;
@@ -132,8 +131,10 @@ body {
 }
 
 .joystick-base {
-  width: 200px;
-  height: 200px;
+  width: 50vw;
+  height: 50vw;
+  max-width: 500px;
+  max-height: 500px;
   background: white;
   border: var(--border-width) solid black;
   position: relative;
@@ -163,8 +164,10 @@ body {
 }
 
 .joystick-handle {
-  width: 60px;
-  height: 60px;
+  width: 15vw;
+  height: 15vw;
+  max-width: 150px;
+  max-height: 150px;
   background: black;
   position: absolute;
   top: 50%;
@@ -178,14 +181,3 @@ body {
   background: black;
 }
 
-@media (max-width: 600px) {
-  .joystick-base {
-    width: 250px;
-    height: 250px;
-  }
-
-  .joystick-handle {
-    width: 80px;
-    height: 80px;
-  }
-}

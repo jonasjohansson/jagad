@@ -5,7 +5,7 @@ const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const { WebSocketServer } = require("ws");
-const { MAP, COLS, ROWS, TUNNEL_ROW } = require("./public/map");
+const { MAP, COLS, ROWS, TUNNEL_ROW } = require("./assets/lib/map");
 
 const PORT = process.env.PORT || 3000;
 
@@ -1024,11 +1024,6 @@ wss.on("connection", (ws, req) => {
             broadcast({ type: "aiDifficultyChanged", difficulty: data.difficulty });
           }
           break;
-        case "setView3D":
-          if (data.view3D !== undefined) {
-            broadcast({ type: "view3DChanged", view3D: data.view3D });
-          }
-          break;
         case "setCamera3D":
           if (data.cameraType !== undefined) {
             broadcast({ type: "camera3DChanged", cameraType: data.cameraType });
@@ -1079,19 +1074,9 @@ wss.on("connection", (ws, req) => {
             broadcast({ type: "mazeOpacityChanged", opacity: data.opacity });
           }
           break;
-        case "setBuildingOpacity":
-          if (data.opacity !== undefined) {
-            broadcast({ type: "buildingOpacityChanged", opacity: data.opacity });
-          }
-          break;
         case "setBuildingRealOpacity":
           if (data.opacity !== undefined) {
             broadcast({ type: "buildingRealOpacityChanged", opacity: data.opacity });
-          }
-          break;
-        case "setBuildingRealScale":
-          if (data.scale !== undefined) {
-            broadcast({ type: "buildingRealScaleChanged", scale: data.scale });
           }
           break;
         case "setBuildingRealBlendMode":

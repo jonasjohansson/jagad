@@ -1,7 +1,7 @@
 // 3D rendering module using Three.js
 // Renders the game in 3D with voxel-based level design
 
-import * as THREE from "../public/three/three.module.js";
+import * as THREE from "../lib/three/three.module.js";
 
 const { MAP, COLS, ROWS, TUNNEL_ROW } = PACMAN_MAP;
 const CELL_SIZE = 20;
@@ -15,7 +15,7 @@ const COLORS = ["red", "green", "blue", "yellow"];
 let scene, camera, renderer;
 let orthographicCamera, perspectiveCamera;
 let useOrthographic = true; // Default to orthographic
-let cameraZoom = 1.2; // Camera zoom level
+let cameraZoom = 0.98; // Camera zoom level
 let baseViewSize = 0; // Base view size (calculated on init)
 let fugitives3D = [];
 let chasers3D = [];
@@ -88,8 +88,11 @@ function init3D() {
     return;
   }
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
-  // Use window dimensions for initial renderer size (canvas may be hidden)
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  // Use canvas container dimensions for proper aspect ratio
+  const container = canvas.parentElement;
+  const containerWidth = container ? container.clientWidth : window.innerWidth;
+  const containerHeight = container ? container.clientHeight : window.innerHeight;
+  renderer.setSize(containerWidth, containerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2x for performance
   renderer.setClearColor(0x000000, 0); // Transparent background
   // Shadows disabled for better performance (characters don't cast shadows anyway)
@@ -559,7 +562,14 @@ function updatePositions3D(positions) {
 function onWindowResize3D() {
   if (!camera || !renderer) return;
 
-  const aspect = window.innerWidth / window.innerHeight;
+  const canvas = document.getElementById("webgl-canvas");
+  if (!canvas) return;
+  
+  // Use canvas container dimensions for proper aspect ratio
+  const container = canvas.parentElement;
+  const containerWidth = container ? container.clientWidth : window.innerWidth;
+  const containerHeight = container ? container.clientHeight : window.innerHeight;
+  const aspect = containerWidth / containerHeight;
 
   if (useOrthographic && orthographicCamera) {
     // Update orthographic camera bounds
@@ -582,7 +592,7 @@ function onWindowResize3D() {
     perspectiveCamera.updateProjectionMatrix();
   }
 
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(containerWidth, containerHeight);
 }
 
 function setCameraZoom(zoom) {

@@ -4,25 +4,25 @@
       "colorIndex": 0,
       "colorName": "red",
       "color": "#ff0000",
-      "image": "../assets/team1.jpg"
+      "image": "../assets/img/team1.jpg"
     },
     {
       "colorIndex": 1,
       "colorName": "green",
       "color": "#00ff00",
-      "image": "../assets/team2.jpg"
+      "image": "../assets/img/team2.jpg"
     },
     {
       "colorIndex": 2,
       "colorName": "blue",
       "color": "#0000ff",
-      "image": "../assets/team3.jpg"
+      "image": "../assets/img/team3.jpg"
     },
     {
       "colorIndex": 3,
       "colorName": "yellow",
       "color": "#ffff00",
-      "image": "../assets/team4.jpg"
+      "image": "../assets/img/team4.jpg"
     }
   ]
 }

@@ -1,10 +1,36 @@
-// Import shared utilities
+// Import shared D-pad component
 import { initDpad, getCurrentDirection } from "./dpad.js";
-import { getServerFromURL, getWebSocketAddress, promptForInitials } from "./utils.js";
 
 // Constants
+const REMOTE_SERVER_ADDRESS = "https://pacman-server-239p.onrender.com";
+const LOCAL_SERVER_ADDRESS = "http://localhost:3000";
 const INPUT_THROTTLE = 50; // Throttle input to prevent excessive messages
 const DEBUG = false; // Set to true to enable debug logging
+
+// Get server address from URL parameter or default
+function getServerFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const serverParam = params.get("server");
+  
+  if (serverParam) {
+    // If it's a full URL, use it directly
+    if (serverParam.startsWith("http://") || serverParam.startsWith("https://")) {
+      return serverParam;
+    }
+    // If it's "local" or "localhost", use local server
+    if (serverParam.toLowerCase() === "local" || serverParam.toLowerCase() === "localhost") {
+      return LOCAL_SERVER_ADDRESS;
+    }
+    
+    // If it's "remote" or "render", use remote server
+    if (serverParam.toLowerCase() === "remote" || serverParam.toLowerCase() === "render") {
+      return REMOTE_SERVER_ADDRESS;
+    }
+  }
+  
+  // Default: use remote server
+  return REMOTE_SERVER_ADDRESS;
+}
 
 // State
 let ws = null;
@@ -27,7 +53,6 @@ let previousPlayerNames = new Map();
 let previousMyColorIndex = null;
 let previousGameStarted = false;
 let previousSelectedChaserIndex = null;
-// Removed gameEndHandled flag - each controller is independent
 
 // DOM elements (cached) - initialized after DOM is ready
 let elements = {};
@@ -37,7 +62,41 @@ function getServerAddress() {
   return getServerFromURL();
 }
 
-// Removed duplicate functions - now using dpad.js module
+function promptForInitials() {
+  let initials = "";
+  while (!initials || initials.length === 0) {
+    const input = prompt("Enter your 3-letter initials:");
+    if (input === null) {
+      // User cancelled
+      return null;
+    }
+    initials = input.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
+    if (initials.length === 0) {
+      alert("Please enter at least one letter.");
+    }
+  }
+  return initials || null;
+}
+
+function calculateDirection(deltaX, deltaY, threshold = JOYSTICK_THRESHOLD) {
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    if (deltaX > threshold) return "right";
+    if (deltaX < -threshold) return "left";
+  } else {
+    if (deltaY > threshold) return "down";
+    if (deltaY < -threshold) return "up";
+  }
+  return null;
+}
+
+function getJoystickCenter() {
+  const rect = elements.joystickBase.getBoundingClientRect();
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    maxDistance: Math.min(rect.width, rect.height) / 2 - JOYSTICK_OFFSET
+  };
+}
 
 function sendInput(dir) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !myPlayerId || myColorIndex === null || !gameStarted) {
@@ -56,14 +115,13 @@ function sendInput(dir) {
 
 // WebSocket
 function initWebSocket() {
-  const serverAddress = getServerAddress();
-  const wsUrl = getWebSocketAddress(serverAddress);
+  const wsUrl = getServerAddress().replace(/^https?:/, (m) => m === "https:" ? "wss:" : "ws:");
 
   try {
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      if (DEBUG) console.log("[WebSocket] Connection opened");
+      console.log("[WebSocket] Connection opened");
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "gameState" }));
       }
@@ -72,15 +130,16 @@ function initWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        // Always log gameEnd messages for debugging
+        // Only log important messages (not gameState which is sent frequently)
         if (data.type === "gameEnd") {
-          console.log("[WebSocket] Received gameEnd message:", data);
-        } else if (DEBUG && data.type !== "gameState") {
-          console.log("[WebSocket] Received:", data.type);
+          console.log("[WebSocket] ===== GAME END MESSAGE RECEIVED IN ONMESSAGE =====", data);
+        } else if (data.type !== "gameState") {
+          // Log other messages except gameState
+          console.log("[WebSocket] Received message type:", data.type);
         }
         handleServerMessage(data);
       } catch (error) {
-        console.error("[WebSocket] Error parsing message:", error);
+        console.error("Error parsing message:", error, event.data);
       }
     };
 
@@ -88,7 +147,7 @@ function initWebSocket() {
       console.error("[WebSocket] Error:", error);
     };
     ws.onclose = () => {
-      if (DEBUG) console.log("[WebSocket] Connection closed, reconnecting...");
+      console.log("[WebSocket] Connection closed, reconnecting in 3 seconds...");
       setTimeout(initWebSocket, 3000);
     };
   } catch (error) {
@@ -97,7 +156,7 @@ function initWebSocket() {
 }
 
 function handleServerMessage(data) {
-  // Always log gameEnd messages for debugging
+  // Only log gameEnd messages for debugging
   if (data.type === "gameEnd") {
     console.log("[handleServerMessage] ===== ENTERING gameEnd HANDLER =====", data);
   }
@@ -278,68 +337,55 @@ function handleServerMessage(data) {
       previousGameStarted = false;
       updateUI();
       elements.chaserSelect?.classList.remove("game-started");
-      updateJoystickState();
       // Reset welcome message
       const welcomeMsgRestart = document.getElementById("welcome-message");
       if (welcomeMsgRestart) {
         welcomeMsgRestart.textContent = "Welcome to the Jagad game, play alone or up to 4 players. Your goal is to catch the Jagad fugitives as fast as possible. Click 'Play' to join. If a game is already playing, you can join, or wait until it's over to start a new game. Each game is 90 seconds. Use the joystick to control your chaser: move left, right, up, and down.";
       }
+      updateJoystickState();
       break;
     case "gameEnd":
       // Game ended - show alert with score and reload page
-      console.log("[gameEnd] Handler called with data:", data);
-      
-      // Immediately update state
-      gameStarted = false;
-      previousGameStarted = false;
-      
-      // Show alert with score information
-      const timeSeconds = ((data.gameTime || 0) / 1000).toFixed(1);
-      const score = data.score || 0;
-      const fugitivesCaught = data.fugitivesCaught || 0;
-      const totalFugitives = data.totalFugitives || 0;
-      
-      let message;
-      if (data.allCaught) {
-        message = `GAME OVER - ALL FUGITIVES CAUGHT\n\n` +
-                  `Score: ${score.toLocaleString()}\n` +
-                  `Time: ${timeSeconds} seconds\n` +
-                  `Fugitives Caught: ${fugitivesCaught} of ${totalFugitives}\n\n` +
-                  `Click OK to play again.`;
-      } else {
-        message = `GAME OVER - TIME'S UP\n\n` +
-                  `Score: ${score.toLocaleString()}\n` +
-                  `Time: ${timeSeconds} seconds\n` +
-                  `Fugitives Caught: ${fugitivesCaught} of ${totalFugitives}\n\n` +
-                  `Click OK to play again.`;
-      }
-      
-      console.log("[gameEnd] About to show alert with message:", message);
-      console.log("[gameEnd] Controller ID:", myPlayerId, "Color Index:", myColorIndex);
-      
-      // Show alert immediately - each controller should show its own alert
-      // Use setTimeout to ensure it's in the event loop, but with minimal delay
-      setTimeout(() => {
-        try {
-          console.log("[gameEnd] Showing alert now...");
-          // Show alert - alert() is a blocking call, so execution pauses here
-          // until the user clicks OK. Only then will the code continue to reload.
-          alert(message);
-          console.log("[gameEnd] Alert dismissed, reloading page...");
-          
-          // This line only executes AFTER the user clicks OK on the alert
-          // Reload the page ONLY after alert is dismissed
-          window.location.reload();
-        } catch (error) {
-          console.error("[gameEnd] Error showing alert:", error);
-          // Fallback: show simple alert and reload
-          alert("Game Over! Your score: " + (data.score || 0));
-          window.location.reload();
+      try {
+        gameStarted = false;
+        previousGameStarted = false;
+        
+        // Show alert with score information
+        const timeSeconds = ((data.gameTime || 0) / 1000).toFixed(1);
+        const score = data.score || 0;
+        const fugitivesCaught = data.fugitivesCaught || 0;
+        const totalFugitives = data.totalFugitives || 0;
+        
+        let message;
+        if (data.allCaught) {
+          message = `🎮 GAME OVER - ALL FUGITIVES CAUGHT!\n\n` +
+                    `Your Score: ${score.toLocaleString()}\n` +
+                    `Time: ${timeSeconds}s\n` +
+                    `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+                    `Great job! Click OK to play again.`;
+        } else {
+          message = `🎮 GAME OVER - TIME'S UP!\n\n` +
+                    `Your Score: ${score.toLocaleString()}\n` +
+                    `Time: ${timeSeconds}s\n` +
+                    `Fugitives Caught: ${fugitivesCaught}/${totalFugitives}\n\n` +
+                    `Click OK to play again.`;
         }
-      }, 50); // Minimal delay to ensure message processing
+        
+        // Show alert - alert() is a blocking call, so execution pauses here
+        // until the user clicks OK. Only then will the code continue to reload.
+        alert(message);
+        
+        // This line only executes AFTER the user clicks OK on the alert
+        // Reload the page ONLY after alert is dismissed
+        window.location.reload();
+      } catch (error) {
+        console.error("[gameEnd] Error handling game end:", error);
+        // Fallback: show simple alert and reload
+        alert("Game Over! Your score: " + (data.score || 0));
+        window.location.reload();
+      }
       break;
     case "gameReset":
-    case "gameRestarted":
       gameStarted = false;
       previousGameStarted = false;
       myColorIndex = null;
@@ -563,4 +609,9 @@ if (document.readyState === "loading") {
   initWebSocket();
 }
 
-// Removed test function
+// Test function to verify alert works - can be called from console: testAlert()
+window.testAlert = function() {
+  console.log("[TEST] Testing alert function...");
+  alert("Test alert - if you see this, alerts work!");
+  console.log("[TEST] Alert was shown and dismissed");
+};

@@ -7,10 +7,11 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0" />
     <title>Jagad</title>
+    <link rel="icon" href="data:," />
     <link
       rel="stylesheet"
-      href="../css/style.css" />
-    <script src="../js/map.js"></script>
+      href="../assets/css/style.css" />
+    <script src="../assets/js/map.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.21"></script>
     <script>
       // Load team configuration before game initializes
@@ -28,23 +29,17 @@
   <body>
     <div id="game-code-display">00</div>
     <div id="gui-container"></div>
-    <canvas
-      id="webgl-canvas"
-      style="display: none"></canvas>
-    <div id="game-container">
-      <div id="maze"></div>
+    <div id="game-view-container">
+      <canvas
+        id="webgl-canvas"></canvas>
+      <img
+        id="building-real-image"
+        src="../assets/img/building-real.png"
+        alt="Building real" />
     </div>
-    <img
-      id="building-image"
-      src="../assets/building.png"
-      alt="Building level" />
-    <img
-      id="building-real-image"
-      src="../assets/building-real.png"
-      alt="Building real" />
     <script
       type="module"
-      src="../js/3d.js"></script>
-    <script src="../js/game.js"></script>
+      src="../assets/js/3d.js?v=3"></script>
+    <script src="../assets/js/game.js?v=3"></script>
   </body>
 </html>

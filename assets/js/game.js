@@ -97,7 +97,6 @@ let playerType = "pacman"; // "pacman" or "ghost"
 let aiDifficulty = 0.8; // 0 = easy, 1 = hard
 // Removed: survivalTimeThreshold - not used in new game mode
 let gameStarted = false;
-let view3D = true; // Toggle for 3D view
 let chaserSelections = new Map(); // colorIndex -> playerName (for chasers selected but not yet joined)
 let playerNames = new Map(); // colorIndex -> playerName (for joined players)
 let lastTime = 0;
@@ -304,8 +303,8 @@ function handleServerMessage(data) {
         if (ghosts[newColorIndex] && ghosts[newColorIndex].element) {
           ghosts[newColorIndex].element.style.opacity = "1";
         }
-        // Also update 3D opacity if 3D view is enabled
-        if (view3D && window.render3D && window.render3D.updateChaserOpacity) {
+        // Also update 3D opacity
+        if (window.render3D && window.render3D.updateChaserOpacity) {
           window.render3D.updateChaserOpacity(newColorIndex, 1.0);
         }
       }
@@ -319,47 +318,41 @@ function handleServerMessage(data) {
         aiDifficulty = data.difficulty;
       }
       break;
-    case "view3DChanged":
-      if (data.view3D !== undefined) {
-        view3D = data.view3D;
-        toggle3DView(data.view3D);
-      }
-      break;
     case "camera3DChanged":
-      if (data.cameraType !== undefined && view3D && window.render3D && window.render3D.setCameraType) {
+      if (data.cameraType !== undefined && window.render3D && window.render3D.setCameraType) {
         const shouldBeOrthographic = data.cameraType === "Orthographic";
         window.render3D.setCameraType(shouldBeOrthographic);
       }
       break;
     case "cameraZoomChanged":
-      if (data.zoom !== undefined && view3D && window.render3D && window.render3D.setCameraZoom) {
+      if (data.zoom !== undefined && window.render3D && window.render3D.setCameraZoom) {
         window.render3D.setCameraZoom(data.zoom);
       }
       break;
     case "ambientLightChanged":
-      if (data.intensity !== undefined && view3D && window.render3D && window.render3D.setAmbientLight) {
+      if (data.intensity !== undefined && window.render3D && window.render3D.setAmbientLight) {
         window.render3D.setAmbientLight(data.intensity);
       }
       break;
     case "directionalLightChanged":
-      if (data.intensity !== undefined && view3D && window.render3D && window.render3D.setDirectionalLight) {
+      if (data.intensity !== undefined && window.render3D && window.render3D.setDirectionalLight) {
         window.render3D.setDirectionalLight(data.intensity);
       }
       break;
     case "pointLightChanged":
-      if (data.intensity !== undefined && view3D && window.render3D && window.render3D.setPointLightIntensity) {
+      if (data.intensity !== undefined && window.render3D && window.render3D.setPointLightIntensity) {
         window.render3D.setPointLightIntensity(data.intensity);
       }
       break;
     case "pathColorChanged":
-      if (data.color !== undefined && view3D && window.render3D && window.render3D.setPathColor) {
+      if (data.color !== undefined && window.render3D && window.render3D.setPathColor) {
         window.render3D.setPathColor(data.color);
       }
       break;
     case "innerWallColorChanged":
       if (data.color !== undefined) {
         document.documentElement.style.setProperty("--color-inner-wall-border", data.color);
-        if (view3D && window.render3D && window.render3D.setInnerWallColor) {
+        if (window.render3D && window.render3D.setInnerWallColor) {
           window.render3D.setInnerWallColor(data.color);
         }
       }
@@ -367,7 +360,7 @@ function handleServerMessage(data) {
     case "outerWallColorChanged":
       if (data.color !== undefined) {
         document.documentElement.style.setProperty("--color-outer-wall-border", data.color);
-        if (view3D && window.render3D && window.render3D.setOuterWallColor) {
+        if (window.render3D && window.render3D.setOuterWallColor) {
           window.render3D.setOuterWallColor(data.color);
         }
       }
@@ -377,36 +370,11 @@ function handleServerMessage(data) {
         document.body.style.backgroundColor = data.color;
       }
       break;
-    case "mazeOpacityChanged":
-      if (data.opacity !== undefined) {
-        const maze = document.getElementById("maze");
-        if (maze) {
-          maze.style.opacity = data.opacity;
-        }
-      }
-      break;
-    case "buildingOpacityChanged":
-      if (data.opacity !== undefined) {
-        const buildingImage = document.getElementById("building-image");
-        if (buildingImage) {
-          buildingImage.style.opacity = data.opacity;
-        }
-      }
-      break;
     case "buildingRealOpacityChanged":
       if (data.opacity !== undefined) {
         const buildingRealImage = document.getElementById("building-real-image");
         if (buildingRealImage) {
           buildingRealImage.style.opacity = data.opacity;
-        }
-      }
-      break;
-    case "buildingRealScaleChanged":
-      if (data.scale !== undefined) {
-        const buildingRealImage = document.getElementById("building-real-image");
-        if (buildingRealImage) {
-          const translate = `translate(calc(-50% + 9px), calc(-50% + 9px))`;
-          buildingRealImage.style.transform = `${translate} scale(${data.scale})`;
         }
       }
       break;
@@ -470,8 +438,8 @@ function handleServerMessage(data) {
       if (data.positions) {
         applyServerPositions(data.positions);
 
-        // Update 3D view if enabled
-        if (view3D && window.render3D) {
+        // Update 3D view
+        if (window.render3D) {
           window.render3D.updatePositions(data.positions);
         }
       }
@@ -545,7 +513,7 @@ function handleServerMessage(data) {
         }
       });
       // Also update 3D opacities
-      if (view3D && window.render3D && window.render3D.updateChaserOpacity) {
+      if (window.render3D && window.render3D.updateChaserOpacity) {
         for (let i = 0; i < 4; i++) {
           window.render3D.updateChaserOpacity(i, 0.2);
         }
@@ -973,7 +941,72 @@ function updateDebugDisplay() {
   }
 }
 
-// Removed unused debug display functions
+// Debug display functions
+function createDebugDisplay() {
+  removeDebugDisplay(); // Remove existing if any
+  
+  const debugDiv = document.createElement("div");
+  debugDiv.id = "debug-display";
+  debugDiv.style.position = "fixed";
+  debugDiv.style.top = "10px";
+  debugDiv.style.left = "10px";
+  debugDiv.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+  debugDiv.style.color = "#0f0";
+  debugDiv.style.fontFamily = "monospace";
+  debugDiv.style.fontSize = "12px";
+  debugDiv.style.padding = "10px";
+  debugDiv.style.borderRadius = "5px";
+  debugDiv.style.zIndex = "10000";
+  debugDiv.style.pointerEvents = "none";
+  document.body.appendChild(debugDiv);
+  
+  // Start update loop
+  updateDebugDisplay();
+}
+
+function removeDebugDisplay() {
+  const debugDiv = document.getElementById("debug-display");
+  if (debugDiv) {
+    debugDiv.remove();
+  }
+}
+
+function updateDebugDisplay() {
+  const debugDiv = document.getElementById("debug-display");
+  if (!debugDiv || !guiParams.showDebug) return;
+  
+  const now = Date.now();
+  const fps = animationId ? Math.round(1000 / 16) : 0; // Approximate
+  
+  // Calculate ping (simulate with round-trip)
+  const ping = inputResponseTime > 0 ? Math.round(inputResponseTime / 2) : 0;
+  
+  let html = `<strong>DEBUG INFO</strong><br>`;
+  html += `─────────────────────<br>`;
+  html += `FPS: ${fps}<br>`;
+  html += `Ping: ${ping}ms<br>`;
+  html += `Server Update: ${serverUpdateInterval}ms<br>`;
+  html += `Input Response: ${inputResponseTime}ms<br>`;
+  html += `─────────────────────<br>`;
+  html += `Connected: ${multiplayerMode ? "Yes" : "No"}<br>`;
+  html += `Player ID: ${myPlayerId || "None"}<br>`;
+  html += `Character: ${myCharacterType || "None"}<br>`;
+  html += `Color Index: ${myColorIndex !== null ? myColorIndex : "None"}<br>`;
+  html += `─────────────────────<br>`;
+  
+  if (myColorIndex !== null && ghosts[myColorIndex]) {
+    const ghost = ghosts[myColorIndex];
+    html += `Position: (${ghost.x}, ${ghost.y})<br>`;
+    html += `Target: (${ghost.targetX}, ${ghost.targetY})<br>`;
+    html += `Pixel: (${Math.round(ghost.px)}, ${Math.round(ghost.py)})<br>`;
+  }
+  
+  debugDiv.innerHTML = html;
+  
+  if (false) { // Debug display removed
+    setTimeout(updateDebugDisplay, 100); // Update every 100ms
+  }
+}
 
 function updateAvailableColors(availableColors) {
   // Update character selection controllers (radio-like) based on availability
@@ -1063,98 +1096,53 @@ function joinAsCharacter(characterType, colorIndex, playerName = "AI") {
 
 // Queue system removed - not used
 
-// Toggle between 2D and 3D view
-function toggle3DView(enabled) {
-  const gameContainer = document.getElementById("game-container");
+// Initialize 3D view (always enabled)
+function init3DView() {
   const canvas = document.getElementById("webgl-canvas");
-  const buildingImage = document.getElementById("building-image");
   const buildingRealImage = document.getElementById("building-real-image");
 
-  if (enabled) {
-    // Hide 2D view, show 3D canvas
-    if (gameContainer) gameContainer.style.display = "none";
-    if (canvas) canvas.style.display = "block";
-    // Keep building images visible in 3D mode
-    if (buildingImage) buildingImage.style.display = "block";
-    if (buildingRealImage) buildingRealImage.style.display = "block";
+  // Show 3D canvas
+  if (canvas && canvas.style) canvas.style.display = "block";
+  // Keep building real image visible
+  if (buildingRealImage && buildingRealImage.style) buildingRealImage.style.display = "block";
 
-    // Initialize 3D if not already initialized
-    if (window.render3D && !window.render3D.initialized) {
-      window.render3D.init();
-      window.render3D.initialized = true;
+  // Initialize 3D if not already initialized
+  if (window.render3D && !window.render3D.initialized) {
+    window.render3D.init();
+    window.render3D.initialized = true;
+  }
+  
+  // Update renderer size when canvas becomes visible
+  // Use a small delay to ensure canvas dimensions are available
+  setTimeout(() => {
+    if (window.render3D && window.render3D.onResize) {
+      window.render3D.onResize();
     }
-    
-    // Update renderer size when canvas becomes visible
-    // Use a small delay to ensure canvas dimensions are available
-    setTimeout(() => {
-      if (window.render3D && window.render3D.onResize) {
-        window.render3D.onResize();
-      }
-    }, 0);
+  }, 0);
 
-    // Show lighting and color controls
-    if (window.lightControllers) {
-      window.lightControllers.ambient.show();
-      window.lightControllers.directional.show();
-      window.lightControllers.point.show();
-      window.lightControllers.pathColor.show();
-      window.lightControllers.cameraZoom.show();
+  // Initialize 3D wall colors and path color from current GUI params
+  if (window.render3D) {
+    if (window.render3D.setInnerWallColor) {
+      window.render3D.setInnerWallColor(guiParams.innerWallColor);
     }
-    // Hide 2D-only controls
-    if (window.view2DControllers) {
-      window.view2DControllers.mazeOpacity.hide();
+    if (window.render3D.setOuterWallColor) {
+      window.render3D.setOuterWallColor(guiParams.outerWallColor);
     }
-
-    // Initialize 3D wall colors and path color from current GUI params
-    if (window.render3D) {
-      if (window.render3D.setInnerWallColor) {
-        window.render3D.setInnerWallColor(guiParams.innerWallColor);
-      }
-      if (window.render3D.setOuterWallColor) {
-        window.render3D.setOuterWallColor(guiParams.outerWallColor);
-      }
-      if (window.render3D.setPathColor) {
-        window.render3D.setPathColor(guiParams.pathColor);
-      }
-      // Initialize team images from config
-      COLORS.forEach((colorName, colorIndex) => {
-        if (window.teamConfig && window.teamConfig.teams) {
-          const team = window.teamConfig.teams.find(t => t.colorIndex === colorIndex);
-          if (team && team.image && team.image.trim() !== "" && window.render3D.setTeamImage) {
-            window.render3D.setTeamImage(colorIndex, team.image);
-          }
+    if (window.render3D.setPathColor) {
+      window.render3D.setPathColor(guiParams.pathColor);
+    }
+    // Initialize team images from config
+    COLORS.forEach((colorName, colorIndex) => {
+      if (window.teamConfig && window.teamConfig.teams) {
+        const team = window.teamConfig.teams.find(t => t.colorIndex === colorIndex);
+        if (team && team.image && team.image.trim() !== "" && window.render3D.setTeamImage) {
+          window.render3D.setTeamImage(colorIndex, team.image);
         }
-      });
-      // Initialize camera zoom
-      if (window.render3D.setCameraZoom) {
-        window.render3D.setCameraZoom(guiParams.cameraZoom);
       }
-    }
-  } else {
-    // Show 2D view, hide 3D canvas
-    if (gameContainer) gameContainer.style.display = "block";
-    if (canvas) canvas.style.display = "none";
-    // Keep building images visible in 2D mode
-    if (buildingImage) buildingImage.style.display = "block";
-    if (buildingRealImage) buildingRealImage.style.display = "block";
-
-    // Hide lighting and color controls
-    if (window.lightControllers) {
-      window.lightControllers.ambient.hide();
-      window.lightControllers.directional.hide();
-      window.lightControllers.point.hide();
-      window.lightControllers.pathColor.hide();
-      window.lightControllers.cameraZoom.hide();
-    }
-    // Show 2D-only controls
-    if (window.view2DControllers) {
-      window.view2DControllers.mazeOpacity.show();
-    }
-
-    // Cleanup 3D if needed
-    if (window.render3D && window.render3D.initialized) {
-      window.render3D.cleanup();
-      window.render3D.initialized = false;
+    });
+    // Initialize camera zoom
+    if (window.render3D.setCameraZoom) {
+      window.render3D.setCameraZoom(guiParams.cameraZoom);
     }
   }
 }
@@ -1179,11 +1167,11 @@ function isMyCharacter(characterType, colorIndex) {
 
 // Initialize game
 function init() {
-  // Initialize WebSocket connection
-  initWebSocket();
+  try {
+    // Initialize WebSocket connection
+    initWebSocket();
 
   // Initialize default settings
-  view3D = true;
   aiDifficulty = 0.8;
   
   // Initialize GUI for 2D/3D, Style, and Building settings only
@@ -1195,9 +1183,8 @@ function init() {
 
     // Make guiParams global so it can be accessed by updateCharacterAppearance
     window.guiParams = {
-      view3D: true, // Toggle for 3D view
       camera3D: "Orthographic", // Camera type for 3D view
-      cameraZoom: 1.2, // Camera zoom level (0.5 to 2.0)
+      cameraZoom: 0.98, // Camera zoom level (0.5 to 2.0)
       ambientLightIntensity: 0.1, // Global ambient light intensity
       directionalLightIntensity: 0.3, // Global directional light intensity
       pointLightIntensity: 100, // Point light intensity for characters (0-400 range)
@@ -1205,34 +1192,22 @@ function init() {
       innerWallColor: "#ffffff", // Inner wall color in hex (white)
       outerWallColor: "#ffffff", // Outer wall color in hex (white)
       bodyBackgroundColor: "#555555", // Body background color in hex
-      buildingOpacity: 0.0, // Building image opacity (0-1)
       buildingRealOpacity: 1.0, // Building real image opacity (0-1)
-      buildingRealScale: 1.1, // Building real image scale (0.1-3.0)
-      buildingRealX: 9, // Building real image X position offset (px)
-      buildingRealY: 9, // Building real image Y position offset (px)
-      buildingRealBlendMode: "soft-light", // Building real image blend mode
-      mazeOpacity: 1.0, // Maze opacity (0-1)
+      buildingRealX: 0, // Building real image X position offset (px)
+      buildingRealY: 0, // Building real image Y position offset (px)
+      buildingRealBlendMode: "normal", // Building real image blend mode
+      canvasBlendMode: "hard-light", // WebGL canvas blend mode
+      canvasX: -14, // Canvas X position offset (px)
+      canvasY: -13, // Canvas Y position offset (px)
     };
 
-    // Create 2D/3D folder
-    const view3DFolder = gui.addFolder("2D/3D");
-    view3DFolder.close(); // Closed by default
-
-    // 3D view toggle
-    view3DFolder
-      .add(guiParams, "view3D")
-      .name("3D View")
-      .onChange((value) => {
-        view3D = value;
-        toggle3DView(value);
-      });
 
     // 3D camera type toggle
-    view3DFolder
+    gui
       .add(guiParams, "camera3D", ["Orthographic", "Perspective"])
       .name("3D Camera")
       .onChange((value) => {
-        if (view3D && window.render3D && window.render3D.setCameraType) {
+        if (window.render3D && window.render3D.setCameraType) {
           // Set camera type based on selection
           const shouldBeOrthographic = value === "Orthographic";
           window.render3D.setCameraType(shouldBeOrthographic);
@@ -1240,75 +1215,71 @@ function init() {
       });
 
     // Camera zoom slider (only visible when 3D view is enabled)
-    const cameraZoomCtrl = view3DFolder
+    const cameraZoomCtrl = gui
       .add(guiParams, "cameraZoom", 0.5, 2.0, 0.01)
       .name("Camera Zoom")
       .onChange((value) => {
-        if (view3D && window.render3D && window.render3D.setCameraZoom) {
+        if (window.render3D && window.render3D.setCameraZoom) {
           window.render3D.setCameraZoom(value);
         }
       });
 
     // 3D lighting controls (only visible when 3D view is enabled)
-    const ambientLightCtrl = view3DFolder
+    const ambientLightCtrl = gui
       .add(guiParams, "ambientLightIntensity", 0, 2, 0.1)
       .name("Ambient Light")
       .onChange((value) => {
-        if (view3D && window.render3D && window.render3D.setAmbientLight) {
+        if (window.render3D && window.render3D.setAmbientLight) {
           window.render3D.setAmbientLight(value);
         }
       });
 
-    const directionalLightCtrl = view3DFolder
+    const directionalLightCtrl = gui
       .add(guiParams, "directionalLightIntensity", 0, 2, 0.1)
       .name("Directional Light")
       .onChange((value) => {
-        if (view3D && window.render3D && window.render3D.setDirectionalLight) {
+        if (window.render3D && window.render3D.setDirectionalLight) {
           window.render3D.setDirectionalLight(value);
         }
       });
 
-    const pointLightCtrl = view3DFolder
+    const pointLightCtrl = gui
       .add(guiParams, "pointLightIntensity", 0, 400, 1)
       .name("Point Light Intensity")
       .onChange((value) => {
-        if (view3D && window.render3D && window.render3D.setPointLightIntensity) {
+        if (window.render3D && window.render3D.setPointLightIntensity) {
           window.render3D.setPointLightIntensity(value);
         }
       });
 
-    // Create Style folder for grouped controls
-    const styleFolder = gui.addFolder("Style");
-    styleFolder.close(); // Closed by default
-
     // Inner wall color control (affects both 2D borders and 3D materials)
-    styleFolder
+    gui
       .addColor(guiParams, "innerWallColor")
       .name("Inner Wall Color")
       .onChange((value) => {
         // Update 2D border color
         document.documentElement.style.setProperty("--color-inner-wall-border", value);
         // Update 3D material color
-        if (view3D && window.render3D && window.render3D.setInnerWallColor) {
+        if (window.render3D && window.render3D.setInnerWallColor) {
           window.render3D.setInnerWallColor(value);
         }
       });
 
     // Outer wall color control (affects both 2D borders and 3D materials)
-    styleFolder
+    gui
       .addColor(guiParams, "outerWallColor")
       .name("Outer Wall Color")
       .onChange((value) => {
         // Update 2D border color
         document.documentElement.style.setProperty("--color-outer-wall-border", value);
         // Update 3D material color
-        if (view3D && window.render3D && window.render3D.setOuterWallColor) {
+        if (window.render3D && window.render3D.setOuterWallColor) {
           window.render3D.setOuterWallColor(value);
         }
       });
 
     // Body background color control
-    styleFolder
+    gui
       .addColor(guiParams, "bodyBackgroundColor")
       .name("Body Background Color")
       .onChange((value) => {
@@ -1316,44 +1287,18 @@ function init() {
       });
 
     // Path color control (only visible when 3D view is enabled)
-    const pathColorCtrl = styleFolder
+    const pathColorCtrl = gui
       .addColor(guiParams, "pathColor")
       .name("Path Color")
       .onChange((value) => {
-        if (view3D && window.render3D && window.render3D.setPathColor) {
+        if (window.render3D && window.render3D.setPathColor) {
           window.render3D.setPathColor(value);
         }
       });
 
-    // Maze opacity slider (only visible in 2D mode)
-    const mazeOpacityCtrl = styleFolder
-      .add(guiParams, "mazeOpacity", 0, 1, 0.01)
-      .name("Maze Opacity")
-      .onChange((value) => {
-        const maze = document.getElementById("maze");
-        if (maze) {
-          maze.style.opacity = value;
-        }
-      });
-    // Visible by default (2D mode is default)
-
-    // Create Building folder for building image controls
-    const buildingFolder = gui.addFolder("Building");
-    buildingFolder.close(); // Closed by default
-
-    // Building image opacity slider
-    buildingFolder
-      .add(guiParams, "buildingOpacity", 0, 1, 0.01)
-      .name("Building Opacity")
-      .onChange((value) => {
-        const buildingImage = document.getElementById("building-image");
-        if (buildingImage) {
-          buildingImage.style.opacity = value;
-        }
-      });
 
     // Building real image opacity slider
-    buildingFolder
+    gui
       .add(guiParams, "buildingRealOpacity", 0, 1, 0.01)
       .name("Building Real Opacity")
       .onChange((value) => {
@@ -1367,21 +1312,19 @@ function init() {
     const updateBuildingRealTransform = () => {
       const buildingRealImage = document.getElementById("building-real-image");
       if (buildingRealImage) {
-        const translate = `translate(calc(-50% + ${guiParams.buildingRealX}px), calc(-50% + ${guiParams.buildingRealY}px))`;
-        buildingRealImage.style.transform = `${translate} scale(${guiParams.buildingRealScale})`;
+        // Only apply transform if position is not 0,0
+        if (guiParams.buildingRealX !== 0 || guiParams.buildingRealY !== 0) {
+          const translate = `translate(${guiParams.buildingRealX}px, ${guiParams.buildingRealY}px)`;
+          buildingRealImage.style.transform = translate;
+        } else {
+          buildingRealImage.style.transform = 'none';
+        }
       }
     };
 
-    // Building real image scale slider
-    buildingFolder
-      .add(guiParams, "buildingRealScale", 0.1, 3.0, 0.01)
-      .name("Building Real Scale")
-      .onChange(() => {
-        updateBuildingRealTransform();
-      });
 
     // Building real image X position slider
-    const buildingRealXCtrl = buildingFolder
+    const buildingRealXCtrl = gui
       .add(guiParams, "buildingRealX", -500, 500, 1)
       .name("Building Real X")
       .onChange(() => {
@@ -1390,7 +1333,7 @@ function init() {
     buildingRealXCtrl.hide(); // Hidden from GUI
 
     // Building real image Y position slider
-    const buildingRealYCtrl = buildingFolder
+    const buildingRealYCtrl = gui
       .add(guiParams, "buildingRealY", -500, 500, 1)
       .name("Building Real Y")
       .onChange(() => {
@@ -1398,9 +1341,23 @@ function init() {
       });
     buildingRealYCtrl.hide(); // Hidden from GUI
 
-    // Building real image blend mode selector
-    buildingFolder
-      .add(guiParams, "buildingRealBlendMode", [
+    // Helper function to update canvas position
+    const updateCanvasPosition = () => {
+      const canvas = document.getElementById("webgl-canvas");
+      if (canvas && canvas.style && guiParams) {
+        const x = guiParams.canvasX || 0;
+        const y = guiParams.canvasY || 0;
+        if (x !== 0 || y !== 0) {
+          canvas.style.transform = `translate(${x}px, ${y}px)`;
+        } else {
+          canvas.style.transform = 'none';
+        }
+      }
+    };
+
+    // Canvas blend mode selector
+    gui
+      .add(guiParams, "canvasBlendMode", [
         "normal",
         "multiply",
         "screen",
@@ -1418,39 +1375,55 @@ function init() {
         "color",
         "luminosity",
       ])
-      .name("Building Real Blend Mode")
+      .name("Canvas Blend Mode")
       .onChange((value) => {
-        const buildingRealImage = document.getElementById("building-real-image");
-        if (buildingRealImage) {
-          buildingRealImage.style.mixBlendMode = value;
+        const canvas = document.getElementById("webgl-canvas");
+        if (canvas) {
+          canvas.style.mixBlendMode = value;
         }
       });
 
+    // Canvas X position slider
+    gui
+      .add(guiParams, "canvasX", -500, 500, 1)
+      .name("Canvas X")
+      .onChange(() => {
+        updateCanvasPosition();
+      });
+
+    // Canvas Y position slider
+    gui
+      .add(guiParams, "canvasY", -500, 500, 1)
+      .name("Canvas Y")
+      .onChange(() => {
+        updateCanvasPosition();
+      });
+
     // Set initial body background color
-    document.body.style.backgroundColor = guiParams.bodyBackgroundColor;
+    if (document.body && document.body.style && guiParams) {
+      document.body.style.backgroundColor = guiParams.bodyBackgroundColor || "#555555";
+    }
 
     // Set initial opacity values
-    const buildingImage = document.getElementById("building-image");
-    if (buildingImage) {
-      buildingImage.style.opacity = guiParams.buildingOpacity;
-    }
     const buildingRealImage = document.getElementById("building-real-image");
-    if (buildingRealImage) {
-      buildingRealImage.style.opacity = guiParams.buildingRealOpacity;
-      // Set initial transform with scale and position
-      const translate = `translate(calc(-50% + ${guiParams.buildingRealX}px), calc(-50% + ${guiParams.buildingRealY}px))`;
-      buildingRealImage.style.transform = `${translate} scale(${guiParams.buildingRealScale})`;
-      // Set initial blend mode
-      buildingRealImage.style.mixBlendMode = guiParams.buildingRealBlendMode;
+    if (buildingRealImage && buildingRealImage.style && guiParams) {
+      buildingRealImage.style.opacity = guiParams.buildingRealOpacity || 1.0;
+      // Ensure no transforms or blend modes are applied
+      buildingRealImage.style.transform = 'none';
+      buildingRealImage.style.mixBlendMode = 'normal';
+      buildingRealImage.style.scale = '1';
     }
-    const maze = document.getElementById("maze");
-    if (maze) {
-      maze.style.opacity = guiParams.mazeOpacity;
+    const canvas = document.getElementById("webgl-canvas");
+    if (canvas && canvas.style && guiParams) {
+      canvas.style.mixBlendMode = guiParams.canvasBlendMode || "hard-light";
+      updateCanvasPosition();
     }
 
     // Set initial wall color values for 2D
-    document.documentElement.style.setProperty("--color-inner-wall-border", guiParams.innerWallColor);
-    document.documentElement.style.setProperty("--color-outer-wall-border", guiParams.outerWallColor);
+    if (guiParams && document.documentElement && document.documentElement.style) {
+      document.documentElement.style.setProperty("--color-inner-wall-border", guiParams.innerWallColor);
+      document.documentElement.style.setProperty("--color-outer-wall-border", guiParams.outerWallColor);
+    }
 
     // Initialize 3D wall colors (will be applied when 3D mode is enabled)
     // This ensures colors are set correctly when switching to 3D mode
@@ -1463,103 +1436,10 @@ function init() {
       pathColor: pathColorCtrl,
       cameraZoom: cameraZoomCtrl,
     };
-    window.view2DControllers = {
-      mazeOpacity: mazeOpacityCtrl,
-    };
 
-    // Apply team images from config to existing characters after GUI is initialized
-    if (window.teamConfig && window.teamConfig.teams) {
-      window.teamConfig.teams.forEach((team) => {
-        if (team.image && team.image.trim() !== "" && pacmen[team.colorIndex] && pacmen[team.colorIndex].element) {
-          pacmen[team.colorIndex].element.style.backgroundImage = `url(${team.image})`;
-          pacmen[team.colorIndex].element.style.backgroundSize = "cover";
-          pacmen[team.colorIndex].element.style.backgroundPosition = "center";
-          pacmen[team.colorIndex].element.style.backgroundRepeat = "no-repeat";
-        }
-      });
-    }
-
-    // Enable 3D view on startup if default is true
-    if (guiParams.view3D) {
-      toggle3DView(true);
-    }
+    // Initialize 3D view on startup
+    init3DView();
   }
-  const maze = document.getElementById("maze");
-  maze.style.width = COLS * CELL_SIZE + "px";
-  maze.style.height = ROWS * CELL_SIZE + "px";
-
-  // Draw maze using document fragment for better performance
-  // Only create divs for paths, teleports, and walls that have borders
-  const fragment = document.createDocumentFragment();
-
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      const cellType = MAP[y][x];
-
-      // For walls, check if they have any borders first
-      if (cellType === 1) {
-        const hasPathTop = shouldCreateBorder(x, y - 1);
-        const hasPathRight = shouldCreateBorder(x + 1, y);
-        const hasPathBottom = shouldCreateBorder(x, y + 1);
-        const hasPathLeft = shouldCreateBorder(x - 1, y);
-
-        // Check if this wall is on the edge of the map
-        const isEdgeTop = y === 0;
-        const isEdgeRight = x === COLS - 1;
-        const isEdgeBottom = y === ROWS - 1;
-        const isEdgeLeft = x === 0;
-        const isEdge = isEdgeTop || isEdgeRight || isEdgeBottom || isEdgeLeft;
-
-        // Skip walls that don't have any borders AND are not on the edge
-        if (!hasPathTop && !hasPathRight && !hasPathBottom && !hasPathLeft && !isEdge) {
-          continue;
-        }
-
-        // Create wall div with borders
-        const cell = document.createElement("div");
-        cell.className = "cell wall";
-        cell.style.left = x * CELL_SIZE + "px";
-        cell.style.top = y * CELL_SIZE + "px";
-
-        const classes = [];
-        if (hasPathTop) classes.push("border-top");
-        if (hasPathRight) classes.push("border-right");
-        if (hasPathBottom) classes.push("border-bottom");
-        if (hasPathLeft) classes.push("border-left");
-
-        // Add borders to edge walls (outskirts) - these are walls on the map boundaries
-        if (isEdgeTop) classes.push("edge-top");
-        if (isEdgeRight) classes.push("edge-right");
-        if (isEdgeBottom) classes.push("edge-bottom");
-        if (isEdgeLeft) classes.push("edge-left");
-
-        // Mark outer walls (walls on the border of the map)
-        if (isEdge) {
-          classes.push("outer-wall");
-        }
-
-        // Add rounded corner classes where two borders meet
-        if (hasPathTop && hasPathRight) classes.push("corner-top-right");
-        if (hasPathTop && hasPathLeft) classes.push("corner-top-left");
-        if (hasPathBottom && hasPathRight) classes.push("corner-bottom-right");
-        if (hasPathBottom && hasPathLeft) classes.push("corner-bottom-left");
-
-        if (classes.length > 0) {
-          cell.className += " " + classes.join(" ");
-        }
-        fragment.appendChild(cell);
-      } else {
-        // Create path, teleport, or spawn div (all rendered as paths/teleports)
-        // Note: 3 (spawn) is rendered as a regular path - it's just a spawn marker
-        const cell = document.createElement("div");
-        cell.className = "cell " + (cellType === 2 ? "teleport" : "path");
-        cell.style.left = x * CELL_SIZE + "px";
-        cell.style.top = y * CELL_SIZE + "px";
-        fragment.appendChild(cell);
-      }
-    }
-  }
-  maze.appendChild(fragment);
 
   // Create 4 pacmen in corners
   pacmanSpawnPositions.forEach((pos, i) => {
@@ -1578,8 +1458,10 @@ function init() {
       spawnPos: { ...pos },
       element: createCharacter("pacman", COLORS[i], pos.x, pos.y),
     };
-    pacmen.push(pacman);
-    updateCharacterAppearance(pacman);
+    if (pacman.element) {
+      pacmen.push(pacman);
+      updateCharacterAppearance(pacman);
+    }
   });
 
   // No initial character selection - player must manually select
@@ -1640,16 +1522,30 @@ function init() {
       lastDirY: initialDirY,
       positionHistory: [],
     };
-    ghosts.push(ghost);
-    updateCharacterAppearance(ghost);
+    if (ghost.element) {
+      ghosts.push(ghost);
+      updateCharacterAppearance(ghost);
+    }
   });
 
   // Set initial opacity to 20% for all chasers (they become fully opaque when controlled)
   ghosts.forEach((ghost) => {
-    if (ghost.element) {
+    if (ghost && ghost.element && ghost.element.style) {
       ghost.element.style.opacity = "0.2";
     }
   });
+
+  // Apply team images from config to existing characters after they are created
+  if (window.teamConfig && window.teamConfig.teams) {
+    window.teamConfig.teams.forEach((team) => {
+      if (team.image && team.image.trim() !== "" && pacmen[team.colorIndex] && pacmen[team.colorIndex].element && pacmen[team.colorIndex].element.style) {
+        pacmen[team.colorIndex].element.style.backgroundImage = `url(${team.image})`;
+        pacmen[team.colorIndex].element.style.backgroundSize = "cover";
+        pacmen[team.colorIndex].element.style.backgroundPosition = "center";
+        pacmen[team.colorIndex].element.style.backgroundRepeat = "no-repeat";
+      }
+    });
+  }
 
   // (Per-color pair GUI controls and scoring have been removed for now)
 
@@ -1666,7 +1562,7 @@ function init() {
   // Server sends authoritative pixel positions; we interpolate for smoother motion
   function renderLoop() {
     // Render 3D if enabled
-    if (view3D && window.render3D) {
+    if (window.render3D) {
       window.render3D.render();
       animationId = requestAnimationFrame(renderLoop);
       return;
@@ -1803,6 +1699,10 @@ function init() {
 
   // Start the render loop
   animationId = requestAnimationFrame(renderLoop);
+  } catch (error) {
+    console.error("Error in init function:", error);
+    console.error("Stack trace:", error.stack);
+  }
 }
 
 function isAtTarget(character) {
@@ -2050,10 +1950,15 @@ function moveGhostAI(ghost) {
 }
 
 function createCharacter(type, color, x, y) {
+  // Character elements are not needed in 3D-only mode
+  // Return a dummy object to maintain compatibility
   const el = document.createElement("div");
+  if (!el) return null; // Safety check
   el.className = type;
-  updatePosition(el, x * CELL_SIZE + CHARACTER_OFFSET, y * CELL_SIZE + CHARACTER_OFFSET);
-  document.getElementById("maze").appendChild(el);
+  el.style.display = "none"; // Hide since we're not using 2D
+  if (document.body) {
+    document.body.appendChild(el); // Append to body instead of maze
+  }
   return el;
 }
 
@@ -2061,6 +1966,8 @@ function updateCharacterAppearance(character) {
   if (!character || !character.element) return;
 
   const el = character.element;
+  if (!el || !el.classList || !el.style) return; // Safety check
+  
   const isPacman = el.classList.contains("pacman");
   const isGhost = el.classList.contains("ghost");
 
@@ -2306,7 +2213,13 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     // Wait a bit for lil-gui to load
     setTimeout(init, 100);
+    // Setup dome entry handler
+    setTimeout(setupDomeEntry, 200);
+    // Setup canvas drag and drop
+    setTimeout(setupCanvasDragDrop, 200);
   });
 } else {
   setTimeout(init, 100);
+  setTimeout(setupDomeEntry, 200);
+  setTimeout(setupCanvasDragDrop, 200);
 }
