@@ -275,6 +275,11 @@ function handleServerMessage(data) {
       previousGameStarted = false;
       updateUI();
       elements.chaserSelect?.classList.remove("game-started");
+      // Reset welcome message
+      const welcomeMsgRestart = document.getElementById("welcome-message");
+      if (welcomeMsgRestart) {
+        welcomeMsgRestart.textContent = "Welcome to the Jagad game, play alone or up to 4 players. Your goal is to catch the Jagad fugitives as fast as possible. Click 'Play' to join. If a game is already playing, you can join, or wait until it's over to start a new game. Each game is 90 seconds.";
+      }
       break;
     case "gameEnd":
       // Game ended - show alert with score and reload page
@@ -344,6 +349,11 @@ function handleServerMessage(data) {
       updateChaserButtons();
       updateUI();
       elements.chaserSelect?.classList.remove("game-started");
+      // Reset welcome message
+      const welcomeMsg = document.getElementById("welcome-message");
+      if (welcomeMsg) {
+        welcomeMsg.textContent = "Welcome to the Jagad game, play alone or up to 4 players. Your goal is to catch the Jagad fugitives as fast as possible. Click 'Play' to join. If a game is already playing, you can join, or wait until it's over to start a new game. Each game is 90 seconds.";
+      }
       break;
     default:
       // Log any unhandled message types for debugging
@@ -360,71 +370,50 @@ function updateUI() {
 }
 
 function updateChaserButtons() {
-  const hasJoined = myColorIndex !== null;
-  const hasSelection = selectedChaserIndex !== null;
-  
+  // Hide chaser selection buttons - auto-assignment is used instead
   elements.chaserButtons.forEach((btn) => {
     const indexStr = btn.dataset.index;
     if (indexStr === "start") return;
     
-    const index = parseInt(indexStr, 10);
-    if (isNaN(index)) return;
-    
-    const isAvailable = availableChasers.includes(index);
-    const isJoined = myColorIndex === index;
-    const isSelected = selectedChaserIndex === index;
-    const isTakenByOthers = takenChasers.has(index);
-    const playerName = playerNames.get(index);
-    
-    // Update button text
-    btn.textContent = playerName ? `${index + 1}: ${playerName}` : `${index + 1}`;
-    
-    // Determine button state (optimized order: most restrictive first)
-    btn.classList.remove("available", "taken", "selected");
-    
-    if (isJoined || hasJoined) {
-      // Player has joined (this or another chaser) - disable all buttons
-      btn.classList.add(isJoined ? "selected" : "taken");
-      btn.disabled = true;
-    } else if (isSelected) {
-      // Player has selected this chaser but not yet joined
-      btn.classList.add("selected");
-      btn.disabled = false;
-    } else if (isTakenByOthers || (hasSelection && !isAvailable)) {
-      // Taken by others or unavailable when player has a selection
-      btn.classList.add("taken");
-      btn.disabled = true;
-    } else if (isAvailable) {
-      btn.classList.add("available");
-      btn.disabled = false;
-    } else {
-      btn.classList.add("taken");
-      btn.disabled = true;
-    }
+    // Hide the chaser selection buttons
+    btn.style.display = "none";
   });
 }
 
 function updateStartButton() {
   if (!elements.startBtn) return;
   
-  // Simple logic: Always show "Play"
-  // - Enabled if:
-  //   - Player has selected a chaser (selectedChaserIndex !== null) AND
+  // Enable "Play" if:
   //   - Player hasn't joined yet (myColorIndex === null)
-  // - Disabled if:
-  //   - Player hasn't selected a chaser
+  //   - There are available chasers
+  // Disable if:
   //   - Player has already joined (myColorIndex !== null)
+  //   - All chasers are taken
   
   elements.startBtn.textContent = "Play";
   
-  if (selectedChaserIndex !== null && myColorIndex === null) {
-    // Player has selected a chaser and hasn't joined yet - can click "Play" (even if game has started)
-    elements.startBtn.disabled = false;
-    elements.startBtn.classList.remove("disabled");
-  } else {
-    // Player hasn't selected a chaser OR player has already joined - disable button
+  if (myColorIndex !== null) {
+    // Player has already joined - disable button
     elements.startBtn.disabled = true;
     elements.startBtn.classList.add("disabled");
+  } else if (availableChasers.length === 0 || availableChasers.every(index => takenChasers.has(index))) {
+    // All chasers are taken - disable and show wait message
+    elements.startBtn.disabled = true;
+    elements.startBtn.classList.add("disabled");
+    // Show wait message in welcome message
+    const welcomeMsg = document.getElementById("welcome-message");
+    if (welcomeMsg) {
+      welcomeMsg.textContent = "All chasers are occupied. Please wait for the current game to end, then you can join.";
+    }
+  } else {
+    // There are available chasers - enable button
+    elements.startBtn.disabled = false;
+    elements.startBtn.classList.remove("disabled");
+    // Reset welcome message
+    const welcomeMsg = document.getElementById("welcome-message");
+    if (welcomeMsg) {
+      welcomeMsg.textContent = "Welcome to the Jagad game, play alone or up to 4 players. Your goal is to catch the Jagad fugitives as fast as possible. Click 'Play' to join. If a game is already playing, you can join, or wait until it's over to start a new game. Each game is 90 seconds.";
+    }
   }
 }
 
@@ -443,38 +432,27 @@ function updateScoreDisplay() {
   elements.scoreValue.textContent = 0;
 }
 
-function selectChaser(colorIndex) {
-  if (!availableChasers.includes(colorIndex)) return;
-  if (selectedChaserIndex === colorIndex) return; // Already selected
-
-  // Prompt for initials when selecting a chaser
-  const initials = promptForInitials();
-  if (!initials) return; // User cancelled
-
-  selectedChaserIndex = colorIndex;
-  selectedChaserName = initials;
+function autoAssignChaser() {
+  // Find first available chaser that's not taken
+  const availableChaser = availableChasers.find(index => !takenChasers.has(index));
   
-  // Update playerNames immediately so button shows name right away
-  playerNames.set(colorIndex, initials);
-  
-  // Send selection to server to broadcast to other players
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: "selectChaser",
-      colorIndex: colorIndex,
-      playerName: initials,
-    }));
+  if (availableChaser === undefined) {
+    // No available chasers
+    alert("All chasers are occupied. Please wait for the current game to end.");
+    return null;
   }
   
-  // Update UI to show selection with name immediately
-  updateChaserButtons();
-  updateStartButton();
+  // Prompt for initials
+  const initials = promptForInitials();
+  if (!initials) return null; // User cancelled
+  
+  return { colorIndex: availableChaser, playerName: initials };
 }
 
-function joinAsChaser() {
+function joinAsChaser(colorIndex, playerName) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  if (selectedChaserIndex === null) return;
-  if (!availableChasers.includes(selectedChaserIndex)) return;
+  if (colorIndex === null || colorIndex === undefined) return;
+  if (!availableChasers.includes(colorIndex)) return;
 
   // Prompt for game code
   const gameCode = prompt("Enter the 2-digit game code:");
@@ -493,8 +471,8 @@ function joinAsChaser() {
   ws.send(JSON.stringify({
     type: "join",
     characterType: "chaser",
-    colorIndex: selectedChaserIndex,
-    playerName: selectedChaserName,
+    colorIndex: colorIndex,
+    playerName: playerName,
     gameCode: normalizedCode,
   }));
 }
@@ -520,30 +498,31 @@ function initElements() {
 
 // Initialize event listeners
 function initEventListeners() {
-  elements.chaserButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const indexStr = btn.dataset.index;
-      if (indexStr === "start") {
-        if (selectedChaserIndex !== null && myColorIndex === null && ws?.readyState === WebSocket.OPEN) {
-          // Player has selected a chaser and hasn't joined yet - click "Play"
-          if (!gameStarted) {
-            // Game hasn't started - join and start the game
-            pendingStartGame = true;
-            joinAsChaser();
-          } else {
-            // Game has already started - just join
-            joinAsChaser();
-          }
-        }
+  // Only handle the Play button click
+  if (elements.startBtn) {
+    elements.startBtn.addEventListener("click", () => {
+      if (myColorIndex !== null) return; // Already joined
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      
+      // Auto-assign a chaser
+      const assignment = autoAssignChaser();
+      if (!assignment) return; // No available chaser or user cancelled
+      
+      // Join with the auto-assigned chaser
+      if (!gameStarted) {
+        // Game hasn't started - join and start the game
+        pendingStartGame = true;
+        selectedChaserIndex = assignment.colorIndex;
+        selectedChaserName = assignment.playerName;
+        joinAsChaser(assignment.colorIndex, assignment.playerName);
       } else {
-        const index = parseInt(indexStr, 10);
-        // Only allow selecting if all conditions are met
-        if (!isNaN(index) && availableChasers.includes(index) && selectedChaserIndex !== index && myColorIndex === null && !takenChasers.has(index)) {
-          selectChaser(index);
-        }
+        // Game has already started - just join
+        selectedChaserIndex = assignment.colorIndex;
+        selectedChaserName = assignment.playerName;
+        joinAsChaser(assignment.colorIndex, assignment.playerName);
       }
     });
-  });
+  }
 
   // Initialize shared D-pad component
   if (elements.joystickBase && elements.joystickHandle) {
