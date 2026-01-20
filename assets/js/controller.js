@@ -100,6 +100,12 @@ function getJoystickCenter() {
 
 function sendInput(dir) {
   if (!ws || ws.readyState !== WebSocket.OPEN || !myPlayerId || myColorIndex === null || !gameStarted) {
+    console.log("[sendInput] Blocked - ws:", !!ws, "readyState:", ws?.readyState, "myPlayerId:", myPlayerId, "myColorIndex:", myColorIndex, "gameStarted:", gameStarted);
+    return;
+  }
+
+  // Don't send null directions - only send actual direction changes
+  if (!dir) {
     return;
   }
 
@@ -109,7 +115,7 @@ function sendInput(dir) {
   lastInputTime = now;
   currentDir = dir;
   
-  if (DEBUG) console.log("[sendInput] Sending input", dir, "for chaser", myColorIndex);
+  console.log("[sendInput] Sending input", dir, "for chaser", myColorIndex);
   ws.send(JSON.stringify({ type: "input", input: { dir } }));
 }
 
@@ -184,6 +190,7 @@ function handleServerMessage(data) {
       
       // If we were trying to start the game, do it now that we're joined
       if (pendingStartGame && !gameStarted && ws?.readyState === WebSocket.OPEN) {
+        console.log("[controller] Sending startGame message");
         pendingStartGame = false;
         ws.send(JSON.stringify({ type: "startGame" }));
       }
@@ -320,6 +327,7 @@ function handleServerMessage(data) {
       }
       break;
     case "gameStarted":
+      console.log("[controller] gameStarted message received");
       gameStarted = true;
       previousGameStarted = true;
       pendingStartGame = false;
@@ -545,6 +553,8 @@ function onDpadDirectionChange(dir) {
   if (dir) {
     sendInput(dir);
   }
+  // When dir is null, we don't send anything - the server will stop movement
+  // when no new input is received (handled by the game loop)
 }
 
 // Initialize DOM elements

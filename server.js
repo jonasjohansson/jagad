@@ -1086,6 +1086,10 @@ wss.on("connection", (ws, req) => {
           break;
         case "startGame":
           if (!gameState.gameStarted) {
+            console.log("[server] Starting game - initializing characters");
+            // Initialize/reset characters when game starts
+            initCharacters();
+            
             gameState.gameStarted = true;
             gameState.gameStartTime = Date.now();
             
@@ -1101,6 +1105,16 @@ wss.on("connection", (ws, req) => {
             gameState.players.forEach((player) => {
               if (player.connected && player.type === "chaser") {
                 chaserCount++;
+                // Respawn chasers to their spawn positions when game starts
+                if (gameState.chasers[player.colorIndex]) {
+                  const chaser = gameState.chasers[player.colorIndex];
+                  respawnChaser(chaser, chaser.spawnPos);
+                  chaser.positionHistory = [];
+                  chaser.dirX = 0;
+                  chaser.dirY = 0;
+                  chaser.nextDirX = 0;
+                  chaser.nextDirY = 0;
+                }
               }
             });
             gameState.isTeamGame = chaserCount > 1;
@@ -1115,6 +1129,7 @@ wss.on("connection", (ws, req) => {
               }
             });
             gameState.caughtFugitives.clear();
+            console.log("[server] Broadcasting gameStarted message");
             broadcast({ type: "gameStarted" });
           }
           break;
