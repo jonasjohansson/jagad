@@ -1272,7 +1272,7 @@ function handleJoin(ws, playerId, data) {
 
   // Chaser already exists (all chasers are initialized at game start)
   // Just respawn it to spawn position when player joins
-  if (isChaser && gameState.chasers[colorIndex]) {
+  if (normalizedType === "chaser" && gameState.chasers[colorIndex]) {
     const chaser = gameState.chasers[colorIndex];
     respawnChaser(chaser, chaser.spawnPos);
     chaser.positionHistory = [];

@@ -99,23 +99,40 @@ function getJoystickCenter() {
 }
 
 function sendInput(dir) {
-  if (!ws || ws.readyState !== WebSocket.OPEN || !myPlayerId || myColorIndex === null || !gameStarted) {
-    console.log("[sendInput] Blocked - ws:", !!ws, "readyState:", ws?.readyState, "myPlayerId:", myPlayerId, "myColorIndex:", myColorIndex, "gameStarted:", gameStarted);
-    return;
-  }
-
   // Don't send null directions - only send actual direction changes
   if (!dir) {
     return;
   }
 
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.log("[sendInput] Blocked - WebSocket not ready:", ws?.readyState);
+    return;
+  }
+  
+  if (!myPlayerId) {
+    console.log("[sendInput] Blocked - no player ID");
+    return;
+  }
+  
+  if (myColorIndex === null) {
+    console.log("[sendInput] Blocked - not joined as chaser (myColorIndex is null)");
+    return;
+  }
+  
+  if (!gameStarted) {
+    console.log("[sendInput] Blocked - game not started yet");
+    return;
+  }
+
   const now = Date.now();
-  if (now - lastInputTime < INPUT_THROTTLE) return;
+  if (now - lastInputTime < INPUT_THROTTLE) {
+    return;
+  }
   
   lastInputTime = now;
   currentDir = dir;
   
-  console.log("[sendInput] Sending input", dir, "for chaser", myColorIndex);
+  console.log("[sendInput] ✓ Sending input", dir, "for chaser", myColorIndex);
   ws.send(JSON.stringify({ type: "input", input: { dir } }));
 }
 
@@ -136,9 +153,11 @@ function initWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        // Only log important messages (not gameState which is sent frequently)
+        // Log all important messages for debugging
         if (data.type === "gameEnd") {
           console.log("[WebSocket] ===== GAME END MESSAGE RECEIVED IN ONMESSAGE =====", data);
+        } else if (data.type === "joined" || data.type === "gameStarted" || data.type === "joinFailed") {
+          console.log("[WebSocket] Received message type:", data.type, data);
         } else if (data.type !== "gameState") {
           // Log other messages except gameState
           console.log("[WebSocket] Received message type:", data.type);
@@ -171,7 +190,7 @@ function handleServerMessage(data) {
       myPlayerId = data.playerId;
       break;
     case "joined":
-      if (DEBUG) console.log("[joined] Player joined as chaser", data.colorIndex);
+      console.log("[controller] Joined message received:", data);
       myColorIndex = data.colorIndex;
       previousMyColorIndex = data.colorIndex;
       // Clear selection since we're now joined
@@ -189,6 +208,7 @@ function handleServerMessage(data) {
       updateJoystickState();
       
       // If we were trying to start the game, do it now that we're joined
+      console.log("[controller] Checking if should start game - pendingStartGame:", pendingStartGame, "gameStarted:", gameStarted, "ws ready:", ws?.readyState);
       if (pendingStartGame && !gameStarted && ws?.readyState === WebSocket.OPEN) {
         console.log("[controller] Sending startGame message");
         pendingStartGame = false;
@@ -196,6 +216,7 @@ function handleServerMessage(data) {
       }
       break;
     case "joinFailed":
+      console.log("[controller] Join failed:", data.reason);
       alert(data.reason || "Failed to join game. Please try again.");
       break;
     case "gameState":
@@ -504,31 +525,49 @@ function updateScoreDisplay() {
 }
 
 function autoAssignChaser() {
+  console.log("[autoAssignChaser] availableChasers:", availableChasers, "takenChasers:", Array.from(takenChasers));
   // Find first available chaser that's not taken
   const availableChaser = availableChasers.find(index => !takenChasers.has(index));
   
   if (availableChaser === undefined) {
     // No available chasers
+    console.log("[autoAssignChaser] No available chasers");
     alert("All chasers are occupied. Please wait for the current game to end.");
     return null;
   }
   
+  console.log("[autoAssignChaser] Found available chaser:", availableChaser);
   // Prompt for initials
   const initials = promptForInitials();
-  if (!initials) return null; // User cancelled
+  if (!initials) {
+    console.log("[autoAssignChaser] User cancelled initials prompt");
+    return null; // User cancelled
+  }
   
+  console.log("[autoAssignChaser] Returning assignment:", { colorIndex: availableChaser, playerName: initials });
   return { colorIndex: availableChaser, playerName: initials };
 }
 
 function joinAsChaser(colorIndex, playerName) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  if (colorIndex === null || colorIndex === undefined) return;
-  if (!availableChasers.includes(colorIndex)) return;
+  console.log("[joinAsChaser] Called with colorIndex:", colorIndex, "playerName:", playerName);
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.log("[joinAsChaser] WebSocket not ready");
+    return;
+  }
+  if (colorIndex === null || colorIndex === undefined) {
+    console.log("[joinAsChaser] Invalid colorIndex");
+    return;
+  }
+  if (!availableChasers.includes(colorIndex)) {
+    console.log("[joinAsChaser] ColorIndex not in availableChasers:", availableChasers);
+    return;
+  }
 
   // Prompt for game code
   const gameCode = prompt("Enter the 2-digit game code:");
   if (!gameCode) {
     // User cancelled or entered nothing
+    console.log("[joinAsChaser] User cancelled game code prompt");
     return;
   }
   
@@ -536,9 +575,11 @@ function joinAsChaser(colorIndex, playerName) {
   const normalizedCode = gameCode.trim().padStart(2, '0').slice(0, 2);
   if (!/^\d{2}$/.test(normalizedCode)) {
     alert("Invalid code. Please enter a 2-digit number (00-99).");
+    console.log("[joinAsChaser] Invalid game code entered");
     return;
   }
 
+  console.log("[joinAsChaser] Sending join message with code:", normalizedCode);
   ws.send(JSON.stringify({
     type: "join",
     characterType: "chaser",
@@ -550,6 +591,7 @@ function joinAsChaser(colorIndex, playerName) {
 
 // D-pad callback - called when direction changes
 function onDpadDirectionChange(dir) {
+  console.log("[onDpadDirectionChange] Direction changed:", dir, "gameStarted:", gameStarted, "myColorIndex:", myColorIndex);
   if (dir) {
     sendInput(dir);
   }
@@ -575,22 +617,36 @@ function initEventListeners() {
   // Only handle the Play button click
   if (elements.startBtn) {
     elements.startBtn.addEventListener("click", () => {
-      if (myColorIndex !== null) return; // Already joined
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      console.log("[Play button] Clicked - myColorIndex:", myColorIndex, "ws:", !!ws, "readyState:", ws?.readyState);
+      if (myColorIndex !== null) {
+        console.log("[Play button] Already joined, ignoring click");
+        return; // Already joined
+      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.log("[Play button] WebSocket not ready");
+        return;
+      }
       
+      console.log("[Play button] Auto-assigning chaser...");
       // Auto-assign a chaser
       const assignment = autoAssignChaser();
-      if (!assignment) return; // No available chaser or user cancelled
+      if (!assignment) {
+        console.log("[Play button] No assignment (user cancelled or no chasers available)");
+        return; // No available chaser or user cancelled
+      }
       
+      console.log("[Play button] Assignment:", assignment, "gameStarted:", gameStarted);
       // Join with the auto-assigned chaser
       if (!gameStarted) {
         // Game hasn't started - join and start the game
+        console.log("[Play button] Game not started, setting pendingStartGame and joining");
         pendingStartGame = true;
         selectedChaserIndex = assignment.colorIndex;
         selectedChaserName = assignment.playerName;
         joinAsChaser(assignment.colorIndex, assignment.playerName);
       } else {
         // Game has already started - just join
+        console.log("[Play button] Game already started, just joining");
         selectedChaserIndex = assignment.colorIndex;
         selectedChaserName = assignment.playerName;
         joinAsChaser(assignment.colorIndex, assignment.playerName);
@@ -607,12 +663,14 @@ function initEventListeners() {
 // Initialize when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
+    console.log("[controller] DOM loaded, initializing...");
     initElements();
     initEventListeners();
     updateUI();
     initWebSocket();
   });
 } else {
+  console.log("[controller] DOM already ready, initializing...");
   initElements();
   initEventListeners();
   updateUI();
