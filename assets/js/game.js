@@ -1600,25 +1600,48 @@ function moveCharacter(character, speedMultiplier = 1.0, deltaSeconds = 1 / TARG
   if (!character) return;
 
   const target = getTargetPixelPos(character.targetX, character.targetY);
-  const dx = target.x - character.px;
-  const dy = target.y - character.py;
-  const distance = Math.sqrt(dx * dx + dy * dy);
+  let dx = target.x - character.px;
+  let dy = target.y - character.py;
+  let distance = Math.sqrt(dx * dx + dy * dy);
 
   // Move until we exactly reach the tile center; avoid a "dead zone" where
   // distance is small but we never snap to the target.
   if (distance > 0) {
     // Scale by deltaSeconds to keep speed consistent regardless of frame rate
     const moveDistance = BASE_MOVE_SPEED * CELL_SIZE * speedMultiplier * (deltaSeconds * TARGET_FPS);
-    if (distance > moveDistance) {
-      character.px += (dx / distance) * moveDistance;
-      character.py += (dy / distance) * moveDistance;
+    // For local mode characters, enforce strictly axis-aligned movement
+    // based on their current direction, to avoid any visual diagonal motion.
+    let stepX = character.dirX || 0;
+    let stepY = character.dirY || 0;
+
+    if (stepX !== 0 || stepY !== 0) {
+      // Use the direction vector directly (only one axis should be non-zero)
+      const axisDistance = Math.abs(stepX !== 0 ? dx : dy);
+      if (axisDistance > moveDistance) {
+        character.px += stepX * moveDistance;
+        character.py += stepY * moveDistance;
+      } else {
+        character.px = target.x;
+        character.py = target.y;
+        character.x = character.targetX;
+        character.y = character.targetY;
+        if (MAP[character.y][character.x] === 2) {
+          teleportCharacter(character);
+        }
+      }
     } else {
-      character.px = target.x;
-      character.py = target.y;
-      character.x = character.targetX;
-      character.y = character.targetY;
-      if (MAP[character.y][character.x] === 2) {
-        teleportCharacter(character);
+      // Fallback: use normalized vector (e.g., during teleports or setup)
+      if (distance > moveDistance) {
+        character.px += (dx / distance) * moveDistance;
+        character.py += (dy / distance) * moveDistance;
+      } else {
+        character.px = target.x;
+        character.py = target.y;
+        character.x = character.targetX;
+        character.y = character.targetY;
+        if (MAP[character.y][character.x] === 2) {
+          teleportCharacter(character);
+        }
       }
     }
   }

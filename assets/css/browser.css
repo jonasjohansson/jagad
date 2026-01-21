@@ -15,6 +15,31 @@ body {
   text-transform: uppercase;
 }
 
+/* Force landscape orientation */
+@media screen and (orientation: portrait) {
+  body::before {
+    content: "Please rotate your device to landscape mode";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: white;
+    color: black;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    text-align: center;
+    z-index: 10000;
+    pointer-events: none;
+  }
+  
+  .browser-container {
+    display: none;
+  }
+}
+
 .browser-container {
   position: fixed;
   top: 0;
@@ -83,11 +108,12 @@ body {
   left: 0;
   width: 100% !important;
   height: 100% !important;
-  z-index: 7; /* Above building-real-image (z-index: 6) */
+  z-index: 7; /* Above building-real-image (z-index: 6), below controls (z-index: 1000) */
   cursor: grab;
   transform: none;
   mix-blend-mode: hard-light; /* Blend with building-real-image below */
   display: block; /* Always visible in 3D-only mode */
+  pointer-events: auto; /* Allow canvas interactions, but controls overlay should be above */
 }
 
 #game-panel #webgl-canvas:active {
@@ -117,11 +143,10 @@ body {
   align-items: center;
   gap: 12px;
   z-index: 1000;
-  pointer-events: none; /* Allow clicks to pass through container */
 }
 
 .browser-controls-overlay > * {
-  pointer-events: auto; /* Re-enable clicks on controls */
+  pointer-events: auto;
 }
 
 #controller-panel .chaser-btn.start-btn {
@@ -135,6 +160,12 @@ body {
   width: 20vw;
   max-width: 200px;
   box-sizing: border-box;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  z-index: 1001;
 }
 
 #controller-panel .chaser-btn.start-btn.disabled {
@@ -164,7 +195,11 @@ body {
   border: var(--border-width) solid black;
   position: relative;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   opacity: 0.5;
+  cursor: pointer;
 }
 
 #controller-panel .joystick-base::before {
@@ -190,6 +225,10 @@ body {
 }
 
 #controller-panel .joystick-handle {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   width: 6vw;
   height: 6vw;
   max-width: 60px;

@@ -253,10 +253,17 @@ export function initDpad(baseId, handleId, directionCallback, customOptions = {}
     }
   }, options.throttle);
   
-  joystickBase.addEventListener("touchstart", handleTouchStart);
-  joystickBase.addEventListener("touchmove", handleTouchMove);
-  joystickBase.addEventListener("touchend", handleTouchEnd);
-  joystickBase.addEventListener("touchcancel", handleTouchCancel);
+  // Touch events - use capture phase and passive: false to ensure preventDefault works
+  // Listen on both base and handle for touchstart
+  joystickBase.addEventListener("touchstart", handleTouchStart, { passive: false });
+  joystickHandle.addEventListener("touchstart", handleTouchStart, { passive: false });
+  
+  // Listen on document for touchmove/touchend to capture touches that move outside the joystick
+  document.addEventListener("touchmove", handleTouchMove, { passive: false });
+  document.addEventListener("touchend", handleTouchEnd, { passive: false });
+  document.addEventListener("touchcancel", handleTouchCancel, { passive: false });
+  
+  // Mouse events
   joystickBase.addEventListener("mousedown", handleMouseDown);
   document.addEventListener("mousemove", handleMouseMove);
   document.addEventListener("mouseup", handleMouseUp);

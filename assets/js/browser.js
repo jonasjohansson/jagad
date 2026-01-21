@@ -48,7 +48,6 @@ function startRenderLoop() {
 // Initialize browser view
 function initBrowser() {
   console.log("[browser] Initializing local browser view...");
-
   // Initialize 3D view
   init3DView();
 
@@ -137,20 +136,28 @@ function initLocalController() {
 
   // Start game button
   if (startBtn) {
-    startBtn.addEventListener("click", () => {
-      if (gameStarted) return;
+    const handleStartGame = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("[browser] Start button clicked/touched", e.type);
+      
+      if (gameStarted) {
+        console.log("[browser] Game already started, ignoring");
+        return;
+      }
 
       // Get player name
       const name = prompt("Enter your 3-letter initials:");
-      if (!name || name.trim().length === 0) return;
+      if (!name || name.trim().length === 0) {
+        console.log("[browser] No name entered, cancelling");
+        return;
+      }
 
       playerName = name.trim().toUpperCase().slice(0, 3);
       gameStarted = true;
       startBtn.disabled = true;
       startBtn.textContent = "Playing...";
       startBtn.classList.add("disabled");
-
-    // Welcome message removed - no longer in HTML
 
       // Enable joystick
       const joystickContainer = document.getElementById("joystick-container");
@@ -164,7 +171,14 @@ function initLocalController() {
         console.log("[browser] Calling initLocalGame...");
         initLocalGame();
       }, 100);
-    });
+    };
+    
+    // Add both click and touchstart listeners for mobile compatibility
+    startBtn.addEventListener("click", handleStartGame);
+    startBtn.addEventListener("touchend", handleStartGame, { passive: false });
+    startBtn.addEventListener("touchstart", (e) => {
+      e.preventDefault(); // Prevent double-firing
+    }, { passive: false });
   }
 
   // Initialize joystick
