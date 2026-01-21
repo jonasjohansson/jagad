@@ -1614,27 +1614,41 @@ function moveCharacter(character, speedMultiplier = 1.0, deltaSeconds = 1 / TARG
     let stepX = character.dirX || 0;
     let stepY = character.dirY || 0;
 
-    if (stepX !== 0 || stepY !== 0) {
-      // Use the direction vector directly (only one axis should be non-zero)
-      const axisDistance = Math.abs(stepX !== 0 ? dx : dy);
+    // Enforce strictly axis-aligned movement - only move on one axis at a time
+    // Determine which axis to move on based on current direction
+    let moveX = 0;
+    let moveY = 0;
+    let axisDistance = 0;
+    
+    // Prioritize the axis with the larger direction component
+    if (Math.abs(stepX) > Math.abs(stepY)) {
+      // Moving horizontally
+      moveX = stepX > 0 ? 1 : (stepX < 0 ? -1 : 0);
+      axisDistance = Math.abs(dx);
+    } else if (Math.abs(stepY) > Math.abs(stepX)) {
+      // Moving vertically
+      moveY = stepY > 0 ? 1 : (stepY < 0 ? -1 : 0);
+      axisDistance = Math.abs(dy);
+    } else if (stepX !== 0) {
+      // Only horizontal direction set
+      moveX = stepX > 0 ? 1 : -1;
+      axisDistance = Math.abs(dx);
+    } else if (stepY !== 0) {
+      // Only vertical direction set
+      moveY = stepY > 0 ? 1 : -1;
+      axisDistance = Math.abs(dy);
+    }
+
+    if (moveX !== 0 || moveY !== 0) {
+      // Move only on one axis at a time
       if (axisDistance > moveDistance) {
-        character.px += stepX * moveDistance;
-        character.py += stepY * moveDistance;
-      } else {
-        character.px = target.x;
-        character.py = target.y;
-        character.x = character.targetX;
-        character.y = character.targetY;
-        if (MAP[character.y][character.x] === 2) {
-          teleportCharacter(character);
+        if (moveX !== 0) {
+          character.px += moveX * moveDistance;
+        } else if (moveY !== 0) {
+          character.py += moveY * moveDistance;
         }
-      }
-    } else {
-      // Fallback: use normalized vector (e.g., during teleports or setup)
-      if (distance > moveDistance) {
-        character.px += (dx / distance) * moveDistance;
-        character.py += (dy / distance) * moveDistance;
       } else {
+        // Snap to target
         character.px = target.x;
         character.py = target.y;
         character.x = character.targetX;
@@ -2045,13 +2059,26 @@ function localGameLoop() {
     if (isAtTarget(fugitive)) {
       localMoveFugitiveAI(fugitive, index);
       
-      // Apply queued direction
+      // Apply queued direction - ensure only one axis is set
       if (fugitive.nextDirX || fugitive.nextDirY) {
-        const desiredX = fugitive.x + fugitive.nextDirX;
-        const desiredY = fugitive.y + fugitive.nextDirY;
+        // Ensure only one axis is set (prevent diagonal)
+        let finalDirX = fugitive.nextDirX;
+        let finalDirY = fugitive.nextDirY;
+        
+        // If both are set, prioritize the one with larger magnitude
+        if (finalDirX !== 0 && finalDirY !== 0) {
+          if (Math.abs(finalDirX) > Math.abs(finalDirY)) {
+            finalDirY = 0;
+          } else {
+            finalDirX = 0;
+          }
+        }
+        
+        const desiredX = fugitive.x + finalDirX;
+        const desiredY = fugitive.y + finalDirY;
         if (isPath(desiredX, desiredY)) {
-          fugitive.dirX = fugitive.nextDirX;
-          fugitive.dirY = fugitive.nextDirY;
+          fugitive.dirX = finalDirX;
+          fugitive.dirY = finalDirY;
           fugitive.targetX = desiredX;
           fugitive.targetY = desiredY;
           fugitive.lastDirX = fugitive.dirX;
@@ -2147,7 +2174,7 @@ function localGameLoop() {
   localGameLoopId = requestAnimationFrame(localGameLoop);
 }
 
-// Local AI for fugitives (with randomness)
+// Local AI for fugitives (with randomness and more organic movement)
 function localMoveFugitiveAI(fugitive, index) {
   if (localGameState.caughtFugitives.has(index)) return;
 
@@ -2169,8 +2196,10 @@ function localMoveFugitiveAI(fugitive, index) {
   const nonReversingMoves = possibleMoves.filter(m => !m.isReversing);
   const movesToConsider = nonReversingMoves.length > 0 ? nonReversingMoves : possibleMoves;
   
-  if (Math.random() < 0.3 && movesToConsider.length > 0) {
+  // Increased randomness for more organic movement (40% chance of random move)
+  if (Math.random() < 0.4 && movesToConsider.length > 0) {
     const randomMove = movesToConsider[Math.floor(Math.random() * movesToConsider.length)];
+    // Ensure only one axis is set
     fugitive.nextDirX = randomMove.dir.x;
     fugitive.nextDirY = randomMove.dir.y;
     return;
@@ -2179,15 +2208,33 @@ function localMoveFugitiveAI(fugitive, index) {
   let bestDir = null;
   let bestScore = -Infinity;
 
+  // Calculate distance to chaser for each possible move
+  const chaserDx = chaser.x - fugitive.x;
+  const chaserDy = chaser.y - fugitive.y;
+  const currentDistance = Math.sqrt(chaserDx * chaserDx + chaserDy * chaserDy);
+
   for (const move of possibleMoves) {
     const newDx = move.newX - chaser.x;
     const newDy = move.newY - chaser.y;
     const newDistance = Math.sqrt(newDx * newDx + newDy * newDy);
-    const randomFactor = 0.8 + Math.random() * 0.4;
+    
+    // More organic scoring with increased randomness
+    const randomFactor = 0.7 + Math.random() * 0.6; // Wider range: 0.7-1.3
     let score = newDistance * randomFactor;
     
+    // Prefer moves that increase distance from chaser
+    if (newDistance > currentDistance) {
+      score *= 1.2; // Bonus for moving away
+    }
+    
+    // Penalize reversing direction (but not as much for organic feel)
     if (move.isReversing) {
-      score *= 0.7;
+      score *= 0.8; // Less penalty
+    }
+    
+    // Prefer continuing in current direction for smoother movement
+    if (move.dir.x === fugitive.lastDirX && move.dir.y === fugitive.lastDirY) {
+      score *= 1.1; // Small bonus for continuing
     }
 
     if (score > bestScore) {
@@ -2197,8 +2244,18 @@ function localMoveFugitiveAI(fugitive, index) {
   }
 
   if (bestDir) {
+    // Ensure only one axis is set (prevent diagonal)
     fugitive.nextDirX = bestDir.x;
     fugitive.nextDirY = bestDir.y;
+    
+    // Double-check: if both are set, prioritize the one with larger magnitude
+    if (fugitive.nextDirX !== 0 && fugitive.nextDirY !== 0) {
+      if (Math.abs(fugitive.nextDirX) > Math.abs(fugitive.nextDirY)) {
+        fugitive.nextDirY = 0;
+      } else {
+        fugitive.nextDirX = 0;
+      }
+    }
   }
 }
 
