@@ -1,6 +1,6 @@
 // Browser view - local single-player game
-import { initLocalGame, initLocalCharacters, sendLocalInput, getLocalGameState } from "../assets/js/game.js";
-import { initDpad } from "../assets/js/dpad.js";
+import { initLocalGame, initLocalCharacters, sendLocalInput, getLocalGameState } from "./game.js";
+import { initDpad } from "./dpad.js";
 
 // Local game state
 let gameStarted = false;
@@ -63,22 +63,8 @@ function initBrowser() {
         if (window.render3D && window.render3D.onResize) {
           window.render3D.onResize();
         }
-        // Also set camera zoom to fill viewport better for browser view
-        if (window.render3D && window.render3D.setCameraZoom) {
-          // Calculate zoom to fill viewport - adjust based on aspect ratio
-          const canvas = document.getElementById("webgl-canvas");
-          if (canvas) {
-            const container = canvas.parentElement;
-            const containerWidth = container ? container.clientWidth : window.innerWidth;
-            const containerHeight = container ? container.clientHeight : window.innerHeight;
-            const aspect = containerWidth / containerHeight;
-            // Lower zoom values = zoomed in (larger), higher zoom values = zoomed out (smaller)
-            // Use smaller zoom values to make the level appear larger and fill the screen
-            const zoom = aspect > 1 ? 0.85 : 0.9; // Zoom in more to make level larger
-            window.render3D.setCameraZoom(zoom);
-            console.log("[browser] Set camera zoom to", zoom, "for aspect", aspect.toFixed(2));
-          }
-        }
+        // Fit the level to the available canvas space
+        fitLevelToCanvas();
       }, 200);
       
       // Start render loop
@@ -107,6 +93,33 @@ function initBrowser() {
       initGameUI();
     }
   }, 5000);
+}
+
+// Fit level width to canvas, leaving space for overlay
+function fitLevelToCanvas() {
+  if (!window.render3D || !window.render3D.setCameraZoom || !window.PACMAN_MAP) return;
+  const canvas = document.getElementById("webgl-canvas");
+  if (!canvas) return;
+
+  const container = canvas.parentElement;
+  const containerWidth = container ? container.clientWidth : window.innerWidth;
+  const containerHeight = container ? container.clientHeight : window.innerHeight;
+  if (!containerWidth || !containerHeight) return;
+
+  const levelWidth = window.PACMAN_MAP.COLS * 20;
+  const levelHeight = window.PACMAN_MAP.ROWS * 20;
+  const aspect = containerWidth / containerHeight;
+
+  // baseViewSize mirrors 3d.js: max(levelWidth, levelHeight)
+  const baseViewSize = Math.max(levelWidth, levelHeight);
+  // We want the visible width to be roughly levelWidth + small margin
+  const desiredWidth = levelWidth + 80; // margin for overlay breathing room
+  const zoom = desiredWidth / (baseViewSize * aspect);
+
+  // Clamp zoom to reasonable range
+  const clamped = Math.min(Math.max(zoom, 0.6), 1.3);
+  window.render3D.setCameraZoom(clamped);
+  console.log("[browser] Fit zoom", clamped.toFixed(3), "aspect", aspect.toFixed(2));
 }
 
 function initLocalController() {

@@ -124,32 +124,17 @@ body {
   pointer-events: auto; /* Re-enable clicks on controls */
 }
 
-#controller-panel .score-display {
-  padding: var(--spacing-lg);
-  text-align: center;
-  border-top: var(--border-width) solid black;
-  border-left: var(--border-width) solid black;
-  border-right: var(--border-width) solid black;
-  border-bottom: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  color: black;
-  white-space: nowrap;
-}
-
 #controller-panel .chaser-btn.start-btn {
   padding: var(--spacing-lg);
   background: white;
-  border-top: var(--border-width) solid black;
-  border-left: none;
-  border-right: var(--border-width) solid black;
-  border-bottom: none;
+  border: var(--border-width) solid black;
   color: black;
   cursor: pointer;
   text-align: center;
   white-space: nowrap;
+  width: 20vw;
+  max-width: 200px;
+  box-sizing: border-box;
 }
 
 #controller-panel .chaser-btn.start-btn.disabled {
@@ -245,4 +230,21 @@ body {
     right: 8px;
     gap: 6px;
   }
+}
+
+/* Score top-right */
+.score-top-right {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1001;
+  background: transparent;
+  border: none;
+  color: black;
+  font-size: 18px;
+  font-weight: normal;
+  text-transform: uppercase;
+  padding: 0;
+  margin: 0;
+  line-height: 1.2;
 }

@@ -28,13 +28,42 @@ let options = {
 
 // Helper functions
 function calculateDirection(deltaX, deltaY, threshold = options.threshold) {
-  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+  // Prevent diagonal movement by only allowing one axis at a time
+  // Require that one axis is clearly dominant (at least 1.2x the other)
+  const absX = Math.abs(deltaX);
+  const absY = Math.abs(deltaY);
+  
+  // If both axes are below threshold, no direction
+  if (absX < threshold && absY < threshold) {
+    return null;
+  }
+  
+  // If both axes are above threshold, only allow the dominant one
+  // Require the dominant axis to be at least 1.2x the other to prevent diagonal
+  if (absX > threshold && absY > threshold) {
+    if (absX > absY * 1.2) {
+      // X is clearly dominant
+      if (deltaX > 0) return "right";
+      if (deltaX < 0) return "left";
+    } else if (absY > absX * 1.2) {
+      // Y is clearly dominant
+      if (deltaY > 0) return "down";
+      if (deltaY < 0) return "up";
+    } else {
+      // Too close to diagonal, don't allow movement
+      return null;
+    }
+  }
+  
+  // Only one axis is above threshold
+  if (absX > absY) {
     if (deltaX > threshold) return "right";
     if (deltaX < -threshold) return "left";
   } else {
     if (deltaY > threshold) return "down";
     if (deltaY < -threshold) return "up";
   }
+  
   return null;
 }
 

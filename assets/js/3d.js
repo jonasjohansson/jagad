@@ -17,6 +17,50 @@ let orthographicCamera, perspectiveCamera;
 let useOrthographic = true; // Default to orthographic
 let cameraZoom = 0.98; // Camera zoom level
 let baseViewSize = 0; // Base view size (calculated on init)
+let cameraOffset = { x: 0, y: 0, z: 0 }; // User-controlled camera offsets
+
+function applyCameraPosition() {
+  const centerX = (COLS * CELL_SIZE) / 2;
+  const centerZ = (ROWS * CELL_SIZE) / 2;
+  const lookAtY = 0; // Always look at ground level
+
+  if (orthographicCamera) {
+    // For orthographic, move camera position and always look at center
+    const baseX = centerX;
+    const baseY = 200;
+    const baseZ = centerZ;
+    
+    orthographicCamera.position.set(
+      baseX + cameraOffset.x,
+      baseY + cameraOffset.y,
+      baseZ + cameraOffset.z
+    );
+    // Always look at the center of the level, regardless of camera position
+    orthographicCamera.lookAt(centerX, lookAtY, centerZ);
+  }
+
+  if (perspectiveCamera) {
+    const levelWidth = COLS * CELL_SIZE;
+    const levelHeight = ROWS * CELL_SIZE;
+    const levelDiagonal = Math.sqrt(levelWidth * levelWidth + levelHeight * levelHeight);
+    const cameraHeight = levelDiagonal * 0.8;
+    const cameraDistance = levelDiagonal * 0.6;
+    
+    // Base position relative to center
+    const baseX = centerX + cameraDistance * 0.5;
+    const baseY = cameraHeight;
+    const baseZ = centerZ + cameraDistance * 0.5;
+    
+    // Apply user offsets to move camera in world space
+    perspectiveCamera.position.set(
+      baseX + cameraOffset.x,
+      baseY + cameraOffset.y,
+      baseZ + cameraOffset.z
+    );
+    // Always look at the center of the level, regardless of camera position
+    perspectiveCamera.lookAt(centerX, lookAtY, centerZ);
+  }
+}
 let fugitives3D = [];
 let chasers3D = [];
 let mazeVoxels = [];
@@ -54,8 +98,6 @@ function init3D() {
   }
 
   orthographicCamera = new THREE.OrthographicCamera(left, right, top, bottom, 0.1, 1000);
-  orthographicCamera.position.set((COLS * CELL_SIZE) / 2, 200, (ROWS * CELL_SIZE) / 2);
-  orthographicCamera.lookAt((COLS * CELL_SIZE) / 2, 0, (ROWS * CELL_SIZE) / 2);
 
   // Perspective camera - zoomed out to see the whole level
   const levelWidth = COLS * CELL_SIZE;
@@ -67,15 +109,8 @@ function init3D() {
   perspectiveCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
   perspectiveCamera.zoom = cameraZoom;
 
-  // Position camera high and at an angle to see the whole level
-  const cameraHeight = levelDiagonal * 0.8; // Higher up
-  const cameraDistance = levelDiagonal * 0.6; // Further back
-  perspectiveCamera.position.set(
-    (COLS * CELL_SIZE) / 2 + cameraDistance * 0.5,
-    cameraHeight,
-    (ROWS * CELL_SIZE) / 2 + cameraDistance * 0.5
-  );
-  perspectiveCamera.lookAt((COLS * CELL_SIZE) / 2, 0, (ROWS * CELL_SIZE) / 2);
+  // Position camera high and at an angle to see the whole level (with offsets applied separately)
+  applyCameraPosition();
 
   // Start with orthographic
   camera = orthographicCamera;
@@ -429,14 +464,18 @@ function updatePositions3D(positions) {
       fugitives3D[index] = createFugitive3D(pos.color, pos.x, pos.y, pos.px, pos.py);
     } else {
       // Update group position - convert server's px/py (with CHARACTER_OFFSET) to centered position
+      let posX, posZ;
       if (pos.px !== undefined && pos.py !== undefined) {
-        fugitives3D[index].mesh.position.x = pos.px - CHARACTER_OFFSET + CELL_SIZE / 2;
-        fugitives3D[index].mesh.position.z = pos.py - CHARACTER_OFFSET + CELL_SIZE / 2;
+        // Server sends px/py with CHARACTER_OFFSET, convert to center of cell
+        posX = pos.px - CHARACTER_OFFSET + CELL_SIZE / 2;
+        posZ = pos.py - CHARACTER_OFFSET + CELL_SIZE / 2;
       } else {
         // Fallback to grid coordinates, centered
-        fugitives3D[index].mesh.position.x = pos.x * CELL_SIZE + CELL_SIZE / 2;
-        fugitives3D[index].mesh.position.z = pos.y * CELL_SIZE + CELL_SIZE / 2;
+        posX = pos.x * CELL_SIZE + CELL_SIZE / 2;
+        posZ = pos.y * CELL_SIZE + CELL_SIZE / 2;
       }
+      // Set group position (preserve Y position for height)
+      fugitives3D[index].mesh.position.set(posX, CHARACTER_SIZE / 2, posZ);
     }
   });
 
@@ -468,14 +507,18 @@ function updatePositions3D(positions) {
       chasers3D[index] = createChaser3D("white", pos.x, pos.y, pos.px, pos.py);
     } else {
       // Update group position - convert server's px/py (with CHARACTER_OFFSET) to centered position
+      let posX, posZ;
       if (pos.px !== undefined && pos.py !== undefined) {
-        chasers3D[index].mesh.position.x = pos.px - CHARACTER_OFFSET + CELL_SIZE / 2;
-        chasers3D[index].mesh.position.z = pos.py - CHARACTER_OFFSET + CELL_SIZE / 2;
+        // Server sends px/py with CHARACTER_OFFSET, convert to center of cell
+        posX = pos.px - CHARACTER_OFFSET + CELL_SIZE / 2;
+        posZ = pos.py - CHARACTER_OFFSET + CELL_SIZE / 2;
       } else {
         // Fallback to grid coordinates, centered
-        chasers3D[index].mesh.position.x = pos.x * CELL_SIZE + CELL_SIZE / 2;
-        chasers3D[index].mesh.position.z = pos.y * CELL_SIZE + CELL_SIZE / 2;
+        posX = pos.x * CELL_SIZE + CELL_SIZE / 2;
+        posZ = pos.y * CELL_SIZE + CELL_SIZE / 2;
       }
+      // Set group position (preserve Y position for height)
+      chasers3D[index].mesh.position.set(posX, CHARACTER_SIZE / 2, posZ);
     }
 
     // Update opacity based on player control (20% if not controlled, 100% if controlled)
@@ -566,12 +609,20 @@ function onWindowResize3D() {
     perspectiveCamera.updateProjectionMatrix();
   }
 
+  // Re-apply camera position offsets after projection changes
+  applyCameraPosition();
+
   renderer.setSize(containerWidth, containerHeight);
 }
 
 function setCameraZoom(zoom) {
   cameraZoom = zoom;
   onWindowResize3D(); // Update camera with new zoom
+}
+
+function setCameraPosition(x, y, z) {
+  cameraOffset = { x: x || 0, y: y || 0, z: z || 0 };
+  applyCameraPosition();
 }
 
 function toggleCamera() {
@@ -802,6 +853,7 @@ window.render3D = {
       } else {
         camera = perspectiveCamera;
       }
+      applyCameraPosition(); // Reapply camera position when switching types
       onWindowResize3D();
     }
   },
@@ -814,6 +866,7 @@ window.render3D = {
   setColorOverride: setColorOverride,
   setTeamImage: setTeamImage,
   setCameraZoom: setCameraZoom,
+  setCameraPosition: setCameraPosition,
   useOrthographic: () => useOrthographic,
   initialized: false,
 };

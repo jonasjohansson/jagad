@@ -7,6 +7,7 @@ const CHARACTER_OFFSET = (CELL_SIZE - CHARACTER_SIZE) / 2;
 // Base movement speed (tuned to feel closer to the original client-side movement)
 // Higher = faster movement across the grid
 const BASE_MOVE_SPEED = 0.25;
+const TARGET_FPS = 60; // Used to normalize movement speed by frame time
 
 const COLORS = ["red", "green", "blue", "yellow"];
 const DIRECTIONS = [
@@ -54,12 +55,13 @@ chaserSpawnPositions.sort((a, b) => {
   return a.x - b.x; // Then by column (left to right)
 });
 
-// Pre-calculate fugitive spawn positions
+// Pre-calculate fugitive spawn positions (from map: value 4)
+// Map shows: Row 1 (y=1): x=1 and x=41, Row 22 (y=22): x=1 and x=41
 const fugitiveSpawnPositions = [
   { x: 1, y: 1 }, // top-left
-  { x: 30, y: 1 }, // top-right
-  { x: 1, y: 14 }, // bottom-left
-  { x: 30, y: 14 }, // bottom-right
+  { x: 41, y: 1 }, // top-right
+  { x: 1, y: 22 }, // bottom-left
+  { x: 41, y: 22 }, // bottom-right
 ];
 
 // Helper functions
@@ -1007,7 +1009,7 @@ let localGameState = {
   caughtFugitives: new Set(),
   score: 0,
   fugitiveSpeed: 0.4,
-  chaserSpeed: 0.41,
+  chaserSpeed: 0.43, // Slightly faster than fugitives
   aiDifficulty: 0.8,
 };
 let localPlayerInput = null;
@@ -1042,6 +1044,9 @@ function init() {
       innerWallColor: "#ffffff",
       outerWallColor: "#ffffff",
       bodyBackgroundColor: "#555555",
+      cameraPosX: 0,
+      cameraPosY: 0,
+      cameraPosZ: 0,
       buildingRealOpacity: 1.0,
       buildingRealX: 0,
       buildingRealY: 0,
@@ -1083,6 +1088,30 @@ function init() {
           window.render3D.setCameraZoom(value);
         }
       });
+
+    // Camera position controls
+    const cameraFolder = gui.addFolder("Camera Position");
+    const updateCameraPosition = () => {
+      if (window.render3D && window.render3D.setCameraPosition) {
+        window.render3D.setCameraPosition(
+          guiParams.cameraPosX,
+          guiParams.cameraPosY,
+          guiParams.cameraPosZ
+        );
+      }
+    };
+    cameraFolder
+      .add(guiParams, "cameraPosX", -500, 500, 1)
+      .name("Cam X")
+      .onChange(updateCameraPosition);
+    cameraFolder
+      .add(guiParams, "cameraPosY", -500, 500, 1)
+      .name("Cam Y")
+      .onChange(updateCameraPosition);
+    cameraFolder
+      .add(guiParams, "cameraPosZ", -500, 500, 1)
+      .name("Cam Z")
+      .onChange(updateCameraPosition);
 
     // 3D lighting controls (only visible when 3D view is enabled)
     const ambientLightCtrl = gui
@@ -1473,7 +1502,7 @@ function getTargetPixelPos(gridX, gridY) {
   };
 }
 
-function moveCharacter(character, speedMultiplier = 1.0) {
+function moveCharacter(character, speedMultiplier = 1.0, deltaSeconds = 1 / TARGET_FPS) {
   if (!character) return;
 
   const target = getTargetPixelPos(character.targetX, character.targetY);
@@ -1484,7 +1513,8 @@ function moveCharacter(character, speedMultiplier = 1.0) {
   // Move until we exactly reach the tile center; avoid a "dead zone" where
   // distance is small but we never snap to the target.
   if (distance > 0) {
-    const moveDistance = BASE_MOVE_SPEED * CELL_SIZE * speedMultiplier;
+    // Scale by deltaSeconds to keep speed consistent regardless of frame rate
+    const moveDistance = BASE_MOVE_SPEED * CELL_SIZE * speedMultiplier * (deltaSeconds * TARGET_FPS);
     if (distance > moveDistance) {
       character.px += (dx / distance) * moveDistance;
       character.py += (dy / distance) * moveDistance;
@@ -1862,18 +1892,27 @@ function localGameLoop() {
     const chaser = localGameState.chasers[0];
     const dirDef = DIRECTION_MAP[localPlayerInput];
     if (dirDef) {
-      chaser.nextDirX = dirDef.x;
-      chaser.nextDirY = dirDef.y;
+      // Ensure only one axis is set (prevent diagonal movement)
+      // DIRECTION_MAP should already ensure this, but double-check
+      const hasX = dirDef.x !== 0;
+      const hasY = dirDef.y !== 0;
+      if (!((hasX && !hasY) || (!hasX && hasY))) {
+        // Invalid direction (diagonal or no direction), ignore
+        localPlayerInput = null;
+      } else {
+        chaser.nextDirX = dirDef.x;
+        chaser.nextDirY = dirDef.y;
 
-      // If stopped, try to start immediately
-      if (chaser.dirX === 0 && chaser.dirY === 0) {
-        const startX = chaser.x + dirDef.x;
-        const startY = chaser.y + dirDef.y;
-        if (isPath(startX, startY)) {
-          chaser.dirX = dirDef.x;
-          chaser.dirY = dirDef.y;
-          chaser.targetX = startX;
-          chaser.targetY = startY;
+        // If stopped, try to start immediately
+        if (chaser.dirX === 0 && chaser.dirY === 0) {
+          const startX = chaser.x + dirDef.x;
+          const startY = chaser.y + dirDef.y;
+          if (isPath(startX, startY)) {
+            chaser.dirX = dirDef.x;
+            chaser.dirY = dirDef.y;
+            chaser.targetX = startX;
+            chaser.targetY = startY;
+          }
         }
       }
     }
@@ -1884,7 +1923,7 @@ function localGameLoop() {
   localGameState.fugitives.forEach((fugitive, index) => {
     if (localGameState.caughtFugitives.has(index)) return;
 
-    moveCharacter(fugitive, localGameState.fugitiveSpeed);
+    moveCharacter(fugitive, localGameState.fugitiveSpeed, deltaSeconds);
 
     if (isAtTarget(fugitive)) {
       localMoveFugitiveAI(fugitive, index);
@@ -1910,7 +1949,7 @@ function localGameLoop() {
   // Move chaser
   const chaser = localGameState.chasers[0];
   if (chaser) {
-    moveCharacter(chaser, localGameState.chaserSpeed);
+    moveCharacter(chaser, localGameState.chaserSpeed, deltaSeconds);
 
     if (isAtTarget(chaser)) {
       // Apply queued direction
@@ -1959,17 +1998,20 @@ function localGameLoop() {
   // Update 3D rendering
   if (window.render3D && window.render3D.updatePositions) {
     const positions = {
-      fugitives: localGameState.fugitives.map((f, i) => ({
-        index: i,
-        px: f.px,
-        py: f.py,
-        x: f.x,
-        y: f.y,
-        targetX: f.targetX,
-        targetY: f.targetY,
-        color: f.color,
-        isPlayerControlled: false,
-      })),
+      // Only send fugitives that haven't been caught
+      fugitives: localGameState.fugitives
+        .map((f, i) => ({
+          index: i,
+          px: f.px,
+          py: f.py,
+          x: f.x,
+          y: f.y,
+          targetX: f.targetX,
+          targetY: f.targetY,
+          color: f.color,
+          isPlayerControlled: false,
+        }))
+        .filter((f, i) => !localGameState.caughtFugitives.has(i)),
       chasers: localGameState.chasers.map((c, i) => ({
         index: i,
         px: c.px,
@@ -2050,11 +2092,8 @@ function localCheckCollisions() {
   localGameState.fugitives.forEach((fugitive, index) => {
     if (localGameState.caughtFugitives.has(index)) return;
 
-    const dx = chaser.x - fugitive.x;
-    const dy = chaser.y - fugitive.y;
-    const distanceSquared = dx * dx + dy * dy;
-
-    if (distanceSquared < 0.5) {
+    // Check if chaser and fugitive are on the same grid cell (matching server logic)
+    if (chaser.x === fugitive.x && chaser.y === fugitive.y) {
       localCatchFugitive(index);
     }
   });
@@ -2074,6 +2113,22 @@ function localCatchFugitive(index) {
 
   if (window.updateLocalScore) {
     window.updateLocalScore(localGameState.score);
+  }
+
+  // Ensure chaser doesn't get stuck - if chaser has no direction, try to continue in last direction
+  const chaser = localGameState.chasers[0];
+  if (chaser && chaser.dirX === 0 && chaser.dirY === 0) {
+    // If stopped, try to continue in last direction if valid
+    if (chaser.lastDirX !== 0 || chaser.lastDirY !== 0) {
+      const continueX = chaser.x + chaser.lastDirX;
+      const continueY = chaser.y + chaser.lastDirY;
+      if (isPath(continueX, continueY)) {
+        chaser.dirX = chaser.lastDirX;
+        chaser.dirY = chaser.lastDirY;
+        chaser.targetX = continueX;
+        chaser.targetY = continueY;
+      }
+    }
   }
 
   if (localGameState.caughtFugitives.size >= localGameState.fugitives.length) {
