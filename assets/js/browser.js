@@ -100,9 +100,15 @@ function fitLevelToCanvas() {
   const canvas = document.getElementById("webgl-canvas");
   if (!canvas) return;
 
-  const container = canvas.parentElement;
-  const containerWidth = container ? container.clientWidth : window.innerWidth;
-  const containerHeight = container ? container.clientHeight : window.innerHeight;
+  // Use visualViewport if available (excludes address bar on mobile), otherwise use viewport height
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const viewportWidth = window.visualViewport?.width || window.innerWidth;
+  
+  // Get actual canvas dimensions (which should be 100vh based on CSS)
+  const canvasRect = canvas.getBoundingClientRect();
+  const containerWidth = canvasRect.width || viewportWidth;
+  const containerHeight = canvasRect.height || viewportHeight;
+  
   if (!containerWidth || !containerHeight) return;
 
   const levelWidth = window.PACMAN_MAP.COLS * 20;
@@ -111,14 +117,14 @@ function fitLevelToCanvas() {
 
   // baseViewSize mirrors 3d.js: max(levelWidth, levelHeight)
   const baseViewSize = Math.max(levelWidth, levelHeight);
-  // We want the visible width to be roughly levelWidth + small margin
-  const desiredWidth = levelWidth + 80; // margin for overlay breathing room
-  const zoom = desiredWidth / (baseViewSize * aspect);
+  // Prefer fitting by HEIGHT so the full level height is visible
+  const desiredHeight = levelHeight + 80; // small margin
+  const zoom = desiredHeight / baseViewSize;
 
   // Clamp zoom to reasonable range
   const clamped = Math.min(Math.max(zoom, 0.6), 1.3);
   window.render3D.setCameraZoom(clamped);
-  console.log("[browser] Fit zoom", clamped.toFixed(3), "aspect", aspect.toFixed(2));
+  console.log("[browser] Fit zoom", clamped.toFixed(3), "aspect", aspect.toFixed(2), "viewport:", viewportWidth, "x", viewportHeight);
 }
 
 function initLocalController() {
