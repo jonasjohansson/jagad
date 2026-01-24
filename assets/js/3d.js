@@ -77,6 +77,13 @@ let innerWallMaterial3D, outerWallMaterial3D, floorMaterial3D, teleportMaterial3
 let colorOverrides = [null, null, null, null]; // Color overrides for each color index (red, green, blue, yellow)
 let teamImages = [null, null, null, null]; // Team images for each color index (red, green, blue, yellow)
 
+// Toon shader state
+let useToonShader = false;
+let toonGradientSteps = 3;
+let toonOutlineEnabled = false;
+let toonGradientMap = null;
+let gui = null;
+
 // Initialize 3D rendering
 function init3D() {
   // Scene
@@ -167,6 +174,255 @@ function init3D() {
   setTimeout(() => {
     onWindowResize3D();
   }, 0);
+  
+  // Initialize GUI
+  initGUI();
+}
+
+// Create gradient map for toon shading
+function createToonGradientMap(steps) {
+  const canvas = document.createElement('canvas');
+  canvas.width = steps;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  
+  for (let i = 0; i < steps; i++) {
+    const value = Math.floor((i / (steps - 1)) * 255);
+    ctx.fillStyle = `rgb(${value}, ${value}, ${value})`;
+    ctx.fillRect(i, 0, 1, 1);
+  }
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  return texture;
+}
+
+// Initialize GUI
+function initGUI() {
+  if (typeof lil === 'undefined') {
+    console.warn('[3d] lil-gui not loaded, skipping GUI initialization');
+    return;
+  }
+  
+  gui = new lil.GUI({ container: document.getElementById('gui-container') });
+  gui.title('Rendering Settings');
+  
+  // Toon Shader folder
+  const toonFolder = gui.addFolder('Toon Shader');
+  
+  const toonSettings = {
+    enabled: false,
+    gradientSteps: 3,
+    outlineEnabled: false,
+  };
+  
+  toonFolder.add(toonSettings, 'enabled').name('Enable Toon Shader').onChange((value) => {
+    useToonShader = value;
+    updateMaterialsForToon();
+  });
+  
+  toonFolder.add(toonSettings, 'gradientSteps', 2, 10, 1).name('Gradient Steps').onChange((value) => {
+    toonGradientSteps = value;
+    if (useToonShader) {
+      toonGradientMap = createToonGradientMap(value);
+      updateMaterialsForToon();
+    }
+  });
+  
+  toonFolder.add(toonSettings, 'outlineEnabled').name('Enable Outline').onChange((value) => {
+    toonOutlineEnabled = value;
+    // Outline would require a separate pass - placeholder for now
+    console.log('[3d] Outline toggled:', value);
+  });
+  
+  toonFolder.open();
+}
+
+// Update all materials to use toon shader or standard shader
+function updateMaterialsForToon() {
+  if (useToonShader && !toonGradientMap) {
+    toonGradientMap = createToonGradientMap(toonGradientSteps);
+  }
+  
+  // Store old material references before updating
+  const oldInnerWall = innerWallMaterial3D;
+  const oldOuterWall = outerWallMaterial3D;
+  const oldFloor = floorMaterial3D;
+  const oldTeleport = teleportMaterial3D;
+  
+  // Recreate materials with appropriate type
+  createMaterialsForShaderType();
+  
+  // Update all existing objects
+  updateAllObjectMaterials(oldInnerWall, oldOuterWall, oldFloor, oldTeleport);
+}
+
+// Create materials based on current shader type
+function createMaterialsForShaderType() {
+  // Store current colors before recreating materials
+  const innerWallColor = innerWallMaterial3D?.color ? innerWallMaterial3D.color.getHex() : 0xffffff;
+  const outerWallColor = outerWallMaterial3D?.color ? outerWallMaterial3D.color.getHex() : 0xffffff;
+  const floorColor = floorMaterial3D?.color ? floorMaterial3D.color.getHex() : 0x777777;
+  const teleportColor = teleportMaterial3D?.color ? teleportMaterial3D.color.getHex() : 0x4444ff;
+  
+  if (useToonShader) {
+    // Toon materials
+    innerWallMaterial3D = new THREE.MeshToonMaterial({
+      color: innerWallColor,
+      gradientMap: toonGradientMap,
+    });
+    
+    outerWallMaterial3D = new THREE.MeshToonMaterial({
+      color: outerWallColor,
+      gradientMap: toonGradientMap,
+    });
+    
+    floorMaterial3D = new THREE.MeshToonMaterial({
+      color: floorColor,
+      gradientMap: toonGradientMap,
+    });
+    
+    teleportMaterial3D = new THREE.MeshToonMaterial({
+      color: teleportColor,
+      gradientMap: toonGradientMap,
+    });
+  } else {
+    // Standard materials
+    innerWallMaterial3D = new THREE.MeshStandardMaterial({
+      color: innerWallColor,
+      roughness: 0.5,
+      metalness: 0.2,
+      emissive: 0x000000,
+    });
+    
+    outerWallMaterial3D = new THREE.MeshStandardMaterial({
+      color: outerWallColor,
+      roughness: 0.5,
+      metalness: 0.2,
+      emissive: 0x000000,
+    });
+    
+    floorMaterial3D = new THREE.MeshStandardMaterial({
+      color: floorColor,
+      roughness: 0.6,
+      metalness: 0.1,
+      emissive: 0x000000,
+    });
+    
+    teleportMaterial3D = new THREE.MeshStandardMaterial({
+      color: teleportColor,
+      roughness: 0.6,
+      metalness: 0.1,
+      emissive: 0x000000,
+    });
+  }
+}
+
+// Update materials on all existing objects
+function updateAllObjectMaterials(oldInnerWall, oldOuterWall, oldFloor, oldTeleport) {
+  // Update maze voxels with new materials
+  mazeVoxels.forEach((voxel) => {
+    // Store the material type tag if not already present
+    if (!voxel.userData.materialType) {
+      if (voxel.material === oldInnerWall) {
+        voxel.userData.materialType = 'innerWall';
+      } else if (voxel.material === oldOuterWall) {
+        voxel.userData.materialType = 'outerWall';
+      } else if (voxel.material === oldFloor) {
+        voxel.userData.materialType = 'floor';
+      } else if (voxel.material === oldTeleport) {
+        voxel.userData.materialType = 'teleport';
+      }
+    }
+    
+    // Assign new material based on type
+    switch (voxel.userData.materialType) {
+      case 'innerWall':
+        voxel.material = innerWallMaterial3D;
+        break;
+      case 'outerWall':
+        voxel.material = outerWallMaterial3D;
+        break;
+      case 'floor':
+        voxel.material = floorMaterial3D;
+        break;
+      case 'teleport':
+        voxel.material = teleportMaterial3D;
+        break;
+    }
+  });
+  
+  // Update fugitives
+  fugitives3D.forEach((fugitive, index) => {
+    if (fugitive && fugitive.mesh) {
+      fugitive.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const colorIndex = index;
+          const colorHex = colorIndex >= 0 && colorOverrides[colorIndex] !== null 
+            ? new THREE.Color(colorOverrides[colorIndex]).getHex() 
+            : getColorHex(COLORS[colorIndex]);
+          
+          if (useToonShader) {
+            const newMaterial = new THREE.MeshToonMaterial({
+              map: child.material.map,
+              color: child.material.map ? 0xffffff : colorHex,
+              gradientMap: toonGradientMap,
+              emissive: colorHex,
+              emissiveIntensity: 0.5,
+            });
+            child.material = newMaterial;
+          } else {
+            const newMaterial = new THREE.MeshStandardMaterial({
+              map: child.material.map,
+              color: child.material.map ? 0xffffff : colorHex,
+              emissive: colorHex,
+              emissiveIntensity: 1.0,
+              roughness: 0.1,
+              metalness: 0.0,
+            });
+            child.material = newMaterial;
+          }
+        }
+      });
+    }
+  });
+  
+  // Update chasers
+  chasers3D.forEach((chaser) => {
+    if (chaser && chaser.mesh) {
+      chaser.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const colorHex = 0xffffff;
+          const currentOpacity = child.material.opacity;
+          const currentTransparent = child.material.transparent;
+          
+          if (useToonShader) {
+            const newMaterial = new THREE.MeshToonMaterial({
+              color: colorHex,
+              gradientMap: toonGradientMap,
+              emissive: colorHex,
+              emissiveIntensity: 0.2,
+              transparent: currentTransparent,
+              opacity: currentOpacity,
+            });
+            child.material = newMaterial;
+          } else {
+            const newMaterial = new THREE.MeshStandardMaterial({
+              color: colorHex,
+              emissive: colorHex,
+              emissiveIntensity: 0.3,
+              roughness: 0.4,
+              metalness: 0.1,
+              transparent: currentTransparent,
+              opacity: currentOpacity,
+            });
+            child.material = newMaterial;
+          }
+        }
+      });
+    }
+  });
 }
 
 function createMazeVoxels() {
@@ -176,21 +432,35 @@ function createMazeVoxels() {
 
   // Initialize materials if not already created
   if (!innerWallMaterial3D) {
-    innerWallMaterial3D = new THREE.MeshStandardMaterial({
-      color: 0xffffff, // White default
-      roughness: 0.5,
-      metalness: 0.2,
-      emissive: 0x000000, // No emissive - should reflect point lights
-    });
+    if (useToonShader) {
+      innerWallMaterial3D = new THREE.MeshToonMaterial({
+        color: 0xffffff,
+        gradientMap: toonGradientMap || createToonGradientMap(toonGradientSteps),
+      });
+    } else {
+      innerWallMaterial3D = new THREE.MeshStandardMaterial({
+        color: 0xffffff, // White default
+        roughness: 0.5,
+        metalness: 0.2,
+        emissive: 0x000000, // No emissive - should reflect point lights
+      });
+    }
   }
 
   if (!outerWallMaterial3D) {
-    outerWallMaterial3D = new THREE.MeshStandardMaterial({
-      color: 0xffffff, // White default
-      roughness: 0.5,
-      metalness: 0.2,
-      emissive: 0x000000, // No emissive - should reflect point lights
-    });
+    if (useToonShader) {
+      outerWallMaterial3D = new THREE.MeshToonMaterial({
+        color: 0xffffff,
+        gradientMap: toonGradientMap || createToonGradientMap(toonGradientSteps),
+      });
+    } else {
+      outerWallMaterial3D = new THREE.MeshStandardMaterial({
+        color: 0xffffff, // White default
+        roughness: 0.5,
+        metalness: 0.2,
+        emissive: 0x000000, // No emissive - should reflect point lights
+      });
+    }
   }
 
   // Track which cells have been processed
@@ -265,6 +535,8 @@ function createMazeVoxels() {
       wall.position.set(worldX + blockWidth / 2, VOXEL_HEIGHT / 2, worldZ + blockDepth / 2);
       wall.castShadow = true;
       wall.receiveShadow = true;
+      // Tag with material type for later updates
+      wall.userData.materialType = isOuterWall ? 'outerWall' : 'innerWall';
       scene.add(wall);
       mazeVoxels.push(wall);
 
@@ -286,21 +558,35 @@ function createFloorVoxels(worldX, worldZ, isTeleport = false) {
   // Use shared materials for floors (created once, reused)
   if (isTeleport) {
     if (!teleportMaterial3D) {
-      teleportMaterial3D = new THREE.MeshStandardMaterial({
-        color: 0x4444ff,
-        roughness: 0.6,
-        metalness: 0.1,
-        emissive: 0x000000, // No emissive - should reflect point lights
-      });
+      if (useToonShader) {
+        teleportMaterial3D = new THREE.MeshToonMaterial({
+          color: 0x4444ff,
+          gradientMap: toonGradientMap || createToonGradientMap(toonGradientSteps),
+        });
+      } else {
+        teleportMaterial3D = new THREE.MeshStandardMaterial({
+          color: 0x4444ff,
+          roughness: 0.6,
+          metalness: 0.1,
+          emissive: 0x000000, // No emissive - should reflect point lights
+        });
+      }
     }
   } else {
     if (!floorMaterial3D) {
-      floorMaterial3D = new THREE.MeshStandardMaterial({
-        color: 0x777777, // Gray default (#777777)
-        roughness: 0.6,
-        metalness: 0.1,
-        emissive: 0x000000, // No emissive - should reflect point lights
-      });
+      if (useToonShader) {
+        floorMaterial3D = new THREE.MeshToonMaterial({
+          color: 0x777777,
+          gradientMap: toonGradientMap || createToonGradientMap(toonGradientSteps),
+        });
+      } else {
+        floorMaterial3D = new THREE.MeshStandardMaterial({
+          color: 0x777777, // Gray default (#777777)
+          roughness: 0.6,
+          metalness: 0.1,
+          emissive: 0x000000, // No emissive - should reflect point lights
+        });
+      }
     }
   }
 
@@ -312,6 +598,8 @@ function createFloorVoxels(worldX, worldZ, isTeleport = false) {
   floor.position.set(worldX + CELL_SIZE / 2, 0, worldZ + CELL_SIZE / 2);
   floor.castShadow = false; // Floors don't cast shadows
   floor.receiveShadow = true; // Floors receive shadows from walls and characters
+  // Tag with material type for later updates
+  floor.userData.materialType = isTeleport ? 'teleport' : 'floor';
   scene.add(floor);
   mazeVoxels.push(floor);
 }
@@ -329,25 +617,46 @@ function createFugitive3D(color, x, y, px, py) {
 
   // Create material with optional texture
   let material;
-  if (colorIndex >= 0 && teamImages[colorIndex] !== null && teamImages[colorIndex].trim() !== "") {
-    const textureLoader = new THREE.TextureLoader();
-    const texture = textureLoader.load(teamImages[colorIndex]);
-    material = new THREE.MeshStandardMaterial({
-      map: texture,
-      color: 0xffffff, // Use white to show texture colors properly
-      emissive: colorHex, // Match light color for better blending
-      emissiveIntensity: 1.0, // Full emissive to eliminate dark halo
-      roughness: 0.1, // Very low roughness for bright, smooth surface
-      metalness: 0.0, // No metalness for softer appearance
-    });
+  if (useToonShader) {
+    if (colorIndex >= 0 && teamImages[colorIndex] !== null && teamImages[colorIndex].trim() !== "") {
+      const textureLoader = new THREE.TextureLoader();
+      const texture = textureLoader.load(teamImages[colorIndex]);
+      material = new THREE.MeshToonMaterial({
+        map: texture,
+        color: 0xffffff,
+        gradientMap: toonGradientMap,
+        emissive: colorHex,
+        emissiveIntensity: 0.5,
+      });
+    } else {
+      material = new THREE.MeshToonMaterial({
+        color: colorHex,
+        gradientMap: toonGradientMap,
+        emissive: colorHex,
+        emissiveIntensity: 0.5,
+      });
+    }
   } else {
-    material = new THREE.MeshStandardMaterial({
-      color: colorHex,
-      emissive: colorHex, // Match light color for better blending
-      emissiveIntensity: 1.0, // Full emissive to eliminate dark halo
-      roughness: 0.1, // Very low roughness for bright, smooth surface
-      metalness: 0.0, // No metalness for softer appearance
-    });
+    if (colorIndex >= 0 && teamImages[colorIndex] !== null && teamImages[colorIndex].trim() !== "") {
+      const textureLoader = new THREE.TextureLoader();
+      const texture = textureLoader.load(teamImages[colorIndex]);
+      material = new THREE.MeshStandardMaterial({
+        map: texture,
+        color: 0xffffff, // Use white to show texture colors properly
+        emissive: colorHex, // Match light color for better blending
+        emissiveIntensity: 1.0, // Full emissive to eliminate dark halo
+        roughness: 0.1, // Very low roughness for bright, smooth surface
+        metalness: 0.0, // No metalness for softer appearance
+      });
+    } else {
+      material = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        emissive: colorHex, // Match light color for better blending
+        emissiveIntensity: 1.0, // Full emissive to eliminate dark halo
+        roughness: 0.1, // Very low roughness for bright, smooth surface
+        metalness: 0.0, // No metalness for softer appearance
+      });
+    }
   }
   const fugitive = new THREE.Mesh(geometry, material);
   fugitive.position.set(0, 0, 0); // Position relative to group
@@ -399,13 +708,23 @@ function createChaser3D(color, x, y, px, py) {
   const geometry = new THREE.BoxGeometry(CHARACTER_SIZE, CHARACTER_SIZE, CHARACTER_SIZE);
   // All chasers are white
   const colorHex = 0xffffff; // White
-  const material = new THREE.MeshStandardMaterial({
-    color: colorHex,
-    emissive: colorHex, // Match light color for better blending
-    emissiveIntensity: 0.3, // Subtle glow
-    roughness: 0.4,
-    metalness: 0.1,
-  });
+  let material;
+  if (useToonShader) {
+    material = new THREE.MeshToonMaterial({
+      color: colorHex,
+      gradientMap: toonGradientMap,
+      emissive: colorHex,
+      emissiveIntensity: 0.2,
+    });
+  } else {
+    material = new THREE.MeshStandardMaterial({
+      color: colorHex,
+      emissive: colorHex, // Match light color for better blending
+      emissiveIntensity: 0.3, // Subtle glow
+      roughness: 0.4,
+      metalness: 0.1,
+    });
+  }
   const chaser = new THREE.Mesh(geometry, material);
   chaser.position.set(0, 0, 0); // Position relative to group
   chaser.castShadow = false; // Don't cast shadows on floor to avoid artifacts
