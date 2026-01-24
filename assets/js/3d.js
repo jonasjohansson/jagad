@@ -1,7 +1,30 @@
 // 3D rendering module using Three.js
 // Renders the game in 3D with voxel-based level design
 
+console.log('[3d] Loading 3D module...');
+
 import * as THREE from "../lib/three/three.module.js";
+console.log('[3d] THREE loaded:', !!THREE);
+
+import { EffectComposer } from "../lib/three/addons/postprocessing/EffectComposer.js";
+console.log('[3d] EffectComposer loaded:', !!EffectComposer);
+
+import { RenderPass } from "../lib/three/addons/postprocessing/RenderPass.js";
+console.log('[3d] RenderPass loaded:', !!RenderPass);
+
+import { UnrealBloomPass } from "../lib/three/addons/postprocessing/UnrealBloomPass.js";
+console.log('[3d] UnrealBloomPass loaded:', !!UnrealBloomPass);
+
+import { OutputPass } from "../lib/three/addons/postprocessing/OutputPass.js";
+console.log('[3d] OutputPass loaded:', !!OutputPass);
+
+import { ShaderPass } from "../lib/three/addons/postprocessing/ShaderPass.js";
+console.log('[3d] ShaderPass loaded:', !!ShaderPass);
+
+import { FXAAShader } from "../lib/three/addons/shaders/FXAAShader.js";
+console.log('[3d] FXAAShader loaded:', !!FXAAShader);
+
+console.log('[3d] All imports successful');
 
 const { MAP, COLS, ROWS, TUNNEL_ROW } = PACMAN_MAP;
 const CELL_SIZE = 20;
@@ -83,6 +106,21 @@ let toonGradientSteps = 3;
 let toonOutlineEnabled = false;
 let toonGradientMap = null;
 let gui = null;
+
+// Post-processing state
+let composer = null;
+let renderPass = null;
+let bloomPass = null;
+let fxaaPass = null;
+let outputPass = null;
+let usePostProcessing = false;
+let bloomSettings = {
+  enabled: false,
+  threshold: 0.5,
+  strength: 0.4,
+  radius: 1.0
+};
+let fxaaEnabled = false;
 
 // Initialize 3D rendering
 function init3D() {
@@ -175,8 +213,82 @@ function init3D() {
     onWindowResize3D();
   }, 0);
   
+  // Initialize post-processing
+  initPostProcessing();
+  
   // Initialize GUI
   initGUI();
+}
+
+// Initialize post-processing
+function initPostProcessing() {
+  const canvas = document.getElementById("webgl-canvas");
+  if (!canvas) return;
+  
+  const container = canvas.parentElement;
+  const containerWidth = container ? container.clientWidth : window.innerWidth;
+  const containerHeight = container ? container.clientHeight : window.innerHeight;
+  
+  // Create render target with multisampling
+  const renderTarget = new THREE.WebGLRenderTarget(containerWidth, containerHeight, {
+    type: THREE.HalfFloatType,
+    samples: 4
+  });
+  
+  // Create composer
+  composer = new EffectComposer(renderer, renderTarget);
+  
+  // Create and add render pass
+  renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
+  
+  // Create bloom pass (but don't add it yet)
+  const resolution = new THREE.Vector2(containerWidth, containerHeight);
+  bloomPass = new UnrealBloomPass(resolution, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
+  
+  // Create FXAA pass (but don't add it yet)
+  fxaaPass = new ShaderPass(FXAAShader);
+  const pixelRatio = renderer.getPixelRatio();
+  fxaaPass.material.uniforms['resolution'].value.x = 1 / (containerWidth * pixelRatio);
+  fxaaPass.material.uniforms['resolution'].value.y = 1 / (containerHeight * pixelRatio);
+  
+  // Create output pass (always needed at the end)
+  outputPass = new OutputPass();
+  composer.addPass(outputPass);
+  
+  console.log('[3d] Post-processing initialized');
+}
+
+// Update post-processing passes based on settings
+function updatePostProcessing() {
+  if (!composer) return;
+  
+  // Remove all passes except renderPass
+  while (composer.passes.length > 1) {
+    composer.passes.pop();
+  }
+  
+  // Re-add passes in order based on settings
+  if (bloomSettings.enabled) {
+    // Update bloom parameters
+    bloomPass.threshold = bloomSettings.threshold;
+    bloomPass.strength = bloomSettings.strength;
+    bloomPass.radius = bloomSettings.radius;
+    composer.addPass(bloomPass);
+    console.log('[3d] Bloom pass added');
+  }
+  
+  if (fxaaEnabled) {
+    composer.addPass(fxaaPass);
+    console.log('[3d] FXAA pass added');
+  }
+  
+  // Always add output pass at the end
+  composer.addPass(outputPass);
+  
+  // Update usePostProcessing flag
+  usePostProcessing = bloomSettings.enabled || fxaaEnabled;
+  console.log('[3d] Post-processing updated:', usePostProcessing);
 }
 
 // Create gradient map for toon shading
@@ -207,6 +319,49 @@ function initGUI() {
   
   gui = new lil.GUI({ container: document.getElementById('gui-container') });
   gui.title('Rendering Settings');
+  
+  // Post-Processing folder
+  const postFolder = gui.addFolder('Post-Processing Effects');
+  
+  // Bloom sub-folder
+  const bloomFolder = postFolder.addFolder('Bloom (Glow)');
+  
+  bloomFolder.add(bloomSettings, 'enabled').name('Enable Bloom').onChange((value) => {
+    bloomSettings.enabled = value;
+    updatePostProcessing();
+  });
+  
+  bloomFolder.add(bloomSettings, 'threshold', 0, 1, 0.01).name('Threshold').onChange((value) => {
+    bloomSettings.threshold = value;
+    if (bloomPass) {
+      bloomPass.threshold = value;
+    }
+  });
+  
+  bloomFolder.add(bloomSettings, 'strength', 0, 3, 0.1).name('Strength').onChange((value) => {
+    bloomSettings.strength = value;
+    if (bloomPass) {
+      bloomPass.strength = value;
+    }
+  });
+  
+  bloomFolder.add(bloomSettings, 'radius', 0, 1, 0.01).name('Radius').onChange((value) => {
+    bloomSettings.radius = value;
+    if (bloomPass) {
+      bloomPass.radius = value;
+    }
+  });
+  
+  bloomFolder.open();
+  
+  // Anti-aliasing
+  const fxaaSettings = { enabled: false };
+  postFolder.add(fxaaSettings, 'enabled').name('FXAA Anti-Aliasing').onChange((value) => {
+    fxaaEnabled = value;
+    updatePostProcessing();
+  });
+  
+  postFolder.open();
   
   // Toon Shader folder
   const toonFolder = gui.addFolder('Toon Shader');
@@ -960,6 +1115,18 @@ function onWindowResize3D() {
   applyCameraPosition();
 
   renderer.setSize(containerWidth, containerHeight);
+  
+  // Update composer size if post-processing is enabled
+  if (composer) {
+    composer.setSize(containerWidth, containerHeight);
+    
+    // Update FXAA resolution
+    if (fxaaPass) {
+      const pixelRatio = renderer.getPixelRatio();
+      fxaaPass.material.uniforms['resolution'].value.x = 1 / (containerWidth * pixelRatio);
+      fxaaPass.material.uniforms['resolution'].value.y = 1 / (containerHeight * pixelRatio);
+    }
+  }
 }
 
 function setCameraZoom(zoom) {
@@ -1009,6 +1176,10 @@ function toggleCamera() {
   } else {
     camera = perspectiveCamera;
   }
+  // Update render pass camera
+  if (renderPass) {
+    renderPass.camera = camera;
+  }
   onWindowResize3D(); // Update camera settings
   return useOrthographic;
 }
@@ -1016,10 +1187,21 @@ function toggleCamera() {
 let renderCallCount = 0;
 function render3D() {
   if (renderer && scene && camera) {
-    renderer.render(scene, camera);
+    // Update render pass camera in case it changed
+    if (renderPass) {
+      renderPass.camera = camera;
+    }
+    
+    // Use composer if post-processing is enabled, otherwise regular render
+    if (usePostProcessing && composer) {
+      composer.render();
+    } else {
+      renderer.render(scene, camera);
+    }
+    
     renderCallCount++;
     if (renderCallCount % 60 === 0) {
-      console.log("[3d] Render called", renderCallCount, "times. Scene children:", scene.children.length, "Camera pos:", camera.position.x, camera.position.y, camera.position.z);
+      console.log("[3d] Render called", renderCallCount, "times. Scene children:", scene.children.length, "Camera pos:", camera.position.x, camera.position.y, camera.position.z, "Post-processing:", usePostProcessing);
     }
   } else {
     if (!renderer) console.warn("[3d] Renderer not initialized");
@@ -1043,6 +1225,23 @@ function cleanup3D() {
   fugitives3D = [];
   chasers3D = [];
   mazeVoxels = [];
+
+  // Cleanup post-processing
+  if (composer) {
+    composer.dispose();
+    composer = null;
+  }
+  if (bloomPass) {
+    bloomPass.dispose();
+    bloomPass = null;
+  }
+  if (fxaaPass) {
+    fxaaPass = null;
+  }
+  if (outputPass) {
+    outputPass.dispose();
+    outputPass = null;
+  }
 
   if (renderer) {
     renderer.dispose();
@@ -1197,6 +1396,7 @@ function setColorOverride(colorIndex, colorHex) {
 }
 
 // Export functions for use in game.js
+console.log('[3d] Setting window.render3D...');
 window.render3D = {
   init: init3D,
   updatePositions: updatePositions3D,
@@ -1230,6 +1430,10 @@ window.render3D = {
       } else {
         camera = perspectiveCamera;
       }
+      // Update render pass camera
+      if (renderPass) {
+        renderPass.camera = camera;
+      }
       applyCameraPosition(); // Reapply camera position when switching types
       onWindowResize3D();
     }
@@ -1249,3 +1453,4 @@ window.render3D = {
   useOrthographic: () => useOrthographic,
   initialized: false,
 };
+console.log('[3d] window.render3D set successfully');

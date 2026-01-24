@@ -77,3 +77,9 @@ When toggling between standard and toon shaders:
 
 ## Performance
 Toon shader (MeshToonMaterial) is similar in performance to MeshStandardMaterial, as both use the same rendering pipeline with different shading calculations.
+
+## Compatibility with Post-Processing
+The toon shader works seamlessly with post-processing effects:
+- Can be used together with Bloom for glowing cel-shaded look
+- Compatible with FXAA anti-aliasing
+- See POST_PROCESSING_FEATURES.md for details on post-processing effects
