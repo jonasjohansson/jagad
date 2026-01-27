@@ -1,0 +1,10 @@
+# Allow access to 3D model files
+AddType model/gltf+json .gltf
+AddType model/gltf-binary .glb
+AddType text/plain .obj
+AddType text/plain .mtl
+
+# Ensure models directory is accessible
+<FilesMatch "\.(gltf|glb|obj|mtl|bin)$">
+    Require all granted
+</FilesMatch>
