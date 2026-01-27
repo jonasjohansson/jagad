@@ -47,14 +47,14 @@ const modelSettings = {
 
 // Lighting settings
 const lightingSettings = {
-  ambientIntensity: 1,
+  ambientIntensity: 0.2,
   ambientColor: '#ffffff',
   directionalIntensity: 0,
   directionalColor: '#ffffff',
   directionalX: 100,
   directionalY: 200,
   directionalZ: 100,
-  hemisphereIntensity: 0.5,
+  hemisphereIntensity: 0.1,
   hemisphereSkyColor: '#87ceeb',
   hemisphereGroundColor: '#545454'
 };
@@ -181,6 +181,9 @@ function init() {
   );
   cursorLight.position.set(0, roadY, 0);
   cursorLight.castShadow = true;
+  cursorLight.shadow.mapSize.width = 2048;
+  cursorLight.shadow.mapSize.height = 2048;
+  cursorLight.shadow.bias = -0.0005;
   cursorLight.visible = cursorLightSettings.enabled;
   scene.add(cursorLight);
 
@@ -349,8 +352,6 @@ function initGUI() {
   modelFolder.add(modelSettings, 'rotationY', -360, 360).name('Rotation Y (deg)').onChange(updateModel);
   modelFolder.add(modelSettings, 'rotationZ', -360, 360).name('Rotation Z (deg)').onChange(updateModel);
   modelFolder.add(modelSettings, 'scale', 0.01, 100).name('Scale').onChange(updateModel);
-  modelFolder.addColor(modelSettings, 'color').name('Color').onChange(updateModelColor);
-  modelFolder.add(modelSettings, 'wireframe').name('Wireframe').onChange(updateModelMaterial);
   modelFolder.add(modelSettings, 'visible').name('Visible').onChange(updateModel);
   modelFolder.add({ center: centerModel }, 'center').name('Center on Building');
   modelFolder.add({ clear: clearModel }, 'clear').name('Clear Model');
