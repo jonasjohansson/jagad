@@ -79,7 +79,7 @@ const GUI = window.lil.GUI;
     chaserLightIntensity: 50,
     cameraType: "orthographic",
     orthoZoom: 1,
-    perspFov: 55,
+    perspFov: 20,
     perspNear: 0.1,
     perspFar: 5000,
     perspPosX: 0,
@@ -247,10 +247,10 @@ const GUI = window.lil.GUI;
     const aspect = window.innerWidth / window.innerHeight;
     const distance = horizontalSize * 1.2;
 
-    // Set default perspective camera settings based on level
-    settings.perspPosX = levelCenter.x + distance * 0.5;
-    settings.perspPosY = levelCenter.y + distance * 0.9;
-    settings.perspPosZ = levelCenter.z + distance * 0.5;
+    // Set default perspective camera settings based on level (ortho-like: low FOV, top-down)
+    settings.perspPosX = levelCenter.x;
+    settings.perspPosY = levelCenter.y + distance * 2.5;
+    settings.perspPosZ = levelCenter.z;
     settings.perspLookX = levelCenter.x;
     settings.perspLookY = levelCenter.y;
     settings.perspLookZ = levelCenter.z;
@@ -369,12 +369,12 @@ const GUI = window.lil.GUI;
       }
     }
 
-    perspFolder.add(settings, "perspPosX", -500, 500, 5).name("Pos X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosY", 0, 500, 5).name("Pos Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosZ", -500, 500, 5).name("Pos Z").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookX", -500, 500, 5).name("Look X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookY", -500, 500, 5).name("Look Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookZ", -500, 500, 5).name("Look Z").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosX", -500, 500, 0.01).name("Pos X").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosY", 0, 500, 0.01).name("Pos Y").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosZ", -500, 500, 0.01).name("Pos Z").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspLookX", -500, 500, 0.01).name("Look X").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspLookY", -500, 500, 0.01).name("Look Y").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspLookZ", -500, 500, 0.01).name("Look Z").onChange(updatePerspCameraPos);
 
     // Game controls (in left GUI)
     const gameFolder = guiLeft.addFolder("Game");
@@ -1035,22 +1035,9 @@ const GUI = window.lil.GUI;
             x = newX;
             z = newZ;
           } else {
-            // Try sliding along edges - test perpendicular movements
-            const slideX1 = x + dirX * actualStep;
-            const slideZ1 = z;
-            const slideX2 = x;
-            const slideZ2 = z + dirZ * actualStep;
-
-            if (checkFn(slideX1, slideZ1)) {
-              x = slideX1;
-              z = slideZ1;
-            } else if (checkFn(slideX2, slideZ2)) {
-              x = slideX2;
-              z = slideZ2;
-            } else {
-              // Can't move at all in this direction
-              break;
-            }
+            // Can't move further in this direction - stop without sliding
+            // This prevents drift while allowing corners to work
+            break;
           }
         }
 
@@ -1745,7 +1732,7 @@ const GUI = window.lil.GUI;
       return;
     }
 
-    // Try to move in current direction first
+    // Try to move in current direction first (no margin - sliding removed to prevent drift)
     const newPos = tryMove(pos.x, pos.z, actor.dirX, actor.dirZ, moveDistance, 0);
     const moved = Math.abs(newPos.x - pos.x) > 0.001 || Math.abs(newPos.z - pos.z) > 0.001;
 
@@ -1905,7 +1892,7 @@ const GUI = window.lil.GUI;
       }
     }
 
-    // Always move in current direction (continuous movement, no margin)
+    // Always move in current direction (no margin - sliding removed to prevent drift)
     if (actor.dirX !== 0 || actor.dirZ !== 0) {
       const newPos = tryMove(pos.x, pos.z, actor.dirX, actor.dirZ, moveDistance, 0);
 
