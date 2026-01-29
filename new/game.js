@@ -1435,10 +1435,10 @@ const GUI = window.lil.GUI;
         const textureLoader = new THREE.TextureLoader();
         // Map index to actual filenames
         const textureNames = [
-          "F1_Jaget_Lineup_Master_FACE_Samir_Viktor.png",
-          "F2_Jaget_Lineup_Master_FACE_Maria_Sara.png",
-          "F3_Jaget_Lineup_Master_FACE_Glenn_Hasse.png",
-          "F4_Jaget_Lineup_Master_FACE_Anja_Filippa.png"
+          "F1-Jaget_Lineup_Master_FACE_Samir_V01.png",
+          "F2-Jaget_Lineup_Master_FACE_Maria_V02.png",
+          "F3-Jaget_Lineup_Master_FACE_Glenn_V01.png",
+          "F4-Jaget_Lineup_Master_FACE_Anja_V02.png"
         ];
         const textureName = textureNames[this.index] || textureNames[0];
         textureLoader.load(textureName,
