@@ -738,7 +738,7 @@ const GUI = window.lil.GUI;
   // Load both files: main level and separate roads navmesh
   Promise.all([
     new Promise((resolve, reject) => {
-      loader.load("Jagad.glb", resolve, undefined, reject);
+      loader.load("jagad.glb", resolve, undefined, reject);
     }),
     new Promise((resolve, reject) => {
       loader.load("roads.glb", resolve, undefined, reject);
@@ -834,7 +834,7 @@ const GUI = window.lil.GUI;
       }
 
       // List all mesh names from main GLB for debugging
-      console.log("All meshes in main GLB (Jagad.glb):");
+      console.log("All meshes in main GLB (jagad.glb):");
       levelContainer.traverse((obj) => {
         if (obj.isMesh) {
           const box = new THREE.Box3().setFromObject(obj);
