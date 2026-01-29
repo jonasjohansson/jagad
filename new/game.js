@@ -98,7 +98,7 @@ const GUI = window.lil.GUI;
     wireIterations: 5,
     wireColor: "#ffffff",
     wireThickness: 0.08,
-    wireCubeSize: 2,
+    wireCubeSize: 0.5,
     showNavmesh: false,
     // Building plane (3D, in same scene)
     buildingEnabled: true,
