@@ -156,6 +156,8 @@ const GUI = window.lil.GUI;
   let glassTexture = null;
   let marqueeOffset = 0;
   let lastMarqueeTime = 0;
+  let glassVideo = null;
+  let glassVideoReady = false;
 
   // Preload fonts for canvas usage
   async function preloadFonts() {
@@ -184,6 +186,21 @@ const GUI = window.lil.GUI;
     glassTexture.minFilter = THREE.LinearFilter;
     glassTexture.magFilter = THREE.LinearFilter;
 
+    // Initialize video background
+    if (PATHS.video && PATHS.video.windowAmbience) {
+      glassVideo = document.createElement("video");
+      glassVideo.src = PATHS.video.windowAmbience;
+      glassVideo.loop = true;
+      glassVideo.muted = true;
+      glassVideo.playsInline = true;
+      glassVideo.crossOrigin = "anonymous";
+      glassVideo.addEventListener("canplaythrough", () => {
+        glassVideoReady = true;
+        glassVideo.play().catch(() => {});
+      });
+      glassVideo.load();
+    }
+
     // Preload fonts then update canvas
     preloadFonts().then(() => {
       lastMarqueeTime = performance.now();
@@ -206,9 +223,43 @@ const GUI = window.lil.GUI;
     ctx.translate(0, h);
     ctx.scale(1, -1);
 
-    // Draw background
-    ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity})`;
-    ctx.fillRect(0, 0, w, h);
+    // Draw video background if available and enabled, otherwise solid color
+    if (settings.glassVideoEnabled && glassVideo && glassVideoReady && glassVideo.readyState >= 2) {
+      // Draw video frame scaled to fill canvas
+      const vw = glassVideo.videoWidth;
+      const vh = glassVideo.videoHeight;
+      if (vw && vh) {
+        const scale = Math.max(w / vw, h / vh);
+        const sw = vw * scale;
+        const sh = vh * scale;
+        const sx = (w - sw) / 2;
+        const sy = (h - sh) / 2;
+
+        // Apply video opacity and blend mode
+        ctx.globalAlpha = settings.glassVideoOpacity;
+        ctx.globalCompositeOperation = settings.glassVideoBlendMode;
+        ctx.drawImage(glassVideo, sx, sy, sw, sh);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1.0;
+
+        // Apply brightness (darken if < 1, lighten if > 1)
+        const brightness = settings.glassVideoBrightness;
+        if (brightness < 1) {
+          ctx.fillStyle = `rgba(0, 0, 0, ${1 - brightness})`;
+          ctx.fillRect(0, 0, w, h);
+        } else if (brightness > 1) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${(brightness - 1) * 0.5})`;
+          ctx.fillRect(0, 0, w, h);
+        }
+      }
+      // Darkening overlay for text readability
+      ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity * 0.5})`;
+      ctx.fillRect(0, 0, w, h);
+    } else {
+      // Fallback solid background
+      ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity})`;
+      ctx.fillRect(0, 0, w, h);
+    }
 
     // Get text rows
     const rows = [
@@ -781,6 +832,20 @@ const GUI = window.lil.GUI;
     glassFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange((v) => {
       updateGlassCanvas();
     });
+    glassFolder.add(settings, "glassVideoEnabled").name("Video Background").onChange((v) => {
+      if (glassVideo) {
+        if (v) {
+          glassVideo.play().catch(() => {});
+        } else {
+          glassVideo.pause();
+        }
+      }
+      updateGlassCanvas();
+    });
+    glassFolder.add(settings, "glassVideoOpacity", 0, 1, 0.05).name("Video Opacity");
+    glassFolder.add(settings, "glassVideoBrightness", 0, 2, 0.05).name("Video Brightness");
+    const videoBlendModes = ["source-over", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion"];
+    glassFolder.add(settings, "glassVideoBlendMode", videoBlendModes).name("Video Blend Mode");
 
     const textRowsFolder = glassFolder.addFolder("Text Rows");
     textRowsFolder.add(settings, "glassTextRow1").name("Row 1").onChange(() => updateGlassCanvas());
@@ -1624,8 +1689,8 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update glass canvas for marquee animation
-      if (settings.glassTextMarquee && glassCanvas) {
+      // Update glass canvas for video/marquee animation
+      if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady))) {
         updateGlassCanvas(timestamp);
       }
     }
@@ -1689,24 +1754,21 @@ const GUI = window.lil.GUI;
         if (f.captured) continue;
         if (checkCollision(chaser.mesh, f.mesh, STATE.actorRadius || 2.5)) {
           f.captured = true;
+          // Just hide everything instead of removing from scene (avoids stutter)
           f.mesh.visible = false;
-          scene.remove(f.mesh);
-          // Also hide the wire's billboard immediately
+          if (f.light) f.light.visible = false;
           const wire = fugitiveWires[f.index];
-          if (wire && wire.billboard) {
-            wire.billboard.visible = false;
+          if (wire) {
+            if (wire.billboard) wire.billboard.visible = false;
+            if (wire.line) wire.line.visible = false;
           }
-          if (wire && wire.line) {
-            wire.line.visible = false;
-          }
+          STATE.capturedCount = (STATE.capturedCount || 0) + 1;
         }
       }
     }
 
-    const remaining = fugitives.filter(f => !f.captured).length;
-    if (remaining === 0) {
+    if (STATE.capturedCount >= fugitives.length && !STATE.gameOver) {
       STATE.gameOver = true;
-      statusEl.textContent = "All fugitives captured! Chasers win!";
     }
   }
 

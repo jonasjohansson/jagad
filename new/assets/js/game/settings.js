@@ -60,6 +60,10 @@ export const defaultSettings = {
   fxaaEnabled: true,
   glassEnabled: true,
   glassOpacity: 0.8,
+  glassVideoEnabled: true,
+  glassVideoOpacity: 1.0,
+  glassVideoBrightness: 1.0,
+  glassVideoBlendMode: "source-over",
   // Glass text builder
   glassTextRow1: "JAGAD",
   glassTextRow2: "THE CHASE IS ON",

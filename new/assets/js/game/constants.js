@@ -12,6 +12,9 @@ export const PATHS = {
   audio: {
     "triumph-hill": "assets/audio/triumph-hill.mp3",
   },
+  video: {
+    windowAmbience: "assets/video/Jagad_Window_Ambience_v1.mp4",
+  },
 };
 
 // Face texture pairs for each fugitive [primary, alternate]
