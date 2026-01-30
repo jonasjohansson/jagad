@@ -903,6 +903,9 @@ const GUI = window.lil.GUI;
       };
 
       const folder = glbPartsFolder.addFolder(name);
+      const mat = data.mesh.material;
+
+      // Basic properties
       folder.addColor(partSettings, "color").name("Color").onChange((v) => {
         if (data.mesh.material) {
           data.mesh.material.color.set(v);
@@ -922,6 +925,96 @@ const GUI = window.lil.GUI;
       folder.add(partSettings, "visible").name("Visible").onChange((v) => {
         data.mesh.visible = v;
       });
+
+      // Material info subfolder
+      if (mat) {
+        const matFolder = folder.addFolder("Material");
+
+        // Show material type
+        const matInfo = { type: mat.type || "Unknown" };
+        matFolder.add(matInfo, "type").name("Type").disable();
+
+        // PBR properties (if MeshStandardMaterial or MeshPhysicalMaterial)
+        if (mat.roughness !== undefined) {
+          matFolder.add(mat, "roughness", 0, 1, 0.01).name("Roughness").onChange(() => mat.needsUpdate = true);
+        }
+        if (mat.metalness !== undefined) {
+          matFolder.add(mat, "metalness", 0, 1, 0.01).name("Metalness").onChange(() => mat.needsUpdate = true);
+        }
+        if (mat.emissive) {
+          const emissiveSettings = { emissive: "#" + mat.emissive.getHexString() };
+          matFolder.addColor(emissiveSettings, "emissive").name("Emissive").onChange((v) => {
+            mat.emissive.set(v);
+            mat.needsUpdate = true;
+          });
+        }
+        if (mat.emissiveIntensity !== undefined) {
+          matFolder.add(mat, "emissiveIntensity", 0, 5, 0.1).name("Emissive Intensity").onChange(() => mat.needsUpdate = true);
+        }
+
+        // Maps subfolder
+        const mapTypes = ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "bumpMap", "displacementMap", "alphaMap", "lightMap", "envMap"];
+        const presentMaps = mapTypes.filter(mapName => mat[mapName]);
+
+        if (presentMaps.length > 0) {
+          const mapsFolder = matFolder.addFolder("Maps");
+          presentMaps.forEach(mapName => {
+            const texture = mat[mapName];
+            const mapInfo = {
+              name: texture.name || "(unnamed)",
+              enabled: true
+            };
+
+            // Build info string
+            let info = mapName;
+            if (texture.image) {
+              info += ` [${texture.image.width}x${texture.image.height}]`;
+            }
+
+            mapsFolder.add(mapInfo, "enabled").name(info).onChange((v) => {
+              if (v) {
+                mat[mapName] = texture;
+              } else {
+                mat[mapName] = null;
+              }
+              mat.needsUpdate = true;
+            });
+          });
+          mapsFolder.close();
+        }
+
+        // Normal map scale
+        if (mat.normalMap && mat.normalScale) {
+          matFolder.add(mat.normalScale, "x", 0, 2, 0.1).name("Normal Scale X").onChange(() => mat.needsUpdate = true);
+          matFolder.add(mat.normalScale, "y", 0, 2, 0.1).name("Normal Scale Y").onChange(() => mat.needsUpdate = true);
+        }
+
+        // AO intensity
+        if (mat.aoMap && mat.aoMapIntensity !== undefined) {
+          matFolder.add(mat, "aoMapIntensity", 0, 2, 0.1).name("AO Intensity").onChange(() => mat.needsUpdate = true);
+        }
+
+        // Additional properties
+        if (mat.flatShading !== undefined) {
+          matFolder.add(mat, "flatShading").name("Flat Shading").onChange(() => mat.needsUpdate = true);
+        }
+        if (mat.wireframe !== undefined) {
+          matFolder.add(mat, "wireframe").name("Wireframe");
+        }
+        if (mat.side !== undefined) {
+          const sideOptions = { "Front": THREE.FrontSide, "Back": THREE.BackSide, "Double": THREE.DoubleSide };
+          const sideNames = Object.keys(sideOptions);
+          const currentSide = sideNames.find(k => sideOptions[k] === mat.side) || "Front";
+          const sideSettings = { side: currentSide };
+          matFolder.add(sideSettings, "side", sideNames).name("Side").onChange((v) => {
+            mat.side = sideOptions[v];
+            mat.needsUpdate = true;
+          });
+        }
+
+        matFolder.close();
+      }
+
       folder.close();
     });
 
