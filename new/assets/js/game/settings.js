@@ -24,7 +24,7 @@ export const defaultSettings = {
   perspFar: 5000,
   perspPosX: 0.04,
   perspPosY: 33,
-  perspPosZ: 7,
+  perspPosZ: 10,
   // Lighting
   toneMapping: "Neutral",
   exposure: 1.5,
@@ -44,7 +44,7 @@ export const defaultSettings = {
   wireFriction: 0.92,
   wireIterations: 3,
   wireCubeSize: 2,
-  billboardBrightness: 0.5,
+  billboardBrightness: 0.6,
   showNavmesh: false,
   buildingEnabled: true,
   buildingScaleX: 1.15,

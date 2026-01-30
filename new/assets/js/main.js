@@ -17,6 +17,18 @@ import { PATHS, FACE_TEXTURES, CHASER_CONTROLS, CARDINAL_DIRS } from "./game/con
 const GUI = window.lil.GUI;
 
 (() => {
+  // Suppress repeated Three.js texture unit warnings
+  const warnedMessages = new Set();
+  const originalWarn = console.warn;
+  console.warn = function(...args) {
+    const msg = args[0];
+    if (typeof msg === "string" && msg.includes("texture units")) {
+      if (warnedMessages.has(msg)) return;
+      warnedMessages.add(msg);
+    }
+    originalWarn.apply(console, args);
+  };
+
   // ============================================
   // CORE SETUP
   // ============================================
