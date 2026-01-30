@@ -3,22 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <title>Jagad</title>
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="stylesheet"
-      href="style.css" />
-    <link
-      rel="icon"
-      href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="icon" href="data:," />
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
 
-    <script src="lil-gui.umd.js"></script>
-    <script
-      type="module"
-      src="game.js"></script>
+    <script src="assets/js/lib/lil-gui.esm.js" type="module"></script>
+    <script>
+      // Load lil-gui as a global for compatibility
+      import("./assets/js/lib/lil-gui.esm.js").then(module => {
+        window.lil = module;
+        // Load main game after lil-gui is available
+        import("./assets/js/main.js");
+      });
+    </script>
   </body>
 </html>
