@@ -8,6 +8,8 @@ export const PATHS = {
   images: {
     building: "assets/images/building.png",
     faces: "assets/images/faces/",
+    leftScreen: "assets/images/left_screen.jpg",
+    rightScreen: "assets/images/right_screen.jpg",
   },
   audio: {
     "triumph-hill": "assets/audio/triumph-hill.mp3",

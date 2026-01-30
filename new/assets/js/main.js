@@ -159,6 +159,64 @@ const GUI = window.lil.GUI;
   let glassVideo = null;
   let glassVideoReady = false;
 
+  // Video planes
+  let videoPlane1 = null;
+  let videoPlane2 = null;
+
+  function initVideoPlanes() {
+    const textureLoader = new THREE.TextureLoader();
+
+    // Create plane 1 (left screen)
+    const geo1 = new THREE.PlaneGeometry(1, 1);
+    const mat1 = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: true
+    });
+    videoPlane1 = new THREE.Mesh(geo1, mat1);
+    videoPlane1.rotation.x = -Math.PI / 2; // Lay flat
+    videoPlane1.visible = settings.videoPlane1Enabled;
+    updateVideoPlane1();
+    scene.add(videoPlane1);
+
+    // Load left screen texture
+    textureLoader.load(PATHS.images.leftScreen, (texture) => {
+      videoPlane1.material.map = texture;
+      videoPlane1.material.needsUpdate = true;
+    });
+
+    // Create plane 2 (right screen)
+    const geo2 = new THREE.PlaneGeometry(1, 1);
+    const mat2 = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: true
+    });
+    videoPlane2 = new THREE.Mesh(geo2, mat2);
+    videoPlane2.rotation.x = -Math.PI / 2; // Lay flat
+    videoPlane2.visible = settings.videoPlane2Enabled;
+    updateVideoPlane2();
+    scene.add(videoPlane2);
+
+    // Load right screen texture
+    textureLoader.load(PATHS.images.rightScreen, (texture) => {
+      videoPlane2.material.map = texture;
+      videoPlane2.material.needsUpdate = true;
+    });
+  }
+
+  function updateVideoPlane1() {
+    if (!videoPlane1) return;
+    videoPlane1.position.set(settings.videoPlane1PosX, settings.videoPlane1PosY, settings.videoPlane1PosZ);
+    videoPlane1.scale.set(settings.videoPlane1ScaleX, settings.videoPlane1ScaleY, settings.videoPlane1ScaleZ);
+  }
+
+  function updateVideoPlane2() {
+    if (!videoPlane2) return;
+    videoPlane2.position.set(settings.videoPlane2PosX, settings.videoPlane2PosY, settings.videoPlane2PosZ);
+    videoPlane2.scale.set(settings.videoPlane2ScaleX, settings.videoPlane2ScaleY, settings.videoPlane2ScaleZ);
+  }
+
   // Preload fonts for canvas usage
   async function preloadFonts() {
     const fonts = [
@@ -895,6 +953,33 @@ const GUI = window.lil.GUI;
       setAudioTrack(v);
     });
     audioFolder.close();
+
+    // ==================== VIDEO PLANES ====================
+    const videoPlanesFolder = guiLeft.addFolder("Video Planes");
+
+    const plane1Folder = videoPlanesFolder.addFolder("Left Screen");
+    plane1Folder.add(settings, "videoPlane1Enabled").name("Enabled").onChange((v) => {
+      if (videoPlane1) videoPlane1.visible = v;
+    });
+    plane1Folder.add(settings, "videoPlane1PosX", -50, 50, 0.1).name("Pos X").onChange(updateVideoPlane1);
+    plane1Folder.add(settings, "videoPlane1PosY", -50, 50, 0.1).name("Pos Y").onChange(updateVideoPlane1);
+    plane1Folder.add(settings, "videoPlane1PosZ", -50, 50, 0.1).name("Pos Z").onChange(updateVideoPlane1);
+    plane1Folder.add(settings, "videoPlane1ScaleX", 0.1, 50, 0.1).name("Scale X").onChange(updateVideoPlane1);
+    plane1Folder.add(settings, "videoPlane1ScaleY", 0.1, 50, 0.1).name("Scale Y").onChange(updateVideoPlane1);
+    plane1Folder.close();
+
+    const plane2Folder = videoPlanesFolder.addFolder("Right Screen");
+    plane2Folder.add(settings, "videoPlane2Enabled").name("Enabled").onChange((v) => {
+      if (videoPlane2) videoPlane2.visible = v;
+    });
+    plane2Folder.add(settings, "videoPlane2PosX", -50, 50, 0.1).name("Pos X").onChange(updateVideoPlane2);
+    plane2Folder.add(settings, "videoPlane2PosY", -50, 50, 0.1).name("Pos Y").onChange(updateVideoPlane2);
+    plane2Folder.add(settings, "videoPlane2PosZ", -50, 50, 0.1).name("Pos Z").onChange(updateVideoPlane2);
+    plane2Folder.add(settings, "videoPlane2ScaleX", 0.1, 50, 0.1).name("Scale X").onChange(updateVideoPlane2);
+    plane2Folder.add(settings, "videoPlane2ScaleY", 0.1, 50, 0.1).name("Scale Y").onChange(updateVideoPlane2);
+    plane2Folder.close();
+
+    videoPlanesFolder.close();
 
     // Store reference for GLB parts to add to later
     STATE.mainGUI = guiLeft;
@@ -2249,6 +2334,7 @@ const GUI = window.lil.GUI;
     setupGUI();
     initPostProcessing();
     initAudio();
+    initVideoPlanes();
     setupGLBPartsGUI();
 
     // Apply initial settings after GUI is set up
