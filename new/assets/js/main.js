@@ -1150,7 +1150,7 @@ const GUI = window.lil.GUI;
       });
       this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
       this.billboard.rotation.x = -Math.PI / 2;
-      this.billboard.castShadow = true;
+      this.billboard.castShadow = false;
       this.billboard.renderOrder = 10; // Render after glass
       scene.add(this.billboard);
 
