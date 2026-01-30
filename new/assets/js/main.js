@@ -700,6 +700,13 @@ const GUI = window.lil.GUI;
     wireFolder.add(settings, "wireGravity", 0, 0.5, 0.01).name("Gravity");
     wireFolder.add(settings, "wireFriction", 0.8, 0.99, 0.01).name("Friction");
     wireFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
+    wireFolder.add(settings, "billboardBrightness", 0, 1, 0.05).name("Billboard Brightness").onChange((v) => {
+      for (const wire of fugitiveWires) {
+        if (wire.billboard && wire.billboard.material) {
+          wire.billboard.material.color.setRGB(v, v, v);
+        }
+      }
+    });
     wireFolder.close();
 
     // ==================== BUILDING PLANE ====================
@@ -732,76 +739,6 @@ const GUI = window.lil.GUI;
     backdropFolder.add(settings, "buildingOpacity", 0, 1, 0.05).name("Opacity").onChange(updateBuildingPlane);
     STATE.updateBuildingPlane = updateBuildingPlane;
     backdropFolder.close();
-
-    // ==================== LEVEL APPEARANCE ====================
-    const levelAppearanceFolder = guiLeft.addFolder("Level Appearance");
-
-    function updateLevelOpacity(opacity) {
-      if (!STATE.levelContainer) return;
-      STATE.levelContainer.traverse((obj) => {
-        if (obj.isMesh && obj.material) {
-          obj.material.transparent = opacity < 1;
-          obj.material.opacity = opacity;
-          obj.material.needsUpdate = true;
-        }
-      });
-    }
-
-    function updateLevelBlendMode(mode) {
-      if (!STATE.levelContainer) return;
-      STATE.levelContainer.traverse((obj) => {
-        if (obj.isMesh && obj.material) {
-          switch (mode) {
-            case "Normal":
-              obj.material.blending = THREE.NormalBlending;
-              break;
-            case "Additive":
-              obj.material.blending = THREE.AdditiveBlending;
-              break;
-            case "Subtractive":
-              obj.material.blending = THREE.SubtractiveBlending;
-              break;
-            case "Multiply":
-              obj.material.blending = THREE.MultiplyBlending;
-              break;
-            case "Screen":
-              obj.material.blending = THREE.CustomBlending;
-              obj.material.blendEquation = THREE.AddEquation;
-              obj.material.blendSrc = THREE.OneFactor;
-              obj.material.blendDst = THREE.OneMinusSrcColorFactor;
-              break;
-            case "Overlay":
-              obj.material.blending = THREE.CustomBlending;
-              obj.material.blendEquation = THREE.AddEquation;
-              obj.material.blendSrc = THREE.DstColorFactor;
-              obj.material.blendDst = THREE.SrcColorFactor;
-              break;
-            case "Lighten":
-              obj.material.blending = THREE.CustomBlending;
-              obj.material.blendEquation = THREE.MaxEquation;
-              obj.material.blendSrc = THREE.OneFactor;
-              obj.material.blendDst = THREE.OneFactor;
-              break;
-            case "Darken":
-              obj.material.blending = THREE.CustomBlending;
-              obj.material.blendEquation = THREE.MinEquation;
-              obj.material.blendSrc = THREE.OneFactor;
-              obj.material.blendDst = THREE.OneFactor;
-              break;
-          }
-          obj.material.needsUpdate = true;
-        }
-      });
-    }
-
-    STATE.updateLevelOpacity = updateLevelOpacity;
-    STATE.updateLevelBlendMode = updateLevelBlendMode;
-
-    const blendModes = ["Normal", "Additive", "Subtractive", "Multiply", "Screen", "Overlay", "Lighten", "Darken"];
-    levelAppearanceFolder.add(settings, "levelOpacity", 0, 1, 0.01).name("Opacity").onChange(updateLevelOpacity);
-    levelAppearanceFolder.add(settings, "levelBlendMode", blendModes).name("Blend Mode").onChange(updateLevelBlendMode);
-
-    levelAppearanceFolder.close();
 
     // ==================== POST-PROCESSING ====================
     const postFolder = guiLeft.addFolder("Post-Processing");
@@ -963,93 +900,17 @@ const GUI = window.lil.GUI;
         data.mesh.visible = v;
       });
 
-      // Material info subfolder
+      // Material properties (simplified)
       if (mat) {
-        const matFolder = folder.addFolder("Material");
-
-        // Show material type
-        const matInfo = { type: mat.type || "Unknown" };
-        matFolder.add(matInfo, "type").name("Type").disable();
-
-        // PBR properties (if MeshStandardMaterial or MeshPhysicalMaterial)
         if (mat.roughness !== undefined) {
-          matFolder.add(mat, "roughness", 0, 1, 0.01).name("Roughness").onChange(() => mat.needsUpdate = true);
+          folder.add(mat, "roughness", 0, 1, 0.01).name("Roughness");
         }
         if (mat.metalness !== undefined) {
-          matFolder.add(mat, "metalness", 0, 1, 0.01).name("Metalness").onChange(() => mat.needsUpdate = true);
-        }
-        if (mat.emissive) {
-          const emissiveSettings = { emissive: "#" + mat.emissive.getHexString() };
-          matFolder.addColor(emissiveSettings, "emissive").name("Emissive").onChange((v) => {
-            mat.emissive.set(v);
-            mat.needsUpdate = true;
-          });
-        }
-        if (mat.emissiveIntensity !== undefined) {
-          matFolder.add(mat, "emissiveIntensity", 0, 5, 0.1).name("Emissive Intensity").onChange(() => mat.needsUpdate = true);
-        }
-
-        // Maps subfolder
-        const mapTypes = ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "bumpMap", "displacementMap", "alphaMap", "lightMap", "envMap"];
-        const presentMaps = mapTypes.filter(mapName => mat[mapName]);
-
-        if (presentMaps.length > 0) {
-          const mapsFolder = matFolder.addFolder("Maps");
-          presentMaps.forEach(mapName => {
-            const texture = mat[mapName];
-            const mapInfo = {
-              name: texture.name || "(unnamed)",
-              enabled: true
-            };
-
-            // Build info string
-            let info = mapName;
-            if (texture.image) {
-              info += ` [${texture.image.width}x${texture.image.height}]`;
-            }
-
-            mapsFolder.add(mapInfo, "enabled").name(info).onChange((v) => {
-              if (v) {
-                mat[mapName] = texture;
-              } else {
-                mat[mapName] = null;
-              }
-              mat.needsUpdate = true;
-            });
-          });
-          mapsFolder.close();
-        }
-
-        // Normal map scale
-        if (mat.normalMap && mat.normalScale) {
-          matFolder.add(mat.normalScale, "x", 0, 2, 0.1).name("Normal Scale X").onChange(() => mat.needsUpdate = true);
-          matFolder.add(mat.normalScale, "y", 0, 2, 0.1).name("Normal Scale Y").onChange(() => mat.needsUpdate = true);
-        }
-
-        // AO intensity
-        if (mat.aoMap && mat.aoMapIntensity !== undefined) {
-          matFolder.add(mat, "aoMapIntensity", 0, 2, 0.1).name("AO Intensity").onChange(() => mat.needsUpdate = true);
-        }
-
-        // Additional properties
-        if (mat.flatShading !== undefined) {
-          matFolder.add(mat, "flatShading").name("Flat Shading").onChange(() => mat.needsUpdate = true);
+          folder.add(mat, "metalness", 0, 1, 0.01).name("Metalness");
         }
         if (mat.wireframe !== undefined) {
-          matFolder.add(mat, "wireframe").name("Wireframe");
+          folder.add(mat, "wireframe").name("Wireframe");
         }
-        if (mat.side !== undefined) {
-          const sideOptions = { "Front": THREE.FrontSide, "Back": THREE.BackSide, "Double": THREE.DoubleSide };
-          const sideNames = Object.keys(sideOptions);
-          const currentSide = sideNames.find(k => sideOptions[k] === mat.side) || "Front";
-          const sideSettings = { side: currentSide };
-          matFolder.add(sideSettings, "side", sideNames).name("Side").onChange((v) => {
-            mat.side = sideOptions[v];
-            mat.needsUpdate = true;
-          });
-        }
-
-        matFolder.close();
       }
 
       folder.close();
@@ -1280,8 +1141,9 @@ const GUI = window.lil.GUI;
 
       const billboardSize = settings.wireCubeSize * this.actorSize * 2;
       const billboardGeo = new THREE.PlaneGeometry(billboardSize, billboardSize);
+      const brightness = settings.billboardBrightness;
       const billboardMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
+        color: new THREE.Color(brightness, brightness, brightness),
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false

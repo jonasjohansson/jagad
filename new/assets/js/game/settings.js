@@ -44,6 +44,7 @@ export const defaultSettings = {
   wireFriction: 0.92,
   wireIterations: 3,
   wireCubeSize: 2,
+  billboardBrightness: 0.5,
   showNavmesh: false,
   buildingEnabled: true,
   buildingScaleX: 1.15,
