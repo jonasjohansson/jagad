@@ -447,13 +447,10 @@ const GUI = window.lil.GUI;
     settings.perspPosX = levelCenter.x;
     settings.perspPosY = levelCenter.y + distance * 2.5;
     settings.perspPosZ = levelCenter.z;
-    settings.perspLookX = levelCenter.x;
-    settings.perspLookY = levelCenter.y;
-    settings.perspLookZ = levelCenter.z;
 
     perspCamera = new THREE.PerspectiveCamera(settings.perspFov, aspect, settings.perspNear, settings.perspFar);
     perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
-    perspCamera.lookAt(settings.perspLookX, settings.perspLookY, settings.perspLookZ);
+    perspCamera.lookAt(levelCenter);
 
     const frustumSize = horizontalSize * 1.5;
     orthoCamera = new THREE.OrthographicCamera(
@@ -588,16 +585,13 @@ const GUI = window.lil.GUI;
     function updatePerspCameraPos() {
       if (perspCamera) {
         perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
-        perspCamera.lookAt(settings.perspLookX, settings.perspLookY, settings.perspLookZ);
+        perspCamera.lookAt(STATE.levelCenter);
       }
     }
 
-    perspFolder.add(settings, "perspPosX", -500, 500, 0.001).name("Pos X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosY", 0, 500, 0.001).name("Pos Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosZ", -500, 500, 0.001).name("Pos Z").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookX", -500, 500, 0.001).name("Look X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookY", -500, 500, 0.001).name("Look Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookZ", -500, 500, 0.001).name("Look Z").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosX", -500, 500, 0.01).name("Pos X").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosY", 0, 500, 0.01).name("Pos Y").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosZ", -500, 500, 0.01).name("Pos Z").onChange(updatePerspCameraPos);
     perspFolder.close();
     cameraFolder.close();
 

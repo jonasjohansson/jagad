@@ -17,7 +17,7 @@ export const defaultSettings = {
   chaser3Color: "#216BFF",
   chaser4Color: "#FDFF4A",
   chaserLightIntensity: 50,
-  cameraType: "orthographic",
+  cameraType: "perspective",
   orthoZoom: 1,
   perspFov: 20,
   perspNear: 0.1,
@@ -25,9 +25,6 @@ export const defaultSettings = {
   perspPosX: 0,
   perspPosY: 100,
   perspPosZ: 100,
-  perspLookX: 0,
-  perspLookY: 0,
-  perspLookZ: 0,
   // Lighting
   toneMapping: "Neutral",
   exposure: 1.5,
