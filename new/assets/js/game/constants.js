@@ -9,6 +9,9 @@ export const PATHS = {
     building: "assets/images/building.png",
     faces: "assets/images/faces/",
   },
+  audio: {
+    "triumph-hill": "assets/audio/triumph-hill.mp3",
+  },
 };
 
 // Face texture pairs for each fugitive [primary, alternate]

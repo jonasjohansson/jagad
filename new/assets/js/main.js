@@ -98,6 +98,43 @@ const GUI = window.lil.GUI;
   };
 
   // ============================================
+  // AUDIO
+  // ============================================
+
+  let audioElement = null;
+
+  function initAudio() {
+    const trackPath = PATHS.audio[settings.audioTrack];
+    if (trackPath) {
+      audioElement = new Audio(trackPath);
+      audioElement.loop = true;
+      audioElement.volume = settings.audioVolume;
+    }
+  }
+
+  function playAudio() {
+    if (!audioElement) return;
+    audioElement.play().catch(() => {});
+  }
+
+  function stopAudio() {
+    if (audioElement) {
+      audioElement.pause();
+    }
+  }
+
+  function setAudioTrack(trackName) {
+    const trackPath = PATHS.audio[trackName];
+    if (trackPath && audioElement) {
+      const wasPlaying = !audioElement.paused;
+      audioElement.src = trackPath;
+      if (wasPlaying) {
+        audioElement.play().catch(() => {});
+      }
+    }
+  }
+
+  // ============================================
   // GLASS OVERLAY (Canvas texture on GLASS mesh)
   // ============================================
 
@@ -227,13 +264,26 @@ const GUI = window.lil.GUI;
       return totalWidth - letterSpacing; // Remove last spacing
     }
 
-    // Handle marquee animation - seamless looping
+    // Handle marquee animation - text scrolls fully off before reappearing
     if (settings.glassTextMarquee) {
       // Update marquee offset based on time
       const dt = timestamp - lastMarqueeTime;
       lastMarqueeTime = timestamp;
       if (dt > 0 && dt < 100) {
         marqueeOffset += (settings.glassTextMarqueeSpeed * dt) / 1000;
+      }
+
+      // Find the longest text width for resetting the loop
+      let maxTextWidth = 0;
+      for (const text of rows) {
+        maxTextWidth = Math.max(maxTextWidth, measureTextWithSpacing(text));
+      }
+      // Total distance: start off-right (w) + scroll across + exit off-left (maxTextWidth)
+      const totalScrollDistance = w + maxTextWidth + (rows.length - 1) * settings.glassTextRowDelay;
+
+      // Reset marquee when all text has scrolled off
+      if (marqueeOffset > totalScrollDistance) {
+        marqueeOffset = 0;
       }
 
       for (let i = 0; i < rows.length; i++) {
@@ -243,19 +293,12 @@ const GUI = window.lil.GUI;
         // Apply row delay offset (each row starts further back)
         const rowOffset = marqueeOffset - (i * settings.glassTextRowDelay);
 
-        // Gap between repeated text
-        const gap = 100;
-        const repeatWidth = textWidth + gap;
+        // Text starts at right edge (w) and scrolls left
+        const x = w - rowOffset;
 
-        // Calculate base position with wrapping
-        let baseX = w - (rowOffset % repeatWidth);
-
-        // Draw text multiple times for seamless loop
-        for (let copy = -1; copy <= Math.ceil(w / repeatWidth) + 1; copy++) {
-          const x = baseX + copy * repeatWidth;
-          if (x > -textWidth && x < w + textWidth) {
-            drawTextWithSpacing(text, x, y, "left");
-          }
+        // Only draw if text is visible on canvas
+        if (x > -textWidth && x < w) {
+          drawTextWithSpacing(text, x, y, "left");
         }
       }
     } else {
@@ -388,9 +431,6 @@ const GUI = window.lil.GUI;
   directionalLight.shadow.camera.bottom = -15;
   scene.add(directionalLight);
 
-  const hemisphereLight = new THREE.HemisphereLight(settings.hemiSkyColor, settings.hemiGroundColor, settings.hemiIntensity);
-  scene.add(hemisphereLight);
-
   // Apply initial tone mapping settings
   const toneMappingOptions = {
     "None": THREE.NoToneMapping,
@@ -442,17 +482,13 @@ const GUI = window.lil.GUI;
 
   function setupCameras(levelCenter, horizontalSize) {
     const aspect = window.innerWidth / window.innerHeight;
-    const distance = horizontalSize * 1.2;
-
-    settings.perspPosX = levelCenter.x;
-    settings.perspPosY = levelCenter.y + distance * 2.5;
-    settings.perspPosZ = levelCenter.z;
 
     perspCamera = new THREE.PerspectiveCamera(settings.perspFov, aspect, settings.perspNear, settings.perspFar);
     perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
     perspCamera.lookAt(levelCenter);
 
     const frustumSize = horizontalSize * 1.5;
+    const orthoDistance = horizontalSize * 1.2;
     orthoCamera = new THREE.OrthographicCamera(
       frustumSize * aspect / -2,
       frustumSize * aspect / 2,
@@ -461,7 +497,7 @@ const GUI = window.lil.GUI;
       0.1,
       5000
     );
-    orthoCamera.position.set(levelCenter.x, levelCenter.y + distance, levelCenter.z);
+    orthoCamera.position.set(levelCenter.x, levelCenter.y + orthoDistance, levelCenter.z);
     orthoCamera.lookAt(levelCenter);
     orthoCamera.zoom = settings.orthoZoom;
     orthoCamera.updateProjectionMatrix();
@@ -641,18 +677,6 @@ const GUI = window.lil.GUI;
     directFolder.add(settings, "directPosY", 0, 30, 0.5).name("Pos Y").onChange(updateDirectLightPos);
     directFolder.add(settings, "directPosZ", -20, 20, 0.5).name("Pos Z").onChange(updateDirectLightPos);
     directFolder.close();
-
-    const hemiFolder = lightsFolder.addFolder("Hemisphere Light");
-    hemiFolder.add(settings, "hemiIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
-      hemisphereLight.intensity = v;
-    });
-    hemiFolder.addColor(settings, "hemiSkyColor").name("Sky Color").onChange((v) => {
-      hemisphereLight.color.set(v);
-    });
-    hemiFolder.addColor(settings, "hemiGroundColor").name("Ground Color").onChange((v) => {
-      hemisphereLight.groundColor.set(v);
-    });
-    hemiFolder.close();
 
     const fugitiveLightFolder = lightsFolder.addFolder("Fugitive Lights");
     fugitiveLightFolder.addColor(settings, "fugitiveColor").name("Color").onChange(updateFugitiveLights);
@@ -838,6 +862,29 @@ const GUI = window.lil.GUI;
     marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
     marqueeFolder.close();
     glassFolder.close();
+
+    // ==================== AUDIO ====================
+    const audioFolder = guiLeft.addFolder("Audio");
+    const audioControls = {
+      play: function() {
+        if (audioElement) {
+          audioElement.volume = settings.audioVolume;
+          audioElement.play().catch(() => {});
+        }
+      },
+      stop: function() {
+        stopAudio();
+      }
+    };
+    audioFolder.add(audioControls, "play").name("▶ Play");
+    audioFolder.add(audioControls, "stop").name("■ Stop");
+    audioFolder.add(settings, "audioVolume", 0, 1, 0.05).name("Volume").onChange((v) => {
+      if (audioElement) audioElement.volume = v;
+    });
+    audioFolder.add(settings, "audioTrack", Object.keys(PATHS.audio)).name("Track").onChange((v) => {
+      setAudioTrack(v);
+    });
+    audioFolder.close();
 
     // Store reference for GLB parts to add to later
     STATE.mainGUI = guiLeft;
@@ -2276,6 +2323,7 @@ const GUI = window.lil.GUI;
 
     setupGUI();
     initPostProcessing();
+    initAudio();
     setupGLBPartsGUI();
 
     // Apply initial settings after GUI is set up
