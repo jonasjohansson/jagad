@@ -24,7 +24,7 @@ export const defaultSettings = {
   perspFar: 5000,
   perspPosX: 0.04,
   perspPosY: 33,
-  perspPosZ: 5,
+  perspPosZ: 7,
   // Lighting
   toneMapping: "Neutral",
   exposure: 1.5,
