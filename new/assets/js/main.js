@@ -171,6 +171,7 @@ const GUI = window.lil.GUI;
     ].filter(row => row && row.trim() !== "");
 
     if (rows.length === 0) {
+      ctx.restore();
       if (glassTexture) glassTexture.needsUpdate = true;
       return;
     }
@@ -187,7 +188,7 @@ const GUI = window.lil.GUI;
     const totalHeight = rows.length * lineHeight;
     const startY = (h - totalHeight) / 2 + lineHeight / 2;
 
-    // Handle marquee animation
+    // Handle marquee animation - organic letter-by-letter wrapping
     if (settings.glassTextMarquee) {
       // Update marquee offset based on time
       const dt = timestamp - lastMarqueeTime;
@@ -196,30 +197,43 @@ const GUI = window.lil.GUI;
         marqueeOffset += (settings.glassTextMarqueeSpeed * dt) / 1000;
       }
 
-      // Measure max text width
-      let maxTextWidth = 0;
-      for (const row of rows) {
-        const textWidth = ctx.measureText(row).width;
-        if (textWidth > maxTextWidth) maxTextWidth = textWidth;
-      }
-
-      // Reset offset when text has scrolled completely
-      if (marqueeOffset > w + maxTextWidth) {
-        marqueeOffset = -maxTextWidth;
-      }
-
       ctx.textAlign = "left";
+
       for (let i = 0; i < rows.length; i++) {
         const y = startY + i * lineHeight;
-        const textWidth = ctx.measureText(rows[i]).width;
+        const text = rows[i];
         // Apply row delay offset (each row starts further back)
         const rowOffset = marqueeOffset - (i * settings.glassTextRowDelay);
-        // Draw text starting from right, moving left
-        const x = w - rowOffset;
-        ctx.fillText(rows[i], x, y);
-        // Draw second copy for seamless loop
-        if (x + textWidth < w) {
-          ctx.fillText(rows[i], x - w - textWidth - 100, y);
+
+        // Measure each character and draw individually with wrapping
+        let xAccum = 0;
+        const charWidths = [];
+        for (let c = 0; c < text.length; c++) {
+          charWidths.push(ctx.measureText(text[c]).width);
+        }
+        const totalTextWidth = charWidths.reduce((a, b) => a + b, 0);
+
+        // Draw each character with organic wrapping
+        for (let c = 0; c < text.length; c++) {
+          // Calculate this character's base position (scrolling right to left)
+          let charX = w - rowOffset + xAccum;
+
+          // Wrap character position organically within canvas bounds
+          // When a letter goes too far right, wrap it to the left
+          // When it goes too far left, wrap it to the right
+          while (charX > w + charWidths[c]) {
+            charX -= (w + totalTextWidth);
+          }
+          while (charX < -totalTextWidth) {
+            charX += (w + totalTextWidth);
+          }
+
+          // Only draw if character is visible on canvas
+          if (charX > -charWidths[c] && charX < w + charWidths[c]) {
+            ctx.fillText(text[c], charX, y);
+          }
+
+          xAccum += charWidths[c];
         }
       }
     } else {
@@ -431,11 +445,35 @@ const GUI = window.lil.GUI;
   // ============================================
 
   function setupGUI() {
-    guiLeft = new GUI({ title: "Camera & Transforms" });
+    // Single unified GUI
+    guiLeft = new GUI({ title: "Controls" });
     guiLeft.domElement.style.position = "absolute";
     guiLeft.domElement.style.left = "10px";
     guiLeft.domElement.style.top = "0px";
 
+    const gameCanvas = document.getElementById("game-canvas");
+
+    // ==================== GAME ====================
+    const gameFolder = guiLeft.addFolder("Game");
+    gameFolder.add(settings, "startGame").name("Start Game");
+    gameFolder.add(settings, "fugitiveSpeed", 0.1, 15, 0.1).name("Fugitive Speed").onChange((v) => {
+      for (const f of fugitives) f.speed = v;
+    });
+    gameFolder.add(settings, "chaserSpeed", 0.1, 15, 0.1).name("Chaser Speed").onChange((v) => {
+      for (const c of chasers) c.speed = v;
+    });
+    gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
+    gameFolder.add(settings, "showNavmesh").name("Show Navmesh").onChange((v) => {
+      const navmeshDebug = scene.getObjectByName("NavmeshDebug");
+      if (navmeshDebug) navmeshDebug.visible = v;
+    });
+    gameFolder.add(settings, "actorScale", 0.5, 2, 0.05).name("Actor Scale (reload)");
+    gameFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
+    gameFolder.add(settings, "faceSwapFade").name("Face Swap Fade");
+    gameFolder.add(settings, "faceSwapFadeDuration", 0.1, 3, 0.1).name("Fade Duration (sec)");
+    gameFolder.close();
+
+    // ==================== CAMERA ====================
     const cameraFolder = guiLeft.addFolder("Camera");
     cameraFolder.add(settings, "cameraType", ["orthographic", "perspective"])
       .name("Type")
@@ -448,6 +486,7 @@ const GUI = window.lil.GUI;
         orthoCamera.updateProjectionMatrix();
       }
     });
+    orthoFolder.close();
 
     const perspFolder = cameraFolder.addFolder("Perspective");
     perspFolder.add(settings, "perspFov", 20, 120, 1).name("FOV").onChange((v) => {
@@ -470,62 +509,45 @@ const GUI = window.lil.GUI;
     perspFolder.add(settings, "perspLookX", -500, 500, 0.01).name("Look X").onChange(updatePerspCameraPos);
     perspFolder.add(settings, "perspLookY", -500, 500, 0.01).name("Look Y").onChange(updatePerspCameraPos);
     perspFolder.add(settings, "perspLookZ", -500, 500, 0.01).name("Look Z").onChange(updatePerspCameraPos);
+    perspFolder.close();
+    cameraFolder.close();
 
-    const gameFolder = guiLeft.addFolder("Game");
-    gameFolder.add(settings, "startGame").name("Start Game");
-    gameFolder.add(settings, "fugitiveSpeed", 0.1, 15, 0.1).name("Fugitive Speed").onChange((v) => {
-      for (const f of fugitives) f.speed = v;
-    });
-    gameFolder.add(settings, "chaserSpeed", 0.1, 15, 0.1).name("Chaser Speed").onChange((v) => {
-      for (const c of chasers) c.speed = v;
-    });
-    gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
-    gameFolder.add(settings, "showNavmesh").name("Show Navmesh").onChange((v) => {
-      const navmeshDebug = scene.getObjectByName("NavmeshDebug");
-      if (navmeshDebug) navmeshDebug.visible = v;
-    });
-    gameFolder.add(settings, "actorScale", 0.5, 2, 0.05).name("Actor Scale (reload)");
-    gameFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
-    gameFolder.add(settings, "faceSwapFade").name("Face Swap Fade");
-    gameFolder.add(settings, "faceSwapFadeDuration", 0.1, 3, 0.1).name("Fade Duration (sec)");
+    // ==================== LIGHTS ====================
+    const lightsFolder = guiLeft.addFolder("Lights");
 
-    const settingsFolder = guiLeft.addFolder("Settings Storage");
-    settingsFolder.add(settings, "saveSettings").name("Save Settings");
-    settingsFolder.add(settings, "clearSettings").name("Clear Settings");
-
-    const guiRight = new GUI({ title: "FX & Lights" });
-    guiRight.domElement.style.position = "absolute";
-    guiRight.domElement.style.right = "10px";
-    guiRight.domElement.style.top = "10px";
-
-    const fugitiveLightFolder = guiRight.addFolder("Fugitive Lights");
+    const fugitiveLightFolder = lightsFolder.addFolder("Fugitive Lights");
     fugitiveLightFolder.addColor(settings, "fugitive1Color").name("Fugitive 1").onChange(updateFugitiveLights);
     fugitiveLightFolder.addColor(settings, "fugitive2Color").name("Fugitive 2").onChange(updateFugitiveLights);
     fugitiveLightFolder.addColor(settings, "fugitive3Color").name("Fugitive 3").onChange(updateFugitiveLights);
     fugitiveLightFolder.addColor(settings, "fugitive4Color").name("Fugitive 4").onChange(updateFugitiveLights);
     fugitiveLightFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Intensity").onChange(updateFugitiveLights);
+    fugitiveLightFolder.close();
 
-    const chaserLightFolder = guiRight.addFolder("Chaser Lights");
+    const chaserLightFolder = lightsFolder.addFolder("Chaser Lights");
     chaserLightFolder.addColor(settings, "chaserColor").name("Color").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightIntensity", 0, 100, 1).name("Intensity").onChange(updateChaserLights);
+    chaserLightFolder.close();
 
-    const ambientFolder = guiRight.addFolder("Ambient Light");
+    const ambientFolder = lightsFolder.addFolder("Ambient Light");
     ambientFolder.addColor(settings, "ambientColor").name("Color").onChange((v) => {
       ambientLight.color.set(v);
     });
     ambientFolder.add(settings, "ambientIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
       ambientLight.intensity = v;
     });
+    ambientFolder.close();
+    lightsFolder.close();
 
-    const wireFolder = guiRight.addFolder("Fugitive Wires");
+    // ==================== FUGITIVE WIRES ====================
+    const wireFolder = guiLeft.addFolder("Fugitive Wires");
     wireFolder.add(settings, "wireEnabled").name("Enabled");
     wireFolder.add(settings, "wireHeight", 2, 20, 0.5).name("Height");
     wireFolder.add(settings, "wireGravity", 0, 0.5, 0.01).name("Gravity");
     wireFolder.add(settings, "wireFriction", 0.8, 0.99, 0.01).name("Friction");
     wireFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
+    wireFolder.close();
 
-    const gameCanvas = document.getElementById("game-canvas");
-
+    // ==================== BUILDING PLANE ====================
     function updateBuildingPlane() {
       if (!buildingPlane || !STATE.levelCenter || !STATE.horizontalSize) return;
 
@@ -545,7 +567,7 @@ const GUI = window.lil.GUI;
       buildingPlane.visible = settings.buildingEnabled;
     }
 
-    const backdropFolder = guiRight.addFolder("Building Plane");
+    const backdropFolder = guiLeft.addFolder("Building Plane");
     backdropFolder.add(settings, "buildingEnabled").name("Enabled").onChange(updateBuildingPlane);
     backdropFolder.add(settings, "buildingScaleX", 0.1, 3, 0.01).name("Scale X").onChange(updateBuildingPlane);
     backdropFolder.add(settings, "buildingScaleY", 0.1, 3, 0.01).name("Scale Y").onChange(updateBuildingPlane);
@@ -553,10 +575,11 @@ const GUI = window.lil.GUI;
     backdropFolder.add(settings, "buildingOffsetY", -50, 10, 0.01).name("Offset Y (Depth)").onChange(updateBuildingPlane);
     backdropFolder.add(settings, "buildingOffsetZ", -50, 50, 0.01).name("Offset Z").onChange(updateBuildingPlane);
     backdropFolder.add(settings, "buildingOpacity", 0, 1, 0.05).name("Opacity").onChange(updateBuildingPlane);
-
     STATE.updateBuildingPlane = updateBuildingPlane;
+    backdropFolder.close();
 
-    const levelAppearanceFolder = guiRight.addFolder("Level Appearance");
+    // ==================== LEVEL APPEARANCE ====================
+    const levelAppearanceFolder = guiLeft.addFolder("Level Appearance");
 
     function updateLevelOpacity(opacity) {
       if (!STATE.levelContainer) return;
@@ -622,8 +645,10 @@ const GUI = window.lil.GUI;
     const blendModes = ["Normal", "Additive", "Subtractive", "Multiply", "Screen", "Overlay", "Lighten", "Darken"];
     levelAppearanceFolder.add(settings, "levelOpacity", 0, 1, 0.01).name("Opacity").onChange(updateLevelOpacity);
     levelAppearanceFolder.add(settings, "levelBlendMode", blendModes).name("Blend Mode").onChange(updateLevelBlendMode);
+    levelAppearanceFolder.close();
 
-    const canvasFolder = guiRight.addFolder("Canvas Blending");
+    // ==================== CANVAS BLENDING ====================
+    const canvasFolder = guiLeft.addFolder("Canvas Blending");
     const cssBlendModes = [
       "normal", "multiply", "screen", "overlay", "darken", "lighten",
       "color-dodge", "color-burn", "hard-light", "soft-light",
@@ -640,8 +665,10 @@ const GUI = window.lil.GUI;
       gameCanvas.style.mixBlendMode = settings.canvasBlendMode;
       gameCanvas.style.opacity = settings.canvasOpacity;
     }
+    canvasFolder.close();
 
-    const postFolder = guiRight.addFolder("Post-Processing");
+    // ==================== POST-PROCESSING ====================
+    const postFolder = guiLeft.addFolder("Post-Processing");
 
     const bloomFolder = postFolder.addFolder("Bloom (Glow)");
     bloomFolder.add(settings, "bloomEnabled").name("Enable Bloom").onChange(updatePostProcessing);
@@ -654,11 +681,13 @@ const GUI = window.lil.GUI;
     bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange((v) => {
       if (bloomPass) bloomPass.radius = v;
     });
+    bloomFolder.close();
 
     postFolder.add(settings, "fxaaEnabled").name("FXAA Anti-Aliasing").onChange(updatePostProcessing);
+    postFolder.close();
 
-    // Glass Overlay controls
-    const glassFolder = guiRight.addFolder("Glass Overlay");
+    // ==================== GLASS OVERLAY ====================
+    const glassFolder = guiLeft.addFolder("Glass Overlay");
     glassFolder.add(settings, "glassEnabled").name("Enabled").onChange((v) => {
       for (const mesh of glassMeshes) {
         mesh.visible = v;
@@ -668,28 +697,22 @@ const GUI = window.lil.GUI;
       updateGlassCanvas();
     });
 
-    // Glass Text Builder GUI (separate panel)
-    const textBuilderGUI = new GUI({ title: "Glass Text Builder" });
-    textBuilderGUI.domElement.style.position = "absolute";
-    textBuilderGUI.domElement.style.right = "10px";
-    textBuilderGUI.domElement.style.top = "350px";
-
-    const textRowsFolder = textBuilderGUI.addFolder("Text Rows");
+    const textRowsFolder = glassFolder.addFolder("Text Rows");
     textRowsFolder.add(settings, "glassTextRow1").name("Row 1").onChange(() => updateGlassCanvas());
     textRowsFolder.add(settings, "glassTextRow2").name("Row 2").onChange(() => updateGlassCanvas());
     textRowsFolder.add(settings, "glassTextRow3").name("Row 3").onChange(() => updateGlassCanvas());
     textRowsFolder.add(settings, "glassTextRow4").name("Row 4").onChange(() => updateGlassCanvas());
-    textRowsFolder.open();
+    textRowsFolder.close();
 
-    const textStyleFolder = textBuilderGUI.addFolder("Style");
+    const textStyleFolder = glassFolder.addFolder("Text Style");
     textStyleFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textStyleFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
     textStyleFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
     textStyleFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
     textStyleFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
-    textStyleFolder.open();
+    textStyleFolder.close();
 
-    const marqueeFolder = textBuilderGUI.addFolder("Marquee Animation");
+    const marqueeFolder = glassFolder.addFolder("Marquee Animation");
     marqueeFolder.add(settings, "glassTextMarquee").name("Enable Marquee").onChange((v) => {
       if (v) {
         marqueeOffset = 0;
@@ -699,7 +722,17 @@ const GUI = window.lil.GUI;
     });
     marqueeFolder.add(settings, "glassTextMarqueeSpeed", 0, 500, 5).name("Speed (px/s)");
     marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
-    marqueeFolder.open();
+    marqueeFolder.close();
+    glassFolder.close();
+
+    // ==================== SETTINGS STORAGE ====================
+    const settingsFolder = guiLeft.addFolder("Settings Storage");
+    settingsFolder.add(settings, "saveSettings").name("Save Settings");
+    settingsFolder.add(settings, "clearSettings").name("Clear Settings");
+    settingsFolder.close();
+
+    // Store reference for GLB parts to add to later
+    STATE.mainGUI = guiLeft;
   }
 
   // ============================================
@@ -707,10 +740,9 @@ const GUI = window.lil.GUI;
   // ============================================
 
   const glbParts = new Map();
-  let glbPartsGUI = null;
 
   function setupGLBPartsGUI() {
-    if (!STATE.levelContainer) return;
+    if (!STATE.levelContainer || !STATE.mainGUI) return;
 
     STATE.levelContainer.traverse((obj) => {
       if (obj.isMesh && obj.name && obj.material) {
@@ -727,10 +759,8 @@ const GUI = window.lil.GUI;
 
     if (glbParts.size === 0) return;
 
-    glbPartsGUI = new GUI({ title: "GLB Parts" });
-    glbPartsGUI.domElement.style.position = "absolute";
-    glbPartsGUI.domElement.style.left = "250px";
-    glbPartsGUI.domElement.style.top = "0px";
+    // Add GLB Parts folder to main GUI
+    const glbPartsFolder = STATE.mainGUI.addFolder("GLB Parts");
 
     glbParts.forEach((data, name) => {
       const partSettings = {
@@ -739,7 +769,7 @@ const GUI = window.lil.GUI;
         visible: true
       };
 
-      const folder = glbPartsGUI.addFolder(name);
+      const folder = glbPartsFolder.addFolder(name);
       folder.addColor(partSettings, "color").name("Color").onChange((v) => {
         if (data.mesh.material) {
           data.mesh.material.color.set(v);
@@ -762,6 +792,7 @@ const GUI = window.lil.GUI;
       folder.close();
     });
 
+    glbPartsFolder.close();
     console.log(`Created GUI controls for ${glbParts.size} GLB parts`);
   }
 
