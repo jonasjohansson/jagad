@@ -25,7 +25,7 @@ const GUI = window.lil.GUI;
 
   const statusEl = {
     set textContent(val) {
-      console.log("[Status]", val);
+      // Silent - remove console logging
     }
   };
 
@@ -119,7 +119,6 @@ const GUI = window.lil.GUI;
     for (const font of fonts) {
       try {
         await document.fonts.load(`${font.weight} 48px "${font.family}"`);
-        console.log(`Font loaded: ${font.family}`);
       } catch (e) {
         console.warn(`Could not load font: ${font.family}`);
       }
@@ -326,8 +325,6 @@ const GUI = window.lil.GUI;
 
       mesh.material = glassMaterial;
       mesh.renderOrder = 999; // Render on top
-
-      console.log(`Applied glass texture to mesh: "${mesh.name}"`);
     }
   }
 
@@ -347,7 +344,6 @@ const GUI = window.lil.GUI;
       // Auto-start game when any chaser movement key is pressed
       if (STATE.loaded && !settings.gameStarted && !STATE.gameOver) {
         settings.gameStarted = true;
-        console.log("Game auto-started by key press");
       }
     }
     keys.add(keyLower);
@@ -1019,7 +1015,6 @@ const GUI = window.lil.GUI;
     });
 
     glbPartsFolder.close();
-    console.log(`Created GUI controls for ${glbParts.size} GLB parts`);
   }
 
   // ============================================
@@ -1057,7 +1052,6 @@ const GUI = window.lil.GUI;
     composer.addPass(outputPass);
 
     updatePostProcessing();
-    console.log("Post-processing initialized");
   }
 
   function updatePostProcessing() {
@@ -1266,25 +1260,16 @@ const GUI = window.lil.GUI;
         const facePath = PATHS.images.faces;
         textureLoader.load(facePath + pair[0],
           (texture) => {
-            console.log(`Loaded billboard texture A: ${pair[0]}`);
             this.textures[0] = texture;
             this.billboard.material.map = texture;
             this.billboard.material.needsUpdate = true;
           },
           undefined,
-          (error) => {
-            console.warn(`Could not load ${pair[0]}, using color fallback`);
-            this.billboard.material.color.set(this.color);
-          }
+          () => this.billboard.material.color.set(this.color)
         );
         textureLoader.load(facePath + pair[1],
           (texture) => {
-            console.log(`Loaded billboard texture B: ${pair[1]}`);
             this.textures[1] = texture;
-          },
-          undefined,
-          (error) => {
-            console.warn(`Could not load ${pair[1]}`);
           }
         );
       } else {
@@ -1313,7 +1298,12 @@ const GUI = window.lil.GUI;
     }
 
     updateFade(dt) {
-      if (!this.isFading) return;
+      if (!this.isFading || !this.billboard) return;
+      // Skip fade updates for captured fugitives
+      if (!this.isChaser && this.actor.captured) {
+        this.isFading = false;
+        return;
+      }
 
       const fadeSpeed = 1.0 / settings.faceSwapFadeDuration;
       this.fadeProgress += this.fadeDirection * fadeSpeed * dt;
@@ -1324,7 +1314,7 @@ const GUI = window.lil.GUI;
         if (this.pendingTextureSwap) {
           this.currentTextureIndex = 1 - this.currentTextureIndex;
           const newTexture = this.textures[this.currentTextureIndex];
-          if (newTexture) {
+          if (newTexture && this.billboard.material) {
             this.billboard.material.map = newTexture;
             this.billboard.material.needsUpdate = true;
           }
@@ -1338,8 +1328,10 @@ const GUI = window.lil.GUI;
       }
 
       // Apply opacity
-      this.billboard.material.opacity = this.fadeProgress;
-      this.billboard.material.needsUpdate = true;
+      if (this.billboard.material) {
+        this.billboard.material.opacity = this.fadeProgress;
+        this.billboard.material.needsUpdate = true;
+      }
     }
 
     isVisible() {
@@ -1782,8 +1774,16 @@ const GUI = window.lil.GUI;
         if (f.captured) continue;
         if (checkCollision(chaser.mesh, f.mesh, STATE.actorRadius || 2.5)) {
           f.captured = true;
+          f.mesh.visible = false;
           scene.remove(f.mesh);
-          statusEl.textContent = `Fugitive ${f.index + 1} captured!`;
+          // Also hide the wire's billboard immediately
+          const wire = fugitiveWires[f.index];
+          if (wire && wire.billboard) {
+            wire.billboard.visible = false;
+          }
+          if (wire && wire.line) {
+            wire.line.visible = false;
+          }
         }
       }
     }
@@ -1815,7 +1815,6 @@ const GUI = window.lil.GUI;
       }
       if (obj.isCamera) {
         glbCameras.push({ name: obj.name || `GLB Camera ${glbCameras.length + 1}`, camera: obj });
-        console.log(`Found camera in GLB: ${obj.name}`, obj);
       }
     });
 
@@ -1843,9 +1842,6 @@ const GUI = window.lil.GUI;
         marker.getWorldPosition(worldPos);
         fugitiveSpawns.push(worldPos);
         marker.parent.remove(marker);
-        console.log(`Found F${i} at:`, worldPos.x.toFixed(2), worldPos.y.toFixed(2), worldPos.z.toFixed(2));
-      } else {
-        console.warn(`Fugitive spawn marker F${i} not found in GLB`);
       }
     }
 
@@ -1856,9 +1852,6 @@ const GUI = window.lil.GUI;
         marker.getWorldPosition(worldPos);
         chaserSpawns.push(worldPos);
         marker.visible = false;
-        console.log(`Found C${i} at:`, worldPos.x.toFixed(2), worldPos.y.toFixed(2), worldPos.z.toFixed(2));
-      } else {
-        console.warn(`Chaser spawn marker C${i} not found in GLB`);
       }
     }
 
@@ -1867,48 +1860,22 @@ const GUI = window.lil.GUI;
     levelContainer.traverse((obj) => {
       if (obj.isMesh && obj.name && obj.name.toUpperCase().includes("ROAD")) {
         roadsMeshes.push(obj);
-        const scale = obj.scale;
-        const worldScale = new THREE.Vector3();
-        obj.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), worldScale);
-        console.log(`Found road mesh in level GLB: "${obj.name}", local scale: (${scale.x}, ${scale.y}, ${scale.z}), world scale: (${worldScale.x.toFixed(2)}, ${worldScale.y.toFixed(2)}, ${worldScale.z.toFixed(2)})`);
       }
     });
-
-    console.log(`Found ${roadsMeshes.length} ROADS meshes in level GLB for navmesh`);
 
     // Find all GLASS meshes for HTML overlay
     let foundGlassMeshes = [];
     levelContainer.traverse((obj) => {
       if (obj.isMesh && obj.name && obj.name.toUpperCase().includes("GLASS")) {
         foundGlassMeshes.push(obj);
-        console.log(`Found GLASS mesh: "${obj.name}"`);
       }
     });
 
     if (foundGlassMeshes.length > 0) {
       setupGlassMeshes(foundGlassMeshes);
-      console.log(`Set up ${foundGlassMeshes.length} GLASS mesh(es) with canvas texture`);
-    } else {
-      console.warn("No GLASS mesh found in level GLB");
-      // List all mesh names for debugging
-      console.log("Available meshes in level GLB:");
-      levelContainer.traverse((obj) => {
-        if (obj.isMesh && obj.name) {
-          console.log(`  - "${obj.name}"`);
-        }
-      });
     }
 
-    if (roadsMeshes.length > 0) {
-      statusEl.textContent = `Level loaded. Found ${roadsMeshes.length} road meshes, ${fugitiveSpawns.length} fugitive spawns, ${chaserSpawns.length} chaser spawns.`;
-    } else {
-      console.warn("No ROADS mesh found in level GLB! Looking for any mesh with 'road' in name...");
-      // List all mesh names for debugging
-      levelContainer.traverse((obj) => {
-        if (obj.isMesh) {
-          console.log(`  Mesh in level GLB: "${obj.name}"`);
-        }
-      });
+    if (roadsMeshes.length === 0) {
       statusEl.textContent = "No ROADS mesh found in level GLB!";
     }
 
@@ -1935,8 +1902,6 @@ const GUI = window.lil.GUI;
     STATE.horizontalSize = horizontalSize;
 
     const streetY = roadsBbox.min.y;
-
-    console.log("Building navmesh from ROADS mesh in level GLB...");
 
     const navTriangles = [];
     for (const roadMesh of roadsMeshes) {
@@ -1980,18 +1945,12 @@ const GUI = window.lil.GUI;
       }
     }
 
-    console.log(`Navmesh built: ${navTriangles.length} triangles from ${roadsMeshes.length} meshes`);
-
     // Analyze path widths from triangles
     const triangleSizes = navTriangles.map(tri => {
       const width = tri.maxX - tri.minX;
       const height = tri.maxZ - tri.minZ;
       return { width, height, max: Math.max(width, height), min: Math.min(width, height) };
     });
-    const avgWidth = triangleSizes.reduce((sum, t) => sum + t.min, 0) / triangleSizes.length;
-    const maxWidth = Math.max(...triangleSizes.map(t => t.min));
-    const minWidth = Math.min(...triangleSizes.map(t => t.min));
-    console.log(`Path analysis - Avg triangle min dimension: ${avgWidth.toFixed(2)}, Range: ${minWidth.toFixed(2)} to ${maxWidth.toFixed(2)}`);
 
     // Measure actual corridor width by sampling from center of navmesh
     function measureCorridorWidth(x, z, dirX, dirZ) {
@@ -2061,17 +2020,10 @@ const GUI = window.lil.GUI;
     let actorSize = 1;
     const c1Marker = levelContainer.getObjectByName("C1");
     if (c1Marker) {
-      // Check levelContainer scale
-      const containerScale = new THREE.Vector3();
-      levelContainer.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), containerScale);
-      console.log(`Level container world scale: (${containerScale.x.toFixed(2)}, ${containerScale.y.toFixed(2)}, ${containerScale.z.toFixed(2)})`);
-
-      // Get marker's world bounding box
       const markerBox = new THREE.Box3().setFromObject(c1Marker);
       const markerSize = new THREE.Vector3();
       markerBox.getSize(markerSize);
 
-      // Also check the marker's own geometry if it's a mesh
       let geometrySize = null;
       c1Marker.traverse((child) => {
         if (child.isMesh && child.geometry) {
@@ -2079,51 +2031,22 @@ const GUI = window.lil.GUI;
           const geoBox = child.geometry.boundingBox;
           const geoSize = new THREE.Vector3();
           geoBox.getSize(geoSize);
-          // Apply world scale
           const childWorldScale = new THREE.Vector3();
           child.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), childWorldScale);
-          geometrySize = {
-            local: geoSize.clone(),
-            world: geoSize.clone().multiply(childWorldScale)
-          };
-          console.log(`C1 mesh geometry size (local): (${geoSize.x.toFixed(3)}, ${geoSize.y.toFixed(3)}, ${geoSize.z.toFixed(3)})`);
-          console.log(`C1 mesh world scale: (${childWorldScale.x.toFixed(2)}, ${childWorldScale.y.toFixed(2)}, ${childWorldScale.z.toFixed(2)})`);
-          console.log(`C1 mesh geometry size (world): (${geometrySize.world.x.toFixed(3)}, ${geometrySize.world.y.toFixed(3)}, ${geometrySize.world.z.toFixed(3)})`);
+          geometrySize = { world: geoSize.clone().multiply(childWorldScale) };
         }
       });
 
-      console.log(`C1 marker bounding box size: (${markerSize.x.toFixed(3)}, ${markerSize.y.toFixed(3)}, ${markerSize.z.toFixed(3)})`);
-
-      // Use geometry world size if available, otherwise bounding box
       if (geometrySize && geometrySize.world) {
         actorSize = Math.min(geometrySize.world.x, geometrySize.world.z);
-        console.log(`Actor size from C1 geometry (world): ${actorSize.toFixed(3)}`);
       } else {
         actorSize = Math.min(markerSize.x, markerSize.z);
-        console.log(`Actor size from C1 bounding box: ${actorSize.toFixed(3)}`);
       }
     } else {
       const baseUnit = horizontalSize || 100;
       actorSize = baseUnit / 150;
-      console.log(`Actor size fallback: ${actorSize.toFixed(2)}`);
     }
     actorSize *= settings.actorScale;
-    console.log(`Final actor size with scale ${settings.actorScale}: ${actorSize.toFixed(2)}`);
-
-    // Measure actual corridor widths for debugging
-    if (chaserSpawns.length > 0) {
-      const measurements = [];
-      for (const sp of chaserSpawns) {
-        const widthX = measureCorridorWidth(sp.x, sp.z, 1, 0);
-        const widthZ = measureCorridorWidth(sp.x, sp.z, 0, 1);
-        measurements.push(Math.min(widthX, widthZ));
-      }
-      const measuredPathWidth = Math.min(...measurements);
-      console.log(`Measured corridor widths: ${measurements.map(m => m.toFixed(2)).join(", ")}`);
-      console.log(`Minimum corridor width: ${measuredPathWidth.toFixed(3)}`);
-      console.log(`Corridor/Actor ratio: ${(measuredPathWidth / actorSize).toFixed(2)}x`);
-    }
-    console.log(`Final actor size: ${actorSize.toFixed(3)}`);
 
     function isOnRoadWithMargin(x, z, margin) {
       if (!isOnRoad(x, z)) return false;
@@ -2217,7 +2140,6 @@ const GUI = window.lil.GUI;
 
     STATE.streetY = streetY;
 
-    console.log("Creating building plane...");
     const sizeX = horizontalSize * settings.buildingScaleX;
     const sizeY = horizontalSize * settings.buildingScaleY;
     const planeGeo = new THREE.PlaneGeometry(sizeX, sizeY);
@@ -2241,7 +2163,6 @@ const GUI = window.lil.GUI;
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(PATHS.images.building,
       (texture) => {
-        console.log("Building texture loaded");
         buildingPlane.material.map = texture;
         buildingPlane.material.color.set(0xffffff);
         buildingPlane.material.needsUpdate = true;
