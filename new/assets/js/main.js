@@ -9,6 +9,7 @@ import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPa
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { FXAAShader } from "./lib/three/addons/shaders/FXAAShader.js";
+// CSS3DRenderer not needed - using canvas texture approach instead
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS, CARDINAL_DIRS } from "./game/constants.js";
@@ -37,6 +38,7 @@ const GUI = window.lil.GUI;
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
 
   // ============================================
   // STATE
@@ -94,6 +96,202 @@ const GUI = window.lil.GUI;
     horizontalSize: 100,
     levelContainer: null,
   };
+
+  // ============================================
+  // GLASS OVERLAY (Canvas texture on GLASS mesh)
+  // ============================================
+
+  let glassMeshes = [];
+  let glassCanvas = null;
+  let glassContext = null;
+  let glassTexture = null;
+  let marqueeOffset = 0;
+  let lastMarqueeTime = 0;
+
+  // Preload fonts for canvas usage
+  async function preloadFonts() {
+    const fonts = [
+      { family: "BankGothic", weight: "bold" },
+      { family: "BankGothic Md BT", weight: "500" },
+      { family: "Bank Gothic", weight: "300" },
+    ];
+
+    for (const font of fonts) {
+      try {
+        await document.fonts.load(`${font.weight} 48px "${font.family}"`);
+        console.log(`Font loaded: ${font.family}`);
+      } catch (e) {
+        console.warn(`Could not load font: ${font.family}`);
+      }
+    }
+  }
+
+  // Create offscreen canvas for rendering text
+  function initGlassCanvas() {
+    glassCanvas = document.createElement("canvas");
+    glassCanvas.width = 1024;
+    glassCanvas.height = 1024;
+    glassContext = glassCanvas.getContext("2d");
+    glassTexture = new THREE.CanvasTexture(glassCanvas);
+    glassTexture.minFilter = THREE.LinearFilter;
+    glassTexture.magFilter = THREE.LinearFilter;
+
+    // Preload fonts then update canvas
+    preloadFonts().then(() => {
+      lastMarqueeTime = performance.now();
+      updateGlassCanvas(lastMarqueeTime);
+    });
+  }
+
+  function updateGlassCanvas(timestamp = 0) {
+    if (!glassContext) return;
+
+    const ctx = glassContext;
+    const w = glassCanvas.width;
+    const h = glassCanvas.height;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, w, h);
+
+    // Flip vertically to correct upside-down text
+    ctx.save();
+    ctx.translate(0, h);
+    ctx.scale(1, -1);
+
+    // Draw background
+    ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity})`;
+    ctx.fillRect(0, 0, w, h);
+
+    // Get text rows
+    const rows = [
+      settings.glassTextRow1,
+      settings.glassTextRow2,
+      settings.glassTextRow3,
+      settings.glassTextRow4,
+    ].filter(row => row && row.trim() !== "");
+
+    if (rows.length === 0) {
+      if (glassTexture) glassTexture.needsUpdate = true;
+      return;
+    }
+
+    // Setup text style
+    const fontSize = settings.glassTextFontSize;
+    const lineHeight = fontSize * settings.glassTextLineHeight;
+    const fontFamily = settings.glassTextFont || "BankGothic";
+    ctx.fillStyle = settings.glassTextColor;
+    ctx.font = `bold ${fontSize}px "${fontFamily}", Arial, sans-serif`;
+    ctx.textBaseline = "middle";
+
+    // Calculate total height of text block
+    const totalHeight = rows.length * lineHeight;
+    const startY = (h - totalHeight) / 2 + lineHeight / 2;
+
+    // Handle marquee animation
+    if (settings.glassTextMarquee) {
+      // Update marquee offset based on time
+      const dt = timestamp - lastMarqueeTime;
+      lastMarqueeTime = timestamp;
+      if (dt > 0 && dt < 100) {
+        marqueeOffset += (settings.glassTextMarqueeSpeed * dt) / 1000;
+      }
+
+      // Measure max text width
+      let maxTextWidth = 0;
+      for (const row of rows) {
+        const textWidth = ctx.measureText(row).width;
+        if (textWidth > maxTextWidth) maxTextWidth = textWidth;
+      }
+
+      // Reset offset when text has scrolled completely
+      if (marqueeOffset > w + maxTextWidth) {
+        marqueeOffset = -maxTextWidth;
+      }
+
+      ctx.textAlign = "left";
+      for (let i = 0; i < rows.length; i++) {
+        const y = startY + i * lineHeight;
+        const textWidth = ctx.measureText(rows[i]).width;
+        // Draw text starting from right, moving left
+        const x = w - marqueeOffset;
+        ctx.fillText(rows[i], x, y);
+        // Draw second copy for seamless loop
+        if (x + textWidth < w) {
+          ctx.fillText(rows[i], x - w - textWidth - 100, y);
+        }
+      }
+    } else {
+      // Static text
+      ctx.textAlign = settings.glassTextAlign;
+      let xPos;
+      switch (settings.glassTextAlign) {
+        case "left": xPos = 50; break;
+        case "right": xPos = w - 50; break;
+        default: xPos = w / 2; break;
+      }
+
+      for (let i = 0; i < rows.length; i++) {
+        const y = startY + i * lineHeight;
+        ctx.fillText(rows[i], xPos, y);
+      }
+    }
+
+    // Restore canvas state (undo the flip)
+    ctx.restore();
+
+    // Update texture
+    if (glassTexture) {
+      glassTexture.needsUpdate = true;
+    }
+  }
+
+  // Public API to update the glass content (sets all 4 rows at once)
+  window.setGlassContent = function(row1 = "", row2 = "", row3 = "", row4 = "") {
+    settings.glassTextRow1 = row1;
+    settings.glassTextRow2 = row2;
+    settings.glassTextRow3 = row3;
+    settings.glassTextRow4 = row4;
+    updateGlassCanvas();
+  };
+
+  // Public API to update a single row
+  window.setGlassRow = function(rowNum, text) {
+    if (rowNum >= 1 && rowNum <= 4) {
+      settings[`glassTextRow${rowNum}`] = text;
+      updateGlassCanvas();
+    }
+  };
+
+  // Public API to draw custom content on the glass
+  window.drawOnGlass = function(callback) {
+    if (glassContext) {
+      callback(glassContext, glassCanvas.width, glassCanvas.height);
+      if (glassTexture) {
+        glassTexture.needsUpdate = true;
+      }
+    }
+  };
+
+  function setupGlassMeshes(meshes) {
+    glassMeshes = meshes;
+    initGlassCanvas();
+
+    for (const mesh of glassMeshes) {
+      // Replace the material with one that uses our canvas texture
+      const glassMaterial = new THREE.MeshBasicMaterial({
+        map: glassTexture,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+
+      mesh.material = glassMaterial;
+      mesh.renderOrder = 999; // Render on top
+
+      console.log(`Applied glass texture to mesh: "${mesh.name}"`);
+    }
+  }
 
   // ============================================
   // INPUT
@@ -456,6 +654,49 @@ const GUI = window.lil.GUI;
     });
 
     postFolder.add(settings, "fxaaEnabled").name("FXAA Anti-Aliasing").onChange(updatePostProcessing);
+
+    // Glass Overlay controls
+    const glassFolder = guiRight.addFolder("Glass Overlay");
+    glassFolder.add(settings, "glassEnabled").name("Enabled").onChange((v) => {
+      for (const mesh of glassMeshes) {
+        mesh.visible = v;
+      }
+    });
+    glassFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange((v) => {
+      updateGlassCanvas();
+    });
+
+    // Glass Text Builder GUI (separate panel)
+    const textBuilderGUI = new GUI({ title: "Glass Text Builder" });
+    textBuilderGUI.domElement.style.position = "absolute";
+    textBuilderGUI.domElement.style.right = "10px";
+    textBuilderGUI.domElement.style.top = "350px";
+
+    const textRowsFolder = textBuilderGUI.addFolder("Text Rows");
+    textRowsFolder.add(settings, "glassTextRow1").name("Row 1").onChange(() => updateGlassCanvas());
+    textRowsFolder.add(settings, "glassTextRow2").name("Row 2").onChange(() => updateGlassCanvas());
+    textRowsFolder.add(settings, "glassTextRow3").name("Row 3").onChange(() => updateGlassCanvas());
+    textRowsFolder.add(settings, "glassTextRow4").name("Row 4").onChange(() => updateGlassCanvas());
+    textRowsFolder.open();
+
+    const textStyleFolder = textBuilderGUI.addFolder("Style");
+    textStyleFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
+    textStyleFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
+    textStyleFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
+    textStyleFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
+    textStyleFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
+    textStyleFolder.open();
+
+    const marqueeFolder = textBuilderGUI.addFolder("Marquee Animation");
+    marqueeFolder.add(settings, "glassTextMarquee").name("Enable Marquee").onChange((v) => {
+      if (v) {
+        marqueeOffset = 0;
+        lastMarqueeTime = performance.now();
+      }
+      updateGlassCanvas();
+    });
+    marqueeFolder.add(settings, "glassTextMarqueeSpeed", 10, 200, 5).name("Speed (px/s)");
+    marqueeFolder.open();
   }
 
   // ============================================
@@ -1129,26 +1370,48 @@ const GUI = window.lil.GUI;
 
     const inputDir = getChaserInputDirection(chaserIndex);
 
+    // Queue the direction when player presses a key
     if (inputDir.hasInput) {
-      actor.queuedDirX = inputDir.x;
-      actor.queuedDirZ = inputDir.z;
+      // Check if this is a 180-degree turn (reverse) - allow immediately
+      const isReverse = (inputDir.x === -actor.dirX && inputDir.z === -actor.dirZ);
+      if (isReverse && (actor.dirX !== 0 || actor.dirZ !== 0)) {
+        actor.dirX = inputDir.x;
+        actor.dirZ = inputDir.z;
+        actor.queuedDirX = 0;
+        actor.queuedDirZ = 0;
+      } else {
+        // Queue the direction - it will be executed when a path becomes available
+        actor.queuedDirX = inputDir.x;
+        actor.queuedDirZ = inputDir.z;
+      }
     }
 
-    function canMoveInDirection(dx, dz, distance) {
-      const targetX = pos.x + dx * distance;
-      const targetZ = pos.z + dz * distance;
-      return isOnRoad(targetX, targetZ);
+    // Check if we can move in a direction (look ahead a bit)
+    function canMoveInDirection(dx, dz) {
+      // Check multiple distances to find if there's a path nearby
+      const checkDistances = [0.5, 1.0, 1.5, 2.0];
+      for (const dist of checkDistances) {
+        const targetX = pos.x + dx * dist;
+        const targetZ = pos.z + dz * dist;
+        if (isOnRoad(targetX, targetZ)) {
+          return true;
+        }
+      }
+      return false;
     }
 
+    // Try to execute the queued direction
     if (actor.queuedDirX !== 0 || actor.queuedDirZ !== 0) {
-      if (canMoveInDirection(actor.queuedDirX, actor.queuedDirZ, moveDistance * 3)) {
+      if (canMoveInDirection(actor.queuedDirX, actor.queuedDirZ)) {
         actor.dirX = actor.queuedDirX;
         actor.dirZ = actor.queuedDirZ;
         actor.queuedDirX = 0;
         actor.queuedDirZ = 0;
       }
+      // Keep the queued direction until it becomes valid or player changes it
     }
 
+    // Move in current direction
     if (actor.dirX !== 0 || actor.dirZ !== 0) {
       const newPos = tryMove(pos.x, pos.z, actor.dirX, actor.dirZ, moveDistance, 0);
 
@@ -1188,6 +1451,11 @@ const GUI = window.lil.GUI;
             wire.swapTexture();
           }
         }
+      }
+
+      // Update glass canvas for marquee animation
+      if (settings.glassTextMarquee && glassCanvas) {
+        updateGlassCanvas(timestamp);
       }
     }
 
@@ -1262,16 +1530,11 @@ const GUI = window.lil.GUI;
 
   const loader = new GLTFLoader();
 
-  Promise.all([
-    new Promise((resolve, reject) => {
-      loader.load(PATHS.models.level, resolve, undefined, reject);
-    }),
-    new Promise((resolve, reject) => {
-      loader.load(PATHS.models.roads, resolve, undefined, reject);
-    })
-  ]).then(([levelGltf, roadsGltf]) => {
+  // Load only jagad.glb - use ROADS mesh from within it for navmesh
+  new Promise((resolve, reject) => {
+    loader.load(PATHS.models.level, resolve, undefined, reject);
+  }).then((levelGltf) => {
     const gltf = levelGltf;
-    const roadsRoot = roadsGltf.scene;
     const root = gltf.scene;
 
     root.traverse((obj) => {
@@ -1328,28 +1591,58 @@ const GUI = window.lil.GUI;
       }
     }
 
-    const roadsContainer = new THREE.Group();
-    roadsContainer.add(roadsRoot);
-    roadsContainer.updateMatrixWorld(true);
-
+    // Find ROADS mesh within jagad.glb (same scale as markers)
     let roadsMeshes = [];
-    roadsRoot.traverse((obj) => {
-      if (obj.isMesh) {
+    levelContainer.traverse((obj) => {
+      if (obj.isMesh && obj.name && obj.name.toUpperCase().includes("ROAD")) {
         roadsMeshes.push(obj);
-        console.log(`Found road mesh in roads.glb: "${obj.name}"`);
+        const scale = obj.scale;
+        const worldScale = new THREE.Vector3();
+        obj.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), worldScale);
+        console.log(`Found road mesh in jagad.glb: "${obj.name}", local scale: (${scale.x}, ${scale.y}, ${scale.z}), world scale: (${worldScale.x.toFixed(2)}, ${worldScale.y.toFixed(2)}, ${worldScale.z.toFixed(2)})`);
       }
     });
 
-    console.log(`Loaded ${roadsMeshes.length} meshes from roads.glb for navmesh`);
+    console.log(`Found ${roadsMeshes.length} ROADS meshes in jagad.glb for navmesh`);
+
+    // Find all GLASS meshes for HTML overlay
+    let foundGlassMeshes = [];
+    levelContainer.traverse((obj) => {
+      if (obj.isMesh && obj.name && obj.name.toUpperCase().includes("GLASS")) {
+        foundGlassMeshes.push(obj);
+        console.log(`Found GLASS mesh: "${obj.name}"`);
+      }
+    });
+
+    if (foundGlassMeshes.length > 0) {
+      setupGlassMeshes(foundGlassMeshes);
+      console.log(`Set up ${foundGlassMeshes.length} GLASS mesh(es) with canvas texture`);
+    } else {
+      console.warn("No GLASS mesh found in jagad.glb");
+      // List all mesh names for debugging
+      console.log("Available meshes in jagad.glb:");
+      levelContainer.traverse((obj) => {
+        if (obj.isMesh && obj.name) {
+          console.log(`  - "${obj.name}"`);
+        }
+      });
+    }
 
     if (roadsMeshes.length > 0) {
       statusEl.textContent = `Level loaded. Found ${roadsMeshes.length} road meshes, ${fugitiveSpawns.length} fugitive spawns, ${chaserSpawns.length} chaser spawns.`;
     } else {
-      statusEl.textContent = "No meshes found in roads.glb!";
+      console.warn("No ROADS mesh found in jagad.glb! Looking for any mesh with 'road' in name...");
+      // List all mesh names for debugging
+      levelContainer.traverse((obj) => {
+        if (obj.isMesh) {
+          console.log(`  Mesh in jagad.glb: "${obj.name}"`);
+        }
+      });
+      statusEl.textContent = "No ROADS mesh found in jagad.glb!";
     }
 
     const roadsBbox = roadsMeshes.length > 0
-      ? new THREE.Box3().setFromObject(roadsContainer)
+      ? new THREE.Box3().setFromObject(roadsMeshes[0])
       : new THREE.Box3().setFromObject(root);
 
     const spawnBbox = new THREE.Box3();
@@ -1372,7 +1665,7 @@ const GUI = window.lil.GUI;
 
     const streetY = roadsBbox.min.y;
 
-    console.log("Building navmesh from roads.glb geometry...");
+    console.log("Building navmesh from ROADS mesh in jagad.glb...");
 
     const navTriangles = [];
     for (const roadMesh of roadsMeshes) {
@@ -1418,6 +1711,46 @@ const GUI = window.lil.GUI;
 
     console.log(`Navmesh built: ${navTriangles.length} triangles from ${roadsMeshes.length} meshes`);
 
+    // Analyze path widths from triangles
+    const triangleSizes = navTriangles.map(tri => {
+      const width = tri.maxX - tri.minX;
+      const height = tri.maxZ - tri.minZ;
+      return { width, height, max: Math.max(width, height), min: Math.min(width, height) };
+    });
+    const avgWidth = triangleSizes.reduce((sum, t) => sum + t.min, 0) / triangleSizes.length;
+    const maxWidth = Math.max(...triangleSizes.map(t => t.min));
+    const minWidth = Math.min(...triangleSizes.map(t => t.min));
+    console.log(`Path analysis - Avg triangle min dimension: ${avgWidth.toFixed(2)}, Range: ${minWidth.toFixed(2)} to ${maxWidth.toFixed(2)}`);
+
+    // Measure actual corridor width by sampling from center of navmesh
+    function measureCorridorWidth(x, z, dirX, dirZ) {
+      // Measure perpendicular to direction
+      const perpX = -dirZ;
+      const perpZ = dirX;
+      let leftDist = 0;
+      let rightDist = 0;
+
+      // Measure left
+      for (let d = 0.01; d < 5; d += 0.01) {
+        if (!pointInTriangleAny(x + perpX * d, z + perpZ * d)) break;
+        leftDist = d;
+      }
+      // Measure right
+      for (let d = 0.01; d < 5; d += 0.01) {
+        if (!pointInTriangleAny(x - perpX * d, z - perpZ * d)) break;
+        rightDist = d;
+      }
+      return leftDist + rightDist;
+    }
+
+    function pointInTriangleAny(px, pz) {
+      for (const tri of navTriangles) {
+        if (px < tri.minX || px > tri.maxX || pz < tri.minZ || pz > tri.maxZ) continue;
+        if (pointInTriangle(px, pz, tri.ax, tri.az, tri.bx, tri.bz, tri.cx, tri.cz)) return true;
+      }
+      return false;
+    }
+
     function pointInTriangle(px, pz, ax, az, bx, bz, cx, cz) {
       const v0x = cx - ax;
       const v0z = cz - az;
@@ -1457,11 +1790,47 @@ const GUI = window.lil.GUI;
     let actorSize = 1;
     const c1Marker = levelContainer.getObjectByName("C1");
     if (c1Marker) {
+      // Check levelContainer scale
+      const containerScale = new THREE.Vector3();
+      levelContainer.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), containerScale);
+      console.log(`Level container world scale: (${containerScale.x.toFixed(2)}, ${containerScale.y.toFixed(2)}, ${containerScale.z.toFixed(2)})`);
+
+      // Get marker's world bounding box
       const markerBox = new THREE.Box3().setFromObject(c1Marker);
       const markerSize = new THREE.Vector3();
       markerBox.getSize(markerSize);
-      actorSize = Math.min(markerSize.x, markerSize.z);
-      console.log(`Actor size from C1 marker: ${actorSize.toFixed(2)}`);
+
+      // Also check the marker's own geometry if it's a mesh
+      let geometrySize = null;
+      c1Marker.traverse((child) => {
+        if (child.isMesh && child.geometry) {
+          child.geometry.computeBoundingBox();
+          const geoBox = child.geometry.boundingBox;
+          const geoSize = new THREE.Vector3();
+          geoBox.getSize(geoSize);
+          // Apply world scale
+          const childWorldScale = new THREE.Vector3();
+          child.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), childWorldScale);
+          geometrySize = {
+            local: geoSize.clone(),
+            world: geoSize.clone().multiply(childWorldScale)
+          };
+          console.log(`C1 mesh geometry size (local): (${geoSize.x.toFixed(3)}, ${geoSize.y.toFixed(3)}, ${geoSize.z.toFixed(3)})`);
+          console.log(`C1 mesh world scale: (${childWorldScale.x.toFixed(2)}, ${childWorldScale.y.toFixed(2)}, ${childWorldScale.z.toFixed(2)})`);
+          console.log(`C1 mesh geometry size (world): (${geometrySize.world.x.toFixed(3)}, ${geometrySize.world.y.toFixed(3)}, ${geometrySize.world.z.toFixed(3)})`);
+        }
+      });
+
+      console.log(`C1 marker bounding box size: (${markerSize.x.toFixed(3)}, ${markerSize.y.toFixed(3)}, ${markerSize.z.toFixed(3)})`);
+
+      // Use geometry world size if available, otherwise bounding box
+      if (geometrySize && geometrySize.world) {
+        actorSize = Math.min(geometrySize.world.x, geometrySize.world.z);
+        console.log(`Actor size from C1 geometry (world): ${actorSize.toFixed(3)}`);
+      } else {
+        actorSize = Math.min(markerSize.x, markerSize.z);
+        console.log(`Actor size from C1 bounding box: ${actorSize.toFixed(3)}`);
+      }
     } else {
       const baseUnit = horizontalSize || 100;
       actorSize = baseUnit / 150;
@@ -1469,6 +1838,21 @@ const GUI = window.lil.GUI;
     }
     actorSize *= settings.actorScale;
     console.log(`Final actor size with scale ${settings.actorScale}: ${actorSize.toFixed(2)}`);
+
+    // Measure actual corridor widths for debugging
+    if (chaserSpawns.length > 0) {
+      const measurements = [];
+      for (const sp of chaserSpawns) {
+        const widthX = measureCorridorWidth(sp.x, sp.z, 1, 0);
+        const widthZ = measureCorridorWidth(sp.x, sp.z, 0, 1);
+        measurements.push(Math.min(widthX, widthZ));
+      }
+      const measuredPathWidth = Math.min(...measurements);
+      console.log(`Measured corridor widths: ${measurements.map(m => m.toFixed(2)).join(", ")}`);
+      console.log(`Minimum corridor width: ${measuredPathWidth.toFixed(3)}`);
+      console.log(`Corridor/Actor ratio: ${(measuredPathWidth / actorSize).toFixed(2)}x`);
+    }
+    console.log(`Final actor size: ${actorSize.toFixed(3)}`);
 
     function isOnRoadWithMargin(x, z, margin) {
       if (!isOnRoad(x, z)) return false;
@@ -1642,7 +2026,7 @@ const GUI = window.lil.GUI;
         lastIntersectionZ: roadPoint.z,
       });
 
-      const wire = new ActorWire(fugitives[fugitives.length - 1], actorSize, settings.fugitiveColor, false, i);
+      const wire = new ActorWire(fugitives[fugitives.length - 1], actorSize, fugitiveColors[i] || fugitiveColors[0], false, i);
       fugitiveWires.push(wire);
     }
 

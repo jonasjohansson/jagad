@@ -1,0 +1,45 @@
+@font-face {
+    font-family: 'BankGothic Md BT';
+    src: url('BankGothicBT-Medium.woff2') format('woff2'),
+        url('BankGothicBT-Medium.woff') format('woff');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'BankGothic Md BT';
+    src: url('BankGothicBT-Medium.woff2') format('woff2'),
+        url('BankGothicBT-Medium.woff') format('woff');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'BankGothic';
+    src: url('BankGothicBold.woff2') format('woff2'),
+        url('BankGothicBold.woff') format('woff');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'BankGothic Md BT';
+    src: url('BankGothicBT-Medium.woff2') format('woff2'),
+        url('BankGothicBT-Medium.woff') format('woff');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Bank Gothic';
+    src: url('BankGothicBT-Light.woff2') format('woff2'),
+        url('BankGothicBT-Light.woff') format('woff');
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+}
+

@@ -57,6 +57,20 @@ export const defaultSettings = {
   bloomStrength: 0.4,
   bloomRadius: 1.0,
   fxaaEnabled: false,
+  glassEnabled: true,
+  glassOpacity: 0.8,
+  // Glass text builder
+  glassTextRow1: "JAGAD",
+  glassTextRow2: "THE CHASE IS ON",
+  glassTextRow3: "CATCH THEM ALL",
+  glassTextRow4: "LIVE NOW",
+  glassTextFontSize: 80,
+  glassTextLineHeight: 1.8,
+  glassTextFont: "BankGothic",
+  glassTextColor: "#ffffff",
+  glassTextAlign: "center",
+  glassTextMarquee: true,
+  glassTextMarqueeSpeed: 100,
 };
 
 export function loadSettings() {
