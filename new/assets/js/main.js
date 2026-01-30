@@ -697,7 +697,7 @@ const GUI = window.lil.GUI;
       }
       updateGlassCanvas();
     });
-    marqueeFolder.add(settings, "glassTextMarqueeSpeed", 10, 200, 5).name("Speed (px/s)");
+    marqueeFolder.add(settings, "glassTextMarqueeSpeed", 0, 500, 5).name("Speed (px/s)");
     marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
     marqueeFolder.open();
   }
