@@ -9,7 +9,6 @@ import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPa
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { FXAAShader } from "./lib/three/addons/shaders/FXAAShader.js";
-// CSS3DRenderer not needed - using canvas texture approach instead
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS, CARDINAL_DIRS } from "./game/constants.js";
@@ -51,9 +50,9 @@ const GUI = window.lil.GUI;
   let perspCamera;
   const glbCameras = [];
 
-  const defaultCamera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 5000);
-  defaultCamera.position.set(0, 100, 100);
-  camera = defaultCamera;
+  // Initial placeholder camera, replaced by setupCameras() after level loads
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 5000);
+  camera.position.set(0, 100, 100);
 
   const fugitives = [];
   const chasers = [];
@@ -608,17 +607,6 @@ const GUI = window.lil.GUI;
 
     // ==================== LIGHTING ====================
     const lightsFolder = guiLeft.addFolder("Lighting");
-
-    // Tone mapping options
-    const toneMappingOptions = {
-      "None": THREE.NoToneMapping,
-      "Linear": THREE.LinearToneMapping,
-      "Reinhard": THREE.ReinhardToneMapping,
-      "Cineon": THREE.CineonToneMapping,
-      "ACESFilmic": THREE.ACESFilmicToneMapping,
-      "AgX": THREE.AgXToneMapping,
-      "Neutral": THREE.NeutralToneMapping,
-    };
 
     lightsFolder.add(settings, "toneMapping", Object.keys(toneMappingOptions)).name("Tone Mapping").onChange((v) => {
       renderer.toneMapping = toneMappingOptions[v];
