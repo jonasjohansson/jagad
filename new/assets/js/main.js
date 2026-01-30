@@ -212,8 +212,10 @@ const GUI = window.lil.GUI;
       for (let i = 0; i < rows.length; i++) {
         const y = startY + i * lineHeight;
         const textWidth = ctx.measureText(rows[i]).width;
+        // Apply row delay offset (each row starts further back)
+        const rowOffset = marqueeOffset - (i * settings.glassTextRowDelay);
         // Draw text starting from right, moving left
-        const x = w - marqueeOffset;
+        const x = w - rowOffset;
         ctx.fillText(rows[i], x, y);
         // Draw second copy for seamless loop
         if (x + textWidth < w) {
@@ -696,6 +698,7 @@ const GUI = window.lil.GUI;
       updateGlassCanvas();
     });
     marqueeFolder.add(settings, "glassTextMarqueeSpeed", 10, 200, 5).name("Speed (px/s)");
+    marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
     marqueeFolder.open();
   }
 

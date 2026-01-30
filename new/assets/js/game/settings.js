@@ -71,6 +71,7 @@ export const defaultSettings = {
   glassTextAlign: "center",
   glassTextMarquee: true,
   glassTextMarqueeSpeed: 100,
+  glassTextRowDelay: 200,
 };
 
 export function loadSettings() {
