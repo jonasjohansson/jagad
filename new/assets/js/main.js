@@ -235,11 +235,9 @@ const GUI = window.lil.GUI;
         const sx = (w - sw) / 2;
         const sy = (h - sh) / 2;
 
-        // Apply video opacity and blend mode
+        // Apply video opacity
         ctx.globalAlpha = settings.glassVideoOpacity;
-        ctx.globalCompositeOperation = settings.glassVideoBlendMode;
         ctx.drawImage(glassVideo, sx, sy, sw, sh);
-        ctx.globalCompositeOperation = "source-over";
         ctx.globalAlpha = 1.0;
 
         // Apply brightness (darken if < 1, lighten if > 1)
@@ -844,8 +842,6 @@ const GUI = window.lil.GUI;
     });
     glassFolder.add(settings, "glassVideoOpacity", 0, 1, 0.05).name("Video Opacity");
     glassFolder.add(settings, "glassVideoBrightness", 0, 2, 0.05).name("Video Brightness");
-    const videoBlendModes = ["source-over", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion"];
-    glassFolder.add(settings, "glassVideoBlendMode", videoBlendModes).name("Video Blend Mode");
 
     const textRowsFolder = glassFolder.addFolder("Text Rows");
     textRowsFolder.add(settings, "glassTextRow1").name("Row 1").onChange(() => updateGlassCanvas());

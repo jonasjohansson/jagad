@@ -63,7 +63,6 @@ export const defaultSettings = {
   glassVideoEnabled: true,
   glassVideoOpacity: 1.0,
   glassVideoBrightness: 1.0,
-  glassVideoBlendMode: "source-over",
   // Glass text builder
   glassTextRow1: "JAGAD",
   glassTextRow2: "THE CHASE IS ON",
