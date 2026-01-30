@@ -1726,13 +1726,6 @@ const GUI = window.lil.GUI;
     scene.add(levelContainer);
     STATE.levelContainer = levelContainer;
 
-    if (STATE.updateLevelOpacity) {
-      STATE.updateLevelOpacity(settings.levelOpacity);
-    }
-    if (STATE.updateLevelBlendMode) {
-      STATE.updateLevelBlendMode(settings.levelBlendMode);
-    }
-
     levelContainer.updateMatrixWorld(true);
 
     const fugitiveSpawns = [];
