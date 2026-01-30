@@ -38,6 +38,7 @@ const GUI = window.lil.GUI;
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 
   // ============================================
@@ -186,9 +187,49 @@ const GUI = window.lil.GUI;
 
     // Calculate total height of text block
     const totalHeight = rows.length * lineHeight;
-    const startY = (h - totalHeight) / 2 + lineHeight / 2;
+    const startY = (h - totalHeight) / 2 + lineHeight / 2 + (settings.glassTextOffsetY || 0);
+    const letterSpacing = settings.glassTextLetterSpacing || 0;
 
-    // Handle marquee animation - organic letter-by-letter wrapping
+    // Helper function to draw text with letter spacing
+    function drawTextWithSpacing(text, x, y, align = "left") {
+      if (letterSpacing === 0) {
+        ctx.textAlign = align;
+        ctx.fillText(text, x, y);
+        return;
+      }
+
+      // Draw each character with spacing
+      ctx.textAlign = "left";
+      let currentX = x;
+
+      // Adjust starting position for alignment
+      if (align === "center" || align === "right") {
+        let totalWidth = 0;
+        for (const char of text) {
+          totalWidth += ctx.measureText(char).width + letterSpacing;
+        }
+        totalWidth -= letterSpacing; // Remove last spacing
+        if (align === "center") currentX = x - totalWidth / 2;
+        else if (align === "right") currentX = x - totalWidth;
+      }
+
+      for (const char of text) {
+        ctx.fillText(char, currentX, y);
+        currentX += ctx.measureText(char).width + letterSpacing;
+      }
+    }
+
+    // Helper to measure text width with letter spacing
+    function measureTextWithSpacing(text) {
+      if (letterSpacing === 0) return ctx.measureText(text).width;
+      let totalWidth = 0;
+      for (const char of text) {
+        totalWidth += ctx.measureText(char).width + letterSpacing;
+      }
+      return totalWidth - letterSpacing; // Remove last spacing
+    }
+
+    // Handle marquee animation - seamless looping
     if (settings.glassTextMarquee) {
       // Update marquee offset based on time
       const dt = timestamp - lastMarqueeTime;
@@ -197,48 +238,30 @@ const GUI = window.lil.GUI;
         marqueeOffset += (settings.glassTextMarqueeSpeed * dt) / 1000;
       }
 
-      ctx.textAlign = "left";
-
       for (let i = 0; i < rows.length; i++) {
         const y = startY + i * lineHeight;
         const text = rows[i];
+        const textWidth = measureTextWithSpacing(text);
         // Apply row delay offset (each row starts further back)
         const rowOffset = marqueeOffset - (i * settings.glassTextRowDelay);
 
-        // Measure each character and draw individually with wrapping
-        let xAccum = 0;
-        const charWidths = [];
-        for (let c = 0; c < text.length; c++) {
-          charWidths.push(ctx.measureText(text[c]).width);
-        }
-        const totalTextWidth = charWidths.reduce((a, b) => a + b, 0);
+        // Gap between repeated text
+        const gap = 100;
+        const repeatWidth = textWidth + gap;
 
-        // Draw each character with organic wrapping
-        for (let c = 0; c < text.length; c++) {
-          // Calculate this character's base position (scrolling right to left)
-          let charX = w - rowOffset + xAccum;
+        // Calculate base position with wrapping
+        let baseX = w - (rowOffset % repeatWidth);
 
-          // Wrap character position organically within canvas bounds
-          // When a letter goes too far right, wrap it to the left
-          // When it goes too far left, wrap it to the right
-          while (charX > w + charWidths[c]) {
-            charX -= (w + totalTextWidth);
+        // Draw text multiple times for seamless loop
+        for (let copy = -1; copy <= Math.ceil(w / repeatWidth) + 1; copy++) {
+          const x = baseX + copy * repeatWidth;
+          if (x > -textWidth && x < w + textWidth) {
+            drawTextWithSpacing(text, x, y, "left");
           }
-          while (charX < -totalTextWidth) {
-            charX += (w + totalTextWidth);
-          }
-
-          // Only draw if character is visible on canvas
-          if (charX > -charWidths[c] && charX < w + charWidths[c]) {
-            ctx.fillText(text[c], charX, y);
-          }
-
-          xAccum += charWidths[c];
         }
       }
     } else {
       // Static text
-      ctx.textAlign = settings.glassTextAlign;
       let xPos;
       switch (settings.glassTextAlign) {
         case "left": xPos = 50; break;
@@ -248,7 +271,7 @@ const GUI = window.lil.GUI;
 
       for (let i = 0; i < rows.length; i++) {
         const y = startY + i * lineHeight;
-        ctx.fillText(rows[i], xPos, y);
+        drawTextWithSpacing(rows[i], xPos, y, settings.glassTextAlign);
       }
     }
 
@@ -314,15 +337,21 @@ const GUI = window.lil.GUI;
   // ============================================
 
   const keys = new Set();
+  const chaserControlKeys = [
+    "arrowup", "arrowdown", "arrowleft", "arrowright",
+    "w", "a", "s", "d", "t", "f", "g", "h", "i", "j", "k", "l"
+  ];
   window.addEventListener("keydown", (e) => {
-    const controlKeys = [
-      "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-      "w", "a", "s", "d", "t", "f", "g", "h", "i", "j", "k", "l"
-    ];
-    if (controlKeys.includes(e.key) || controlKeys.includes(e.key.toLowerCase())) {
+    const keyLower = e.key.toLowerCase();
+    if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
+      // Auto-start game when any chaser movement key is pressed
+      if (STATE.loaded && !settings.gameStarted && !STATE.gameOver) {
+        settings.gameStarted = true;
+        console.log("Game auto-started by key press");
+      }
     }
-    keys.add(e.key.toLowerCase());
+    keys.add(keyLower);
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
@@ -350,6 +379,67 @@ const GUI = window.lil.GUI;
 
   const ambientLight = new THREE.AmbientLight(settings.ambientColor, settings.ambientIntensity);
   scene.add(ambientLight);
+
+  const directionalLight = new THREE.DirectionalLight(settings.directColor, settings.directIntensity);
+  directionalLight.position.set(settings.directPosX, settings.directPosY, settings.directPosZ);
+  directionalLight.castShadow = true;
+  directionalLight.shadow.mapSize.width = 2048;
+  directionalLight.shadow.mapSize.height = 2048;
+  directionalLight.shadow.camera.near = 0.1;
+  directionalLight.shadow.camera.far = 50;
+  directionalLight.shadow.camera.left = -15;
+  directionalLight.shadow.camera.right = 15;
+  directionalLight.shadow.camera.top = 15;
+  directionalLight.shadow.camera.bottom = -15;
+  scene.add(directionalLight);
+
+  const hemisphereLight = new THREE.HemisphereLight(settings.hemiSkyColor, settings.hemiGroundColor, settings.hemiIntensity);
+  scene.add(hemisphereLight);
+
+  // Apply initial tone mapping settings
+  const toneMappingOptions = {
+    "None": THREE.NoToneMapping,
+    "Linear": THREE.LinearToneMapping,
+    "Reinhard": THREE.ReinhardToneMapping,
+    "Cineon": THREE.CineonToneMapping,
+    "ACESFilmic": THREE.ACESFilmicToneMapping,
+    "AgX": THREE.AgXToneMapping,
+    "Neutral": THREE.NeutralToneMapping,
+  };
+  renderer.toneMapping = toneMappingOptions[settings.toneMapping] || THREE.LinearToneMapping;
+  renderer.toneMappingExposure = settings.exposure;
+
+  // Generate neutral environment for PBR materials
+  function createNeutralEnvironment() {
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+
+    // Create a simple neutral environment scene
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0.5, 0.5, 0.5);
+
+    // Add soft lights to the environment scene
+    const light1 = new THREE.DirectionalLight(0xffffff, 1);
+    light1.position.set(1, 1, 1);
+    envScene.add(light1);
+
+    const light2 = new THREE.DirectionalLight(0xffffff, 0.5);
+    light2.position.set(-1, 0.5, -1);
+    envScene.add(light2);
+
+    const ambLight = new THREE.AmbientLight(0xffffff, 0.4);
+    envScene.add(ambLight);
+
+    const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
+    pmremGenerator.dispose();
+
+    return envMap;
+  }
+
+  // Apply neutral environment
+  const neutralEnvMap = createNeutralEnvironment();
+  scene.environment = neutralEnvMap;
+  scene.environmentIntensity = settings.environmentIntensity;
 
   // ============================================
   // CAMERAS
@@ -453,6 +543,10 @@ const GUI = window.lil.GUI;
 
     const gameCanvas = document.getElementById("game-canvas");
 
+    // Settings controls at the top
+    guiLeft.add(settings, "saveSettings").name("Save Settings");
+    guiLeft.add(settings, "clearSettings").name("Clear Settings");
+
     // ==================== GAME ====================
     const gameFolder = guiLeft.addFolder("Game");
     gameFolder.add(settings, "startGame").name("Start Game");
@@ -503,39 +597,98 @@ const GUI = window.lil.GUI;
       }
     }
 
-    perspFolder.add(settings, "perspPosX", -500, 500, 0.01).name("Pos X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosY", 0, 500, 0.01).name("Pos Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosZ", -500, 500, 0.01).name("Pos Z").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookX", -500, 500, 0.01).name("Look X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookY", -500, 500, 0.01).name("Look Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspLookZ", -500, 500, 0.01).name("Look Z").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosX", -500, 500, 0.001).name("Pos X").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosY", 0, 500, 0.001).name("Pos Y").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspPosZ", -500, 500, 0.001).name("Pos Z").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspLookX", -500, 500, 0.001).name("Look X").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspLookY", -500, 500, 0.001).name("Look Y").onChange(updatePerspCameraPos);
+    perspFolder.add(settings, "perspLookZ", -500, 500, 0.001).name("Look Z").onChange(updatePerspCameraPos);
     perspFolder.close();
     cameraFolder.close();
 
-    // ==================== LIGHTS ====================
-    const lightsFolder = guiLeft.addFolder("Lights");
+    // ==================== LIGHTING ====================
+    const lightsFolder = guiLeft.addFolder("Lighting");
+
+    // Tone mapping options
+    const toneMappingOptions = {
+      "None": THREE.NoToneMapping,
+      "Linear": THREE.LinearToneMapping,
+      "Reinhard": THREE.ReinhardToneMapping,
+      "Cineon": THREE.CineonToneMapping,
+      "ACESFilmic": THREE.ACESFilmicToneMapping,
+      "AgX": THREE.AgXToneMapping,
+      "Neutral": THREE.NeutralToneMapping,
+    };
+
+    lightsFolder.add(settings, "toneMapping", Object.keys(toneMappingOptions)).name("Tone Mapping").onChange((v) => {
+      renderer.toneMapping = toneMappingOptions[v];
+    });
+    lightsFolder.add(settings, "exposure", 0, 3, 0.01).name("Exposure").onChange((v) => {
+      renderer.toneMappingExposure = v;
+    });
+    lightsFolder.add(settings, "environmentIntensity", 0, 3, 0.1).name("Environment").onChange((v) => {
+      scene.environmentIntensity = v;
+    });
+    lightsFolder.add(settings, "punctualLights").name("Punctual Lights").onChange((v) => {
+      // Toggle fugitive and chaser lights
+      for (const f of fugitives) {
+        if (f.light) f.light.visible = v;
+      }
+      for (const c of chasers) {
+        if (c.light) c.light.visible = v;
+      }
+    });
+
+    const ambientFolder = lightsFolder.addFolder("Ambient Light");
+    ambientFolder.add(settings, "ambientIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
+      ambientLight.intensity = v;
+    });
+    ambientFolder.addColor(settings, "ambientColor").name("Color").onChange((v) => {
+      ambientLight.color.set(v);
+    });
+    ambientFolder.close();
+
+    const directFolder = lightsFolder.addFolder("Directional Light");
+    directFolder.add(settings, "directIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
+      directionalLight.intensity = v;
+    });
+    directFolder.addColor(settings, "directColor").name("Color").onChange((v) => {
+      directionalLight.color.set(v);
+    });
+
+    function updateDirectLightPos() {
+      directionalLight.position.set(settings.directPosX, settings.directPosY, settings.directPosZ);
+    }
+    directFolder.add(settings, "directPosX", -20, 20, 0.5).name("Pos X").onChange(updateDirectLightPos);
+    directFolder.add(settings, "directPosY", 0, 30, 0.5).name("Pos Y").onChange(updateDirectLightPos);
+    directFolder.add(settings, "directPosZ", -20, 20, 0.5).name("Pos Z").onChange(updateDirectLightPos);
+    directFolder.close();
+
+    const hemiFolder = lightsFolder.addFolder("Hemisphere Light");
+    hemiFolder.add(settings, "hemiIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
+      hemisphereLight.intensity = v;
+    });
+    hemiFolder.addColor(settings, "hemiSkyColor").name("Sky Color").onChange((v) => {
+      hemisphereLight.color.set(v);
+    });
+    hemiFolder.addColor(settings, "hemiGroundColor").name("Ground Color").onChange((v) => {
+      hemisphereLight.groundColor.set(v);
+    });
+    hemiFolder.close();
 
     const fugitiveLightFolder = lightsFolder.addFolder("Fugitive Lights");
-    fugitiveLightFolder.addColor(settings, "fugitive1Color").name("Fugitive 1").onChange(updateFugitiveLights);
-    fugitiveLightFolder.addColor(settings, "fugitive2Color").name("Fugitive 2").onChange(updateFugitiveLights);
-    fugitiveLightFolder.addColor(settings, "fugitive3Color").name("Fugitive 3").onChange(updateFugitiveLights);
-    fugitiveLightFolder.addColor(settings, "fugitive4Color").name("Fugitive 4").onChange(updateFugitiveLights);
+    fugitiveLightFolder.addColor(settings, "fugitiveColor").name("Color").onChange(updateFugitiveLights);
     fugitiveLightFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Intensity").onChange(updateFugitiveLights);
     fugitiveLightFolder.close();
 
     const chaserLightFolder = lightsFolder.addFolder("Chaser Lights");
-    chaserLightFolder.addColor(settings, "chaserColor").name("Color").onChange(updateChaserLights);
+    chaserLightFolder.addColor(settings, "chaser1Color").name("Chaser 1").onChange(updateChaserLights);
+    chaserLightFolder.addColor(settings, "chaser2Color").name("Chaser 2").onChange(updateChaserLights);
+    chaserLightFolder.addColor(settings, "chaser3Color").name("Chaser 3").onChange(updateChaserLights);
+    chaserLightFolder.addColor(settings, "chaser4Color").name("Chaser 4").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightIntensity", 0, 100, 1).name("Intensity").onChange(updateChaserLights);
     chaserLightFolder.close();
 
-    const ambientFolder = lightsFolder.addFolder("Ambient Light");
-    ambientFolder.addColor(settings, "ambientColor").name("Color").onChange((v) => {
-      ambientLight.color.set(v);
-    });
-    ambientFolder.add(settings, "ambientIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
-      ambientLight.intensity = v;
-    });
-    ambientFolder.close();
     lightsFolder.close();
 
     // ==================== FUGITIVE WIRES ====================
@@ -645,27 +798,8 @@ const GUI = window.lil.GUI;
     const blendModes = ["Normal", "Additive", "Subtractive", "Multiply", "Screen", "Overlay", "Lighten", "Darken"];
     levelAppearanceFolder.add(settings, "levelOpacity", 0, 1, 0.01).name("Opacity").onChange(updateLevelOpacity);
     levelAppearanceFolder.add(settings, "levelBlendMode", blendModes).name("Blend Mode").onChange(updateLevelBlendMode);
+
     levelAppearanceFolder.close();
-
-    // ==================== CANVAS BLENDING ====================
-    const canvasFolder = guiLeft.addFolder("Canvas Blending");
-    const cssBlendModes = [
-      "normal", "multiply", "screen", "overlay", "darken", "lighten",
-      "color-dodge", "color-burn", "hard-light", "soft-light",
-      "difference", "exclusion", "hue", "saturation", "color", "luminosity"
-    ];
-    canvasFolder.add(settings, "canvasBlendMode", cssBlendModes).name("Blend Mode").onChange((v) => {
-      if (gameCanvas) gameCanvas.style.mixBlendMode = v;
-    });
-    canvasFolder.add(settings, "canvasOpacity", 0, 1, 0.05).name("Opacity").onChange((v) => {
-      if (gameCanvas) gameCanvas.style.opacity = v;
-    });
-
-    if (gameCanvas) {
-      gameCanvas.style.mixBlendMode = settings.canvasBlendMode;
-      gameCanvas.style.opacity = settings.canvasOpacity;
-    }
-    canvasFolder.close();
 
     // ==================== POST-PROCESSING ====================
     const postFolder = guiLeft.addFolder("Post-Processing");
@@ -687,7 +821,7 @@ const GUI = window.lil.GUI;
     postFolder.close();
 
     // ==================== GLASS OVERLAY ====================
-    const glassFolder = guiLeft.addFolder("Glass Overlay");
+    const glassFolder = guiLeft.addFolder("Text");
     glassFolder.add(settings, "glassEnabled").name("Enabled").onChange((v) => {
       for (const mesh of glassMeshes) {
         mesh.visible = v;
@@ -710,6 +844,8 @@ const GUI = window.lil.GUI;
     textStyleFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
     textStyleFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
     textStyleFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
+    textStyleFolder.add(settings, "glassTextOffsetY", -500, 500, 10).name("Offset Y").onChange(() => updateGlassCanvas());
+    textStyleFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
     textStyleFolder.close();
 
     const marqueeFolder = glassFolder.addFolder("Marquee Animation");
@@ -724,12 +860,6 @@ const GUI = window.lil.GUI;
     marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
     marqueeFolder.close();
     glassFolder.close();
-
-    // ==================== SETTINGS STORAGE ====================
-    const settingsFolder = guiLeft.addFolder("Settings Storage");
-    settingsFolder.add(settings, "saveSettings").name("Save Settings");
-    settingsFolder.add(settings, "clearSettings").name("Clear Settings");
-    settingsFolder.close();
 
     // Store reference for GLB parts to add to later
     STATE.mainGUI = guiLeft;
@@ -760,12 +890,27 @@ const GUI = window.lil.GUI;
     if (glbParts.size === 0) return;
 
     // Add GLB Parts folder to main GUI
-    const glbPartsFolder = STATE.mainGUI.addFolder("GLB Parts");
+    const glbPartsFolder = STATE.mainGUI.addFolder("GLB");
+
+    // Parts that should have 0 opacity by default
+    const hiddenByDefault = ["building-building", "pavement-paths"];
 
     glbParts.forEach((data, name) => {
+      // Check if this part should be hidden by default
+      const nameLower = name.toLowerCase();
+      const shouldHide = hiddenByDefault.some(h => nameLower.includes(h.toLowerCase()));
+      const defaultOpacity = shouldHide ? 0 : data.originalOpacity;
+
+      // Apply default opacity to mesh
+      if (shouldHide) {
+        data.mesh.material.transparent = true;
+        data.mesh.material.opacity = 0;
+        data.mesh.material.needsUpdate = true;
+      }
+
       const partSettings = {
         color: "#" + data.originalColor.getHexString(),
-        opacity: data.originalOpacity,
+        opacity: defaultOpacity,
         visible: true
       };
 
@@ -860,30 +1005,32 @@ const GUI = window.lil.GUI;
   // ============================================
 
   function updateFugitiveLights() {
-    const colors = [settings.fugitive1Color, settings.fugitive2Color, settings.fugitive3Color, settings.fugitive4Color];
-    for (let i = 0; i < fugitives.length; i++) {
-      const f = fugitives[i];
+    const color = settings.fugitiveColor;
+    for (const f of fugitives) {
       if (f.light) {
-        f.light.color.set(colors[i] || colors[0]);
+        f.light.color.set(color);
         f.light.intensity = settings.fugitiveLightIntensity;
       }
       if (f.mesh && f.mesh.material) {
-        f.mesh.material.color.set(colors[i] || colors[0]);
-        f.mesh.material.emissive.set(colors[i] || colors[0]);
+        f.mesh.material.color.set(color);
+        f.mesh.material.emissive.set(color);
         f.mesh.material.emissiveIntensity = 0.3;
       }
     }
   }
 
   function updateChaserLights() {
-    for (const c of chasers) {
+    const colors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    for (let i = 0; i < chasers.length; i++) {
+      const c = chasers[i];
+      const color = colors[i] || colors[0];
       if (c.light) {
-        c.light.color.set(settings.chaserColor);
+        c.light.color.set(color);
         c.light.intensity = settings.chaserLightIntensity;
       }
       if (c.mesh && c.mesh.material) {
-        c.mesh.material.color.set(settings.chaserColor);
-        c.mesh.material.emissive.set(settings.chaserColor);
+        c.mesh.material.color.set(color);
+        c.mesh.material.emissive.set(color);
         c.mesh.material.emissiveIntensity = 0.3;
       }
     }
@@ -1020,11 +1167,13 @@ const GUI = window.lil.GUI;
       const billboardMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         side: THREE.DoubleSide,
-        transparent: true
+        transparent: true,
+        depthWrite: false
       });
       this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
       this.billboard.rotation.x = -Math.PI / 2;
       this.billboard.castShadow = true;
+      this.billboard.renderOrder = 10; // Render after glass
       scene.add(this.billboard);
 
       if (!this.isChaser) {
@@ -1532,7 +1681,14 @@ const GUI = window.lil.GUI;
       const inputDir = getChaserInputDirection(i);
       if (!chaser.active && inputDir.hasInput) {
         chaser.active = true;
-        chaser.mesh.visible = true;
+        // Set full opacity when activated
+        if (chaser.material) {
+          chaser.material.opacity = 1.0;
+          chaser.material.transparent = false;
+        }
+        if (chaser.light) {
+          chaser.light.intensity = settings.chaserLightIntensity;
+        }
       }
 
       if (!chaser.active) continue;
@@ -1564,7 +1720,7 @@ const GUI = window.lil.GUI;
 
   const loader = new GLTFLoader();
 
-  // Load only jagad.glb - use ROADS mesh from within it for navmesh
+  // Load level GLB - use ROADS mesh from within it for navmesh
   new Promise((resolve, reject) => {
     loader.load(PATHS.models.level, resolve, undefined, reject);
   }).then((levelGltf) => {
@@ -1625,7 +1781,7 @@ const GUI = window.lil.GUI;
       }
     }
 
-    // Find ROADS mesh within jagad.glb (same scale as markers)
+    // Find ROADS mesh within level GLB (same scale as markers)
     let roadsMeshes = [];
     levelContainer.traverse((obj) => {
       if (obj.isMesh && obj.name && obj.name.toUpperCase().includes("ROAD")) {
@@ -1633,11 +1789,11 @@ const GUI = window.lil.GUI;
         const scale = obj.scale;
         const worldScale = new THREE.Vector3();
         obj.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), worldScale);
-        console.log(`Found road mesh in jagad.glb: "${obj.name}", local scale: (${scale.x}, ${scale.y}, ${scale.z}), world scale: (${worldScale.x.toFixed(2)}, ${worldScale.y.toFixed(2)}, ${worldScale.z.toFixed(2)})`);
+        console.log(`Found road mesh in level GLB: "${obj.name}", local scale: (${scale.x}, ${scale.y}, ${scale.z}), world scale: (${worldScale.x.toFixed(2)}, ${worldScale.y.toFixed(2)}, ${worldScale.z.toFixed(2)})`);
       }
     });
 
-    console.log(`Found ${roadsMeshes.length} ROADS meshes in jagad.glb for navmesh`);
+    console.log(`Found ${roadsMeshes.length} ROADS meshes in level GLB for navmesh`);
 
     // Find all GLASS meshes for HTML overlay
     let foundGlassMeshes = [];
@@ -1652,9 +1808,9 @@ const GUI = window.lil.GUI;
       setupGlassMeshes(foundGlassMeshes);
       console.log(`Set up ${foundGlassMeshes.length} GLASS mesh(es) with canvas texture`);
     } else {
-      console.warn("No GLASS mesh found in jagad.glb");
+      console.warn("No GLASS mesh found in level GLB");
       // List all mesh names for debugging
-      console.log("Available meshes in jagad.glb:");
+      console.log("Available meshes in level GLB:");
       levelContainer.traverse((obj) => {
         if (obj.isMesh && obj.name) {
           console.log(`  - "${obj.name}"`);
@@ -1665,14 +1821,14 @@ const GUI = window.lil.GUI;
     if (roadsMeshes.length > 0) {
       statusEl.textContent = `Level loaded. Found ${roadsMeshes.length} road meshes, ${fugitiveSpawns.length} fugitive spawns, ${chaserSpawns.length} chaser spawns.`;
     } else {
-      console.warn("No ROADS mesh found in jagad.glb! Looking for any mesh with 'road' in name...");
+      console.warn("No ROADS mesh found in level GLB! Looking for any mesh with 'road' in name...");
       // List all mesh names for debugging
       levelContainer.traverse((obj) => {
         if (obj.isMesh) {
-          console.log(`  Mesh in jagad.glb: "${obj.name}"`);
+          console.log(`  Mesh in level GLB: "${obj.name}"`);
         }
       });
-      statusEl.textContent = "No ROADS mesh found in jagad.glb!";
+      statusEl.textContent = "No ROADS mesh found in level GLB!";
     }
 
     const roadsBbox = roadsMeshes.length > 0
@@ -1699,7 +1855,7 @@ const GUI = window.lil.GUI;
 
     const streetY = roadsBbox.min.y;
 
-    console.log("Building navmesh from ROADS mesh in jagad.glb...");
+    console.log("Building navmesh from ROADS mesh in level GLB...");
 
     const navTriangles = [];
     for (const roadMesh of roadsMeshes) {
@@ -2016,20 +2172,19 @@ const GUI = window.lil.GUI;
     );
 
     const fugitiveGeo = new THREE.BoxGeometry(actorSize, actorSize, actorSize);
-    const fugitiveColors = [settings.fugitive1Color, settings.fugitive2Color, settings.fugitive3Color, settings.fugitive4Color];
+    const fugitiveColor = settings.fugitiveColor;
 
     for (let i = 0; i < fugitiveSpawns.length; i++) {
-      const color = fugitiveColors[i] || fugitiveColors[0];
       const material = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color,
+        color: fugitiveColor,
+        emissive: fugitiveColor,
         emissiveIntensity: 0.3
       });
       const mesh = new THREE.Mesh(fugitiveGeo, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
-      const light = new THREE.PointLight(color, settings.fugitiveLightIntensity, 100);
+      const light = new THREE.PointLight(fugitiveColor, settings.fugitiveLightIntensity, 100);
       light.position.set(0, 0, 0);
       light.castShadow = true;
       light.shadow.mapSize.width = 512;
@@ -2060,23 +2215,25 @@ const GUI = window.lil.GUI;
         lastIntersectionZ: roadPoint.z,
       });
 
-      const wire = new ActorWire(fugitives[fugitives.length - 1], actorSize, fugitiveColors[i] || fugitiveColors[0], false, i);
+      const wire = new ActorWire(fugitives[fugitives.length - 1], actorSize, fugitiveColor, false, i);
       fugitiveWires.push(wire);
     }
 
     const chaserGeo = new THREE.BoxGeometry(actorSize, actorSize, actorSize);
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
 
     for (let i = 0; i < chaserSpawns.length; i++) {
+      const color = chaserColors[i] || chaserColors[0];
       const material = new THREE.MeshStandardMaterial({
-        color: settings.chaserColor,
-        emissive: settings.chaserColor,
+        color: color,
+        emissive: color,
         emissiveIntensity: 0.3,
       });
       const mesh = new THREE.Mesh(chaserGeo, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
-      const light = new THREE.PointLight(settings.chaserColor, settings.chaserLightIntensity, 100);
+      const light = new THREE.PointLight(color, settings.chaserLightIntensity, 100);
       light.position.set(0, 0, 0);
       light.castShadow = true;
       light.shadow.mapSize.width = 512;
@@ -2091,11 +2248,16 @@ const GUI = window.lil.GUI;
 
       mesh.position.set(roadPoint.x, 0, roadPoint.z);
       projectYOnRoad(mesh.position);
-      mesh.visible = false;
+      mesh.visible = true;
+      // Start dimmed at 20% opacity
+      material.transparent = true;
+      material.opacity = 0.2;
+      light.intensity = settings.chaserLightIntensity * 0.2;
 
       const chaserObj = {
         mesh,
         light,
+        material,
         speed: settings.chaserSpeed,
         dirX: 0,
         dirZ: 0,
@@ -2119,6 +2281,8 @@ const GUI = window.lil.GUI;
     setupGUI();
     initPostProcessing();
     setupGLBPartsGUI();
+
+    // Apply initial settings after GUI is set up
 
     statusEl.textContent = "Ready! Click 'Start Game' in the GUI.";
   }).catch((err) => {
