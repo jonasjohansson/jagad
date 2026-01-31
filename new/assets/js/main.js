@@ -107,6 +107,11 @@ const GUI = window.lil.GUI;
     levelCenter: new THREE.Vector3(),
     horizontalSize: 100,
     levelContainer: null,
+    // Game timer
+    gameTimerStarted: false,
+    gameTimerRemaining: 90,
+    showingScore: false,
+    scoreDisplayTime: 0,
   };
 
   // ============================================
@@ -1550,6 +1555,100 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
+  // GAME TIMER & RESET
+  // ============================================
+
+  function formatTimer(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  function updateTimerDisplay() {
+    if (STATE.showingScore) return;
+
+    if (STATE.gameTimerStarted && !STATE.gameOver) {
+      settings.glassTextRow4 = `TIME ${formatTimer(STATE.gameTimerRemaining)}`;
+    }
+  }
+
+  function showGameScore() {
+    STATE.showingScore = true;
+    STATE.scoreDisplayTime = 5; // Show score for 5 seconds
+
+    const caught = STATE.capturedCount || 0;
+    const total = fugitives.length;
+    const timeUsed = 90 - Math.max(0, STATE.gameTimerRemaining);
+
+    settings.glassTextRow1 = "GAME OVER";
+    settings.glassTextRow2 = `CAUGHT ${caught} OF ${total}`;
+    settings.glassTextRow3 = `TIME ${formatTimer(timeUsed)}`;
+    settings.glassTextRow4 = "";
+  }
+
+  function resetGame() {
+    // Reset state
+    STATE.gameOver = false;
+    STATE.gameTimerStarted = false;
+    STATE.gameTimerRemaining = 90;
+    STATE.showingScore = false;
+    STATE.scoreDisplayTime = 0;
+    STATE.capturedCount = 0;
+    settings.gameStarted = false;
+
+    // Reset text rows
+    settings.glassTextRow1 = defaultSettings.glassTextRow1;
+    settings.glassTextRow2 = defaultSettings.glassTextRow2;
+    settings.glassTextRow3 = defaultSettings.glassTextRow3;
+    settings.glassTextRow4 = defaultSettings.glassTextRow4;
+
+    // Reset fugitives
+    for (const f of fugitives) {
+      f.captured = false;
+      f.mesh.visible = true;
+      if (f.light) f.light.visible = true;
+
+      // Re-initialize on path
+      initActorOnPath(f);
+
+      // Re-show billboard and wire
+      const wire = fugitiveWires[f.index];
+      if (wire) {
+        if (wire.billboard) wire.billboard.visible = true;
+        if (wire.line) wire.line.visible = true;
+      }
+    }
+
+    // Reset chasers
+    for (const c of chasers) {
+      c.active = false;
+      c.isMoving = false;
+      c.queuedDirX = 0;
+      c.queuedDirZ = 0;
+      c.currentEdge = null;
+
+      // Re-initialize position
+      initActorOnPath(c);
+
+      // Set to passive appearance
+      if (c.isCarModel) {
+        c.mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material.opacity = 0.3;
+            child.material.transparent = true;
+          }
+        });
+      } else if (c.material) {
+        c.material.opacity = 0.3;
+        c.material.transparent = true;
+      }
+      if (c.light) {
+        c.light.intensity = settings.chaserLightIntensity * 0.1;
+      }
+    }
+  }
+
+  // ============================================
   // COLLISION
   // ============================================
 
@@ -1721,8 +1820,28 @@ const GUI = window.lil.GUI;
       }
     }
 
+    // Calculate separation from other fugitives
+    let separationX = 0, separationZ = 0;
+    const separationRange = 5; // Distance within which fugitives repel each other
+
+    for (const f of fugitives) {
+      if (f === actor) continue;
+      const dx = actor.mesh.position.x - f.mesh.position.x;
+      const dz = actor.mesh.position.z - f.mesh.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > 0.1 && dist < separationRange) {
+        // Stronger repulsion when closer
+        const weight = 1 / (dist * dist + 0.1);
+        separationX += (dx / dist) * weight;
+        separationZ += (dz / dist) * weight;
+      }
+    }
+
     const threatLen = Math.sqrt(threatX * threatX + threatZ * threatZ);
     const hasThreat = threatLen > 0.01 && closestDist < 30;
+
+    const separationLen = Math.sqrt(separationX * separationX + separationZ * separationZ);
+    const hasSeparation = separationLen > 0.01;
 
     let chosen;
 
@@ -1731,9 +1850,36 @@ const GUI = window.lil.GUI;
       threatX /= threatLen;
       threatZ /= threatLen;
 
+      // Blend in separation if fugitives are close
+      if (hasSeparation) {
+        separationX /= separationLen;
+        separationZ /= separationLen;
+        // Chasers are more important (0.7) but separation also matters (0.3)
+        threatX = threatX * 0.7 + separationX * 0.3;
+        threatZ = threatZ * 0.7 + separationZ * 0.3;
+        const blendLen = Math.sqrt(threatX * threatX + threatZ * threatZ);
+        if (blendLen > 0.01) {
+          threatX /= blendLen;
+          threatZ /= blendLen;
+        }
+      }
+
       let bestScore = -Infinity;
       for (const dir of available) {
         const score = dir.dirX * threatX + dir.dirZ * threatZ;
+        if (score > bestScore) {
+          bestScore = score;
+          chosen = dir;
+        }
+      }
+    } else if (hasSeparation && Math.random() < 0.6) {
+      // No chaser threat but fugitives nearby: move away from them
+      separationX /= separationLen;
+      separationZ /= separationLen;
+
+      let bestScore = -Infinity;
+      for (const dir of available) {
+        const score = dir.dirX * separationX + dir.dirZ * separationZ;
         if (score > bestScore) {
           bestScore = score;
           chosen = dir;
@@ -1869,19 +2015,45 @@ const GUI = window.lil.GUI;
     STATE.lastTime = t;
 
     if (STATE.loaded && settings.gameStarted && !STATE.gameOver) {
+      // Update game timer
+      if (STATE.gameTimerStarted && STATE.gameTimerRemaining > 0) {
+        STATE.gameTimerRemaining -= dt;
+        updateTimerDisplay();
+
+        // Time's up!
+        if (STATE.gameTimerRemaining <= 0) {
+          STATE.gameTimerRemaining = 0;
+          STATE.gameOver = true;
+          showGameScore();
+        }
+      }
+
       updateGame(dt);
     }
 
+    // Handle score display countdown and reset
+    if (STATE.showingScore) {
+      STATE.scoreDisplayTime -= dt;
+      if (STATE.scoreDisplayTime <= 0) {
+        resetGame();
+      }
+    }
+
     if (STATE.loaded) {
-      for (const wire of fugitiveWires) {
+      for (let i = 0; i < fugitiveWires.length; i++) {
+        const wire = fugitiveWires[i];
+        // Skip wire updates for captured fugitives
+        if (fugitives[i] && fugitives[i].captured) continue;
         wire.update(dt);
       }
 
       if (settings.faceSwapDuration > 0) {
         if (t - lastFaceSwapTime >= settings.faceSwapDuration) {
           lastFaceSwapTime = t;
-          for (const wire of fugitiveWires) {
-            wire.swapTexture();
+          for (let i = 0; i < fugitiveWires.length; i++) {
+            // Skip face swap for captured fugitives
+            if (fugitives[i] && fugitives[i].captured) continue;
+            fugitiveWires[i].swapTexture();
           }
         }
       }
@@ -1932,6 +2104,12 @@ const GUI = window.lil.GUI;
       if (!chaser.active && inputDir.hasInput) {
         console.log(`Chaser ${i} activated by input:`, inputDir);
         chaser.active = true;
+
+        // Start game timer when first chaser activates
+        if (!STATE.gameTimerStarted) {
+          STATE.gameTimerStarted = true;
+          STATE.gameTimerRemaining = 90;
+        }
 
         // Initialize on path when first activated
         if (!chaser.currentEdge) {
@@ -2027,6 +2205,7 @@ const GUI = window.lil.GUI;
 
     if (STATE.capturedCount >= fugitives.length && !STATE.gameOver) {
       STATE.gameOver = true;
+      showGameScore();
     }
   }
 
