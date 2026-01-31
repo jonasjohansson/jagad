@@ -245,19 +245,12 @@ const GUI = window.lil.GUI;
 
       scene.add(mesh);
 
-      // Add debug arrow to show facing direction (bright green, larger)
-      const arrowDir = new THREE.Vector3(0, 0, 1);
-      const arrowOrigin = new THREE.Vector3(0, 0.5, 0);
-      const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowOrigin, 3, 0x00ff00, 0.8, 0.5);
-      mesh.add(arrowHelper);
-
       helicopter = {
         mesh,
         light,
         lightTarget,
         angle: 0,
         rotorAngle: 0,
-        debugArrow: arrowHelper,
         // Random patrol waypoint system - start with current position as target
         targetX: startX,
         targetZ: startZ,
