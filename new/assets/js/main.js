@@ -173,10 +173,14 @@ const GUI = window.lil.GUI;
       mesh.scale.setScalar(scale);
       console.log("Helicopter size:", size, "maxDim:", maxDim, "scale:", scale);
 
-      // Position above the level
+      // Position above the level - start near chaser spawn area
       const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-      mesh.position.set(center.x, settings.helicopterHeight, center.z);
-      console.log("Helicopter position:", mesh.position, "center:", center);
+      const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
+      // Start at a random position within the level
+      const startX = center.x + (Math.random() - 0.5) * levelRadius;
+      const startZ = center.z + (Math.random() - 0.5) * levelRadius;
+      mesh.position.set(startX, settings.helicopterHeight, startZ);
+      console.log("Helicopter position:", mesh.position, "center:", center, "levelRadius:", levelRadius);
 
       // Add spotlight facing down
       const angleRad = (settings.helicopterLightAngle * Math.PI) / 180;
@@ -209,10 +213,10 @@ const GUI = window.lil.GUI;
 
       scene.add(mesh);
 
-      // Add debug arrow to show facing direction
+      // Add debug arrow to show facing direction (bright green, larger)
       const arrowDir = new THREE.Vector3(0, 0, 1);
-      const arrowOrigin = new THREE.Vector3(0, 0, 0);
-      const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowOrigin, 2, 0xff0000, 0.5, 0.3);
+      const arrowOrigin = new THREE.Vector3(0, 0.5, 0);
+      const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowOrigin, 3, 0x00ff00, 0.8, 0.5);
       mesh.add(arrowHelper);
 
       helicopter = {
@@ -222,6 +226,10 @@ const GUI = window.lil.GUI;
         angle: 0,
         rotorAngle: 0,
         debugArrow: arrowHelper,
+        // Random patrol waypoint system - start with current position as target
+        targetX: startX,
+        targetZ: startZ,
+        waypointTimer: 2, // Start moving after 2 seconds
       };
 
       // Find rotor parts to animate
@@ -247,21 +255,50 @@ const GUI = window.lil.GUI;
     helicopter.mesh.visible = true;
 
     const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+    const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
+    const patrolRadius = Math.min(settings.helicopterRadius, levelRadius * 0.8);
     const time = performance.now() * 0.001;
 
-    // Hover over the level with gentle drift
-    helicopter.angle += settings.helicopterSpeed * dt * 0.5;
-    const driftX = Math.sin(time * 0.3) * settings.helicopterRadius * 0.3;
-    const driftZ = Math.cos(time * 0.2) * settings.helicopterRadius * 0.3;
+    // Smooth figure-8 / lemniscate pattern over the level
+    const speed = settings.helicopterSpeed * 0.3;
+    helicopter.angle += speed * dt;
 
-    helicopter.mesh.position.x = center.x + driftX;
-    helicopter.mesh.position.z = center.z + driftZ;
-    helicopter.mesh.position.y = settings.helicopterHeight + Math.sin(time * 0.5) * 0.2;
+    // Create smooth hovering path using sine waves
+    const targetX = center.x + Math.sin(helicopter.angle) * patrolRadius * 0.8;
+    const targetZ = center.z + Math.sin(helicopter.angle * 2) * patrolRadius * 0.4;
 
-    // Face forward with gentle banking only
-    helicopter.mesh.rotation.y = 0; // Face forward (towards positive Z)
-    helicopter.mesh.rotation.z = Math.sin(time * 0.4) * 0.02; // Slight roll
-    helicopter.mesh.rotation.x = Math.cos(time * 0.3) * 0.02; // Slight pitch
+    // Smoothly interpolate position (no sudden jumps)
+    const lerpSpeed = 1.5 * dt;
+    helicopter.mesh.position.x += (targetX - helicopter.mesh.position.x) * lerpSpeed;
+    helicopter.mesh.position.z += (targetZ - helicopter.mesh.position.z) * lerpSpeed;
+
+    // Gentle height bobbing
+    helicopter.mesh.position.y = settings.helicopterHeight + Math.sin(time * 0.8) * 0.15;
+
+    // Calculate velocity for facing direction
+    if (!helicopter.lastX) helicopter.lastX = helicopter.mesh.position.x;
+    if (!helicopter.lastZ) helicopter.lastZ = helicopter.mesh.position.z;
+
+    const velX = helicopter.mesh.position.x - helicopter.lastX;
+    const velZ = helicopter.mesh.position.z - helicopter.lastZ;
+
+    helicopter.lastX = helicopter.mesh.position.x;
+    helicopter.lastZ = helicopter.mesh.position.z;
+
+    // Only update rotation if actually moving
+    if (Math.abs(velX) > 0.0001 || Math.abs(velZ) > 0.0001) {
+      const targetRotation = Math.atan2(velX, velZ);
+
+      // Very smooth rotation interpolation
+      let rotDiff = targetRotation - helicopter.mesh.rotation.y;
+      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+      helicopter.mesh.rotation.y += rotDiff * 2 * dt;
+    }
+
+    // Gentle banking based on turning
+    helicopter.mesh.rotation.z = Math.sin(helicopter.angle * 2) * 0.05;
+    helicopter.mesh.rotation.x = 0.03;
 
     // Spin rotors
     if (helicopter.rotors) {
@@ -301,49 +338,76 @@ const GUI = window.lil.GUI;
     textureLoader.load(PATHS.images.cloud, (texture) => {
       console.log("Cloud texture loaded:", texture);
 
-      // Create cloud as a plane facing the camera (horizontal, looking down)
-      const cloudCount = 2;
+      // Store texture for spawning new clouds later
+      STATE.cloudTexture = texture;
+      spawnClouds();
 
-      for (let i = 0; i < cloudCount; i++) {
-        const geometry = new THREE.PlaneGeometry(1, 1);
-        const material = new THREE.MeshBasicMaterial({
-          map: texture,
-          transparent: true,
-          opacity: settings.cloudOpacity,
-          blending: BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-
-        const mesh = new THREE.Mesh(geometry, material);
-
-        // Rotate to be horizontal and face upward (visible from camera above)
-        mesh.rotation.x = Math.PI / 2;
-
-        // Scale the cloud
-        mesh.scale.set(settings.cloudScale, settings.cloudScale * 0.6, 1);
-
-        // Position above the level
-        const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-        const startX = center.x - 20 - (i * 10);
-        const z = center.z + (i - 0.5) * 2;
-        mesh.position.set(startX, settings.cloudHeight, z);
-
-        console.log(`Cloud ${i} position:`, mesh.position);
-
-        scene.add(mesh);
-        clouds.push({
-          mesh,
-          material,
-          speed: settings.cloudSpeed * (0.7 + Math.random() * 0.3),
-          index: i,
-        });
-      }
-
-      console.log("Clouds loaded:", cloudCount);
+      console.log("Clouds system initialized");
     }, undefined, (err) => {
       console.warn("Failed to load cloud texture:", err);
     });
+  }
+
+  function spawnClouds() {
+    if (!STATE.cloudTexture) return;
+
+    // Clear existing clouds
+    for (const cloud of clouds) {
+      scene.remove(cloud.mesh);
+      cloud.material.dispose();
+      cloud.mesh.geometry.dispose();
+    }
+    clouds.length = 0;
+
+    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+    const cloudCount = settings.cloudCount;
+
+    for (let i = 0; i < cloudCount; i++) {
+      const geometry = new THREE.PlaneGeometry(1, 1);
+      const material = new THREE.MeshBasicMaterial({
+        map: STATE.cloudTexture,
+        transparent: true,
+        opacity: 0, // Start invisible, fade in
+        blending: BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+
+      // Rotate to be horizontal and face upward (visible from camera above)
+      mesh.rotation.x = Math.PI / 2;
+
+      // Random scale within range
+      const scale = settings.cloudScaleMin + Math.random() * (settings.cloudScaleMax - settings.cloudScaleMin);
+      mesh.scale.set(scale, scale * 0.6, 1);
+
+      // Random height within range
+      const height = settings.cloudHeightMin + Math.random() * (settings.cloudHeightMax - settings.cloudHeightMin);
+
+      // Random speed within range
+      const speed = settings.cloudSpeedMin + Math.random() * (settings.cloudSpeedMax - settings.cloudSpeedMin);
+
+      // Spread clouds across the level, starting from different X positions
+      const spreadX = 25;
+      const startX = center.x - spreadX + (Math.random() * spreadX * 2);
+      const z = center.z + (Math.random() - 0.5) * 4; // Slight Z variation
+
+      mesh.position.set(startX, height, z);
+
+      scene.add(mesh);
+      clouds.push({
+        mesh,
+        material,
+        speed,
+        height,
+        scale,
+        zOffset: z - center.z,
+        index: i,
+      });
+    }
+
+    console.log("Spawned", cloudCount, "clouds");
   }
 
   function updateClouds(dt) {
@@ -355,29 +419,35 @@ const GUI = window.lil.GUI;
     }
 
     const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const resetX = center.x - 25;
-    const endX = center.x + 25;
+    const resetX = center.x - 15;
+    const endX = center.x + 15;
 
     for (const cloud of clouds) {
       cloud.mesh.visible = true;
 
       // Move cloud from left to right
       cloud.mesh.position.x += cloud.speed * dt;
-      cloud.mesh.position.y = settings.cloudHeight;
+      cloud.mesh.position.y = cloud.height; // Use individual cloud height
+      cloud.mesh.position.z = center.z + cloud.zOffset; // Keep Z offset
 
-      // Reset when cloud moves off the right side
+      // Reset when cloud moves off the right side (respawn on left with new random properties)
       if (cloud.mesh.position.x > endX) {
-        cloud.mesh.position.x = resetX - cloud.index * 10;
+        cloud.mesh.position.x = resetX - Math.random() * 5;
+        // Randomize properties on respawn
+        cloud.height = settings.cloudHeightMin + Math.random() * (settings.cloudHeightMax - settings.cloudHeightMin);
+        cloud.speed = settings.cloudSpeedMin + Math.random() * (settings.cloudSpeedMax - settings.cloudSpeedMin);
+        cloud.scale = settings.cloudScaleMin + Math.random() * (settings.cloudScaleMax - settings.cloudScaleMin);
+        cloud.zOffset = (Math.random() - 0.5) * 4;
       }
 
       // Calculate opacity based on position (fade in/out at edges)
       const distFromCenter = Math.abs(cloud.mesh.position.x - center.x);
-      const maxDist = 20;
+      const maxDist = 12;
       const edgeFade = Math.max(0, 1 - (distFromCenter / maxDist));
       cloud.material.opacity = settings.cloudOpacity * edgeFade;
 
       // Update scale and blending
-      cloud.mesh.scale.set(settings.cloudScale, settings.cloudScale * 0.6, 1);
+      cloud.mesh.scale.set(cloud.scale, cloud.scale * 0.6, 1);
       cloud.material.blending = BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending;
     }
   }
@@ -1303,11 +1373,16 @@ const GUI = window.lil.GUI;
     // ==================== CLOUDS ====================
     const cloudsFolder = guiLeft.addFolder("Clouds");
     cloudsFolder.add(settings, "cloudsEnabled").name("Enabled");
+    cloudsFolder.add(settings, "cloudCount", 1, 5, 1).name("Count").onChange(() => spawnClouds());
     cloudsFolder.add(settings, "cloudOpacity", 0, 1, 0.05).name("Opacity");
-    cloudsFolder.add(settings, "cloudScale", 2, 20, 0.5).name("Scale");
-    cloudsFolder.add(settings, "cloudHeight", 5, 25, 0.5).name("Height");
-    cloudsFolder.add(settings, "cloudSpeed", 0.1, 2, 0.1).name("Speed");
+    cloudsFolder.add(settings, "cloudScaleMin", 1, 10, 0.5).name("Scale Min");
+    cloudsFolder.add(settings, "cloudScaleMax", 1, 15, 0.5).name("Scale Max");
+    cloudsFolder.add(settings, "cloudHeightMin", 3, 15, 0.5).name("Height Min");
+    cloudsFolder.add(settings, "cloudHeightMax", 5, 20, 0.5).name("Height Max");
+    cloudsFolder.add(settings, "cloudSpeedMin", 0.1, 1, 0.05).name("Speed Min");
+    cloudsFolder.add(settings, "cloudSpeedMax", 0.2, 2, 0.05).name("Speed Max");
     cloudsFolder.add(settings, "cloudBlending", ["Normal", "Additive", "Multiply", "Screen"]).name("Blending");
+    cloudsFolder.add({ respawn: () => spawnClouds() }, "respawn").name("Respawn Clouds");
     cloudsFolder.close();
 
     // ==================== VIDEO PLANES ====================

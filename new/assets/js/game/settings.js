@@ -107,19 +107,23 @@ export const defaultSettings = {
   audioTrack: "triumph-hill",
   // Helicopter
   helicopterEnabled: true,
-  helicopterHeight: 8,
+  helicopterHeight: 4,
   helicopterSpeed: 0.5,
   helicopterRadius: 6,
   helicopterScale: 0.5,
-  helicopterLightIntensity: 30,
+  helicopterLightIntensity: 200,
   helicopterLightColor: "#ffffff",
   helicopterLightAngle: 10,
   // Clouds
   cloudsEnabled: true,
+  cloudCount: 3,
   cloudOpacity: 0.6,
-  cloudScale: 8,
-  cloudHeight: 12,
-  cloudSpeed: 0.3,
+  cloudScaleMin: 2,
+  cloudScaleMax: 5,
+  cloudHeightMin: 5,
+  cloudHeightMax: 10,
+  cloudSpeedMin: 0.3,
+  cloudSpeedMax: 0.8,
   cloudBlending: "Normal",
 };
 
