@@ -22,6 +22,7 @@ export const defaultSettings = {
   chaserLightAngle: 65,
   chaserLightPenumbra: 1,
   chaserLightOffset: 0.05,
+  chaserHeightOffset: -0.03,
   cameraType: "perspective",
   orthoZoom: 1,
   perspFov: 20,
@@ -85,6 +86,7 @@ export const defaultSettings = {
   glassTextMarquee: true,
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
+  glassTextShuffle: true,
   // Video Planes
   videoPlane1Enabled: true,
   videoPlane1PosX: -3.2,
@@ -103,6 +105,22 @@ export const defaultSettings = {
   // Audio
   audioVolume: 0.5,
   audioTrack: "triumph-hill",
+  // Helicopter
+  helicopterEnabled: true,
+  helicopterHeight: 8,
+  helicopterSpeed: 0.5,
+  helicopterRadius: 6,
+  helicopterScale: 0.5,
+  helicopterLightIntensity: 30,
+  helicopterLightColor: "#ffffff",
+  helicopterLightAngle: 10,
+  // Clouds
+  cloudsEnabled: true,
+  cloudOpacity: 0.6,
+  cloudScale: 8,
+  cloudHeight: 12,
+  cloudSpeed: 0.3,
+  cloudBlending: "Normal",
 };
 
 export function loadSettings() {

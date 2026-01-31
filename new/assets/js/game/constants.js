@@ -10,12 +10,14 @@ export const PATHS = {
       "assets/models/car-Mazda RX-7.glb",
       "assets/models/car-cartoon banana car.glb",
     ],
+    helicopter: "assets/models/bell_huey_helicopter.glb",
   },
   images: {
     building: "assets/images/building.png",
     faces: "assets/images/faces/",
     leftScreen: "assets/images/left_screen.jpg",
     rightScreen: "assets/images/right_screen.jpg",
+    cloud: "assets/images/cloud.png",
   },
   audio: {
     "triumph-hill": "assets/audio/triumph-hill.mp3",

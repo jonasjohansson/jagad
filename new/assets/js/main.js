@@ -11,7 +11,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { FXAAShader } from "./lib/three/addons/shaders/FXAAShader.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=2";
+import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -68,6 +68,8 @@ const GUI = window.lil.GUI;
 
   const fugitives = [];
   const chasers = [];
+  let helicopter = null;
+  let clouds = [];
 
   let composer = null;
   let renderPass = null;
@@ -152,6 +154,235 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
+  // HELICOPTER
+  // ============================================
+
+  function loadHelicopter() {
+    if (!PATHS.models.helicopter) return;
+
+    const loader = new GLTFLoader();
+    loader.load(PATHS.models.helicopter, (gltf) => {
+      const mesh = gltf.scene;
+
+      // Scale helicopter
+      const box = new THREE.Box3().setFromObject(mesh);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = (settings.helicopterScale * 2) / maxDim;
+      mesh.scale.setScalar(scale);
+      console.log("Helicopter size:", size, "maxDim:", maxDim, "scale:", scale);
+
+      // Position above the level
+      const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+      mesh.position.set(center.x, settings.helicopterHeight, center.z);
+      console.log("Helicopter position:", mesh.position, "center:", center);
+
+      // Add spotlight facing down
+      const angleRad = (settings.helicopterLightAngle * Math.PI) / 180;
+      const light = new THREE.SpotLight(
+        settings.helicopterLightColor,
+        settings.helicopterLightIntensity,
+        50,
+        angleRad,
+        0.5,
+        1
+      );
+      light.position.set(0, 0, 0);
+      light.castShadow = true;
+      light.shadow.mapSize.width = 1024;
+      light.shadow.mapSize.height = 1024;
+
+      // Create target below helicopter
+      const lightTarget = new THREE.Object3D();
+      lightTarget.position.set(0, -10, 0);
+      mesh.add(lightTarget);
+      light.target = lightTarget;
+      mesh.add(light);
+
+      mesh.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      scene.add(mesh);
+
+      // Add debug arrow to show facing direction
+      const arrowDir = new THREE.Vector3(0, 0, 1);
+      const arrowOrigin = new THREE.Vector3(0, 0, 0);
+      const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowOrigin, 2, 0xff0000, 0.5, 0.3);
+      mesh.add(arrowHelper);
+
+      helicopter = {
+        mesh,
+        light,
+        lightTarget,
+        angle: 0,
+        rotorAngle: 0,
+        debugArrow: arrowHelper,
+      };
+
+      // Find rotor parts to animate
+      mesh.traverse((child) => {
+        if (child.name && child.name.toLowerCase().includes("rotor")) {
+          if (!helicopter.rotors) helicopter.rotors = [];
+          helicopter.rotors.push(child);
+        }
+      });
+
+      console.log("Helicopter loaded");
+    }, undefined, (err) => {
+      console.warn("Failed to load helicopter:", err);
+    });
+  }
+
+  function updateHelicopter(dt) {
+    if (!helicopter || !helicopter.mesh) return;
+    if (!settings.helicopterEnabled) {
+      helicopter.mesh.visible = false;
+      return;
+    }
+    helicopter.mesh.visible = true;
+
+    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+    const time = performance.now() * 0.001;
+
+    // Hover over the level with gentle drift
+    helicopter.angle += settings.helicopterSpeed * dt * 0.5;
+    const driftX = Math.sin(time * 0.3) * settings.helicopterRadius * 0.3;
+    const driftZ = Math.cos(time * 0.2) * settings.helicopterRadius * 0.3;
+
+    helicopter.mesh.position.x = center.x + driftX;
+    helicopter.mesh.position.z = center.z + driftZ;
+    helicopter.mesh.position.y = settings.helicopterHeight + Math.sin(time * 0.5) * 0.2;
+
+    // Face forward with gentle banking only
+    helicopter.mesh.rotation.y = 0; // Face forward (towards positive Z)
+    helicopter.mesh.rotation.z = Math.sin(time * 0.4) * 0.02; // Slight roll
+    helicopter.mesh.rotation.x = Math.cos(time * 0.3) * 0.02; // Slight pitch
+
+    // Spin rotors
+    if (helicopter.rotors) {
+      helicopter.rotorAngle += dt * 20;
+      for (const rotor of helicopter.rotors) {
+        rotor.rotation.y = helicopter.rotorAngle;
+      }
+    }
+
+    // Update light settings
+    if (helicopter.light) {
+      helicopter.light.intensity = settings.helicopterLightIntensity;
+      helicopter.light.color.set(settings.helicopterLightColor);
+      helicopter.light.angle = (settings.helicopterLightAngle * Math.PI) / 180;
+    }
+  }
+
+  // ============================================
+  // CLOUDS
+  // ============================================
+
+  const BLEND_MODES = {
+    "Normal": THREE.NormalBlending,
+    "Additive": THREE.AdditiveBlending,
+    "Multiply": THREE.MultiplyBlending,
+    "Screen": THREE.CustomBlending,
+  };
+
+  function loadClouds() {
+    console.log("Loading clouds, path:", PATHS.images.cloud);
+    if (!PATHS.images.cloud) {
+      console.warn("No cloud path defined");
+      return;
+    }
+
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.load(PATHS.images.cloud, (texture) => {
+      console.log("Cloud texture loaded:", texture);
+
+      // Create cloud as a plane facing the camera (horizontal, looking down)
+      const cloudCount = 2;
+
+      for (let i = 0; i < cloudCount; i++) {
+        const geometry = new THREE.PlaneGeometry(1, 1);
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: settings.cloudOpacity,
+          blending: BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+
+        // Rotate to be horizontal and face upward (visible from camera above)
+        mesh.rotation.x = Math.PI / 2;
+
+        // Scale the cloud
+        mesh.scale.set(settings.cloudScale, settings.cloudScale * 0.6, 1);
+
+        // Position above the level
+        const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+        const startX = center.x - 20 - (i * 10);
+        const z = center.z + (i - 0.5) * 2;
+        mesh.position.set(startX, settings.cloudHeight, z);
+
+        console.log(`Cloud ${i} position:`, mesh.position);
+
+        scene.add(mesh);
+        clouds.push({
+          mesh,
+          material,
+          speed: settings.cloudSpeed * (0.7 + Math.random() * 0.3),
+          index: i,
+        });
+      }
+
+      console.log("Clouds loaded:", cloudCount);
+    }, undefined, (err) => {
+      console.warn("Failed to load cloud texture:", err);
+    });
+  }
+
+  function updateClouds(dt) {
+    if (!settings.cloudsEnabled) {
+      for (const cloud of clouds) {
+        cloud.mesh.visible = false;
+      }
+      return;
+    }
+
+    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+    const resetX = center.x - 25;
+    const endX = center.x + 25;
+
+    for (const cloud of clouds) {
+      cloud.mesh.visible = true;
+
+      // Move cloud from left to right
+      cloud.mesh.position.x += cloud.speed * dt;
+      cloud.mesh.position.y = settings.cloudHeight;
+
+      // Reset when cloud moves off the right side
+      if (cloud.mesh.position.x > endX) {
+        cloud.mesh.position.x = resetX - cloud.index * 10;
+      }
+
+      // Calculate opacity based on position (fade in/out at edges)
+      const distFromCenter = Math.abs(cloud.mesh.position.x - center.x);
+      const maxDist = 20;
+      const edgeFade = Math.max(0, 1 - (distFromCenter / maxDist));
+      cloud.material.opacity = settings.cloudOpacity * edgeFade;
+
+      // Update scale and blending
+      cloud.mesh.scale.set(settings.cloudScale, settings.cloudScale * 0.6, 1);
+      cloud.material.blending = BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending;
+    }
+  }
+
+  // ============================================
   // GLASS OVERLAY (Canvas texture on GLASS mesh)
   // ============================================
 
@@ -163,6 +394,87 @@ const GUI = window.lil.GUI;
   let lastMarqueeTime = 0;
   let glassVideo = null;
   let glassVideoReady = false;
+
+  // Text shuffle effect
+  const SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*<>[]{}";
+  const textShuffleState = {
+    rows: [{}, {}, {}, {}], // State for each row
+    lastTexts: ["", "", "", ""], // Track previous text to detect changes
+  };
+
+  function initShuffleRow(rowIndex, targetText) {
+    const state = textShuffleState.rows[rowIndex];
+    state.target = targetText;
+    state.current = "";
+    state.lockedChars = 0;
+    state.shuffleTime = 0;
+    state.charDelays = [];
+    // Each character has a random delay before it locks in
+    for (let i = 0; i < targetText.length; i++) {
+      state.charDelays.push(50 + Math.random() * 100 + i * 30); // Stagger effect
+    }
+  }
+
+  function updateShuffleRow(rowIndex, dt) {
+    const state = textShuffleState.rows[rowIndex];
+    if (!state.target) return state.target || "";
+
+    state.shuffleTime += dt * 1000; // Convert to ms
+
+    let result = "";
+    for (let i = 0; i < state.target.length; i++) {
+      if (state.shuffleTime >= state.charDelays[i]) {
+        // Character is locked
+        result += state.target[i];
+      } else {
+        // Character is still shuffling
+        if (state.target[i] === " ") {
+          result += " ";
+        } else {
+          result += SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
+        }
+      }
+    }
+    state.current = result;
+    return result;
+  }
+
+  function getShuffledText(rowIndex, targetText, dt) {
+    // Skip shuffle if disabled
+    if (!settings.glassTextShuffle) {
+      textShuffleState.lastTexts[rowIndex] = targetText;
+      return targetText;
+    }
+
+    // Check if text changed
+    if (textShuffleState.lastTexts[rowIndex] !== targetText) {
+      textShuffleState.lastTexts[rowIndex] = targetText;
+      initShuffleRow(rowIndex, targetText);
+    }
+
+    const state = textShuffleState.rows[rowIndex];
+    if (!state.target) return targetText;
+
+    // Check if shuffle is complete
+    const maxDelay = Math.max(...(state.charDelays || [0]));
+    if (state.shuffleTime >= maxDelay) {
+      return targetText;
+    }
+
+    return updateShuffleRow(rowIndex, dt);
+  }
+
+  function isShuffleActive() {
+    if (!settings.glassTextShuffle) return false;
+    for (let i = 0; i < 4; i++) {
+      const state = textShuffleState.rows[i];
+      if (state.target && state.charDelays) {
+        const maxDelay = Math.max(...state.charDelays);
+        if (state.shuffleTime < maxDelay) return true;
+      }
+    }
+    return false;
+  }
 
   // Video planes
   let videoPlane1 = null;
@@ -322,13 +634,21 @@ const GUI = window.lil.GUI;
       ctx.fillRect(0, 0, w, h);
     }
 
-    // Get text rows
-    const rows = [
+    // Calculate dt for shuffle effect
+    const shuffleDt = timestamp - lastMarqueeTime > 0 && timestamp - lastMarqueeTime < 100
+      ? (timestamp - lastMarqueeTime) / 1000
+      : 0.016;
+
+    // Get text rows with shuffle effect applied
+    const rawRows = [
       settings.glassTextRow1,
       settings.glassTextRow2,
       settings.glassTextRow3,
       settings.glassTextRow4,
-    ].filter(row => row && row.trim() !== "");
+    ];
+    const rows = rawRows
+      .map((row, i) => row && row.trim() !== "" ? getShuffledText(i, row, shuffleDt) : "")
+      .filter(row => row !== "");
 
     if (rows.length === 0) {
       ctx.restore();
@@ -708,6 +1028,7 @@ const GUI = window.lil.GUI;
     gameFolder.add(settings, "chaserSpeed", 0.1, 15, 0.1).name("Chaser Speed").onChange((v) => {
       for (const c of chasers) c.speed = v;
     });
+    gameFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Chaser Height");
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
     gameFolder.add(settings, "showNavmesh").name("Show Path Debug").onChange((v) => {
       const pathGraphDebug = scene.getObjectByName("PathGraphDebug");
@@ -940,6 +1261,7 @@ const GUI = window.lil.GUI;
     });
     marqueeFolder.add(settings, "glassTextMarqueeSpeed", 0, 500, 5).name("Speed (px/s)");
     marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
+    marqueeFolder.add(settings, "glassTextShuffle").name("Text Shuffle Effect");
     marqueeFolder.close();
     glassFolder.close();
 
@@ -965,6 +1287,28 @@ const GUI = window.lil.GUI;
       setAudioTrack(v);
     });
     audioFolder.close();
+
+    // ==================== HELICOPTER ====================
+    const helicopterFolder = guiLeft.addFolder("Helicopter");
+    helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
+    helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Height");
+    helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
+    helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
+    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale");
+    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Light Intensity");
+    helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
+    helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Light Angle");
+    helicopterFolder.close();
+
+    // ==================== CLOUDS ====================
+    const cloudsFolder = guiLeft.addFolder("Clouds");
+    cloudsFolder.add(settings, "cloudsEnabled").name("Enabled");
+    cloudsFolder.add(settings, "cloudOpacity", 0, 1, 0.05).name("Opacity");
+    cloudsFolder.add(settings, "cloudScale", 2, 20, 0.5).name("Scale");
+    cloudsFolder.add(settings, "cloudHeight", 5, 25, 0.5).name("Height");
+    cloudsFolder.add(settings, "cloudSpeed", 0.1, 2, 0.1).name("Speed");
+    cloudsFolder.add(settings, "cloudBlending", ["Normal", "Additive", "Multiply", "Screen"]).name("Blending");
+    cloudsFolder.close();
 
     // ==================== VIDEO PLANES ====================
     const videoPlanesFolder = guiLeft.addFolder("Video Planes");
@@ -1182,7 +1526,7 @@ const GUI = window.lil.GUI;
         // Account for mesh scale when setting light position
         const meshScale = c.mesh.scale.y || 1;
         c.light.position.y = settings.chaserLightHeight / meshScale;
-        c.light.position.z = settings.chaserLightOffset / meshScale; // Front offset
+        c.light.position.z = -settings.chaserLightOffset / meshScale; // Front offset (negative due to car flip)
       }
       // Update materials (handle both box and car models)
       if (c.isCarModel) {
@@ -1941,13 +2285,15 @@ const GUI = window.lil.GUI;
     pos.x = newPos.x;
     pos.z = newPos.z;
     projectYOnRoad(pos);
+    // Apply chaser height offset
+    pos.y += settings.chaserHeightOffset;
 
     // Rotate to face movement direction (headlight rotates with car automatically)
     const edge = actor.currentEdge;
     const travelDirX = (edge.x2 - edge.x1) * actor.edgeDir;
     const travelDirZ = (edge.z2 - edge.z1) * actor.edgeDir;
     if (Math.abs(travelDirX) > 0.01 || Math.abs(travelDirZ) > 0.01) {
-      const targetRotation = Math.atan2(travelDirX, travelDirZ);
+      const targetRotation = Math.atan2(travelDirX, travelDirZ) + Math.PI;
       // Smooth rotation interpolation
       let currentRotation = actor.mesh.rotation.y;
       let diff = targetRotation - currentRotation;
@@ -2067,8 +2413,12 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update glass canvas for video/marquee animation
-      if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady))) {
+      // Update helicopter and clouds
+      updateHelicopter(dt);
+      updateClouds(dt);
+
+      // Update glass canvas for video/marquee/shuffle animation
+      if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive())) {
         updateGlassCanvas(timestamp);
       }
     }
@@ -2199,9 +2549,13 @@ const GUI = window.lil.GUI;
         if (f.captured) continue;
         if (checkCollision(chaser.mesh, f.mesh, STATE.actorRadius || 2.5)) {
           f.captured = true;
-          // Just hide everything instead of removing from scene (avoids stutter)
+          // Hide and move far away to avoid draw call issues
           f.mesh.visible = false;
-          if (f.light) f.light.visible = false;
+          f.mesh.position.y = -1000;
+          if (f.light) {
+            f.light.visible = false;
+            f.light.intensity = 0;
+          }
           const wire = fugitiveWires[f.index];
           if (wire) {
             if (wire.billboard) wire.billboard.visible = false;
@@ -3014,8 +3368,8 @@ const GUI = window.lil.GUI;
         const angleRad = (settings.chaserLightAngle * Math.PI) / 180;
         const light = new THREE.SpotLight(color, 0, settings.chaserLightDistance, angleRad, settings.chaserLightPenumbra, 1);
         const meshScale = mesh.scale.y || 1;
-        // Position at front of car (local Z+) and at set height
-        light.position.set(0, settings.chaserLightHeight / meshScale, settings.chaserLightOffset / meshScale);
+        // Position at front of car (local Z-) and at set height (negative due to car flip)
+        light.position.set(0, settings.chaserLightHeight / meshScale, -settings.chaserLightOffset / meshScale);
         light.castShadow = true;
         light.shadow.mapSize.width = 512;
         light.shadow.mapSize.height = 512;
@@ -3023,9 +3377,9 @@ const GUI = window.lil.GUI;
         light.shadow.camera.far = 50;
         light.shadow.bias = -0.001;
 
-        // Create target for spotlight - point forward from the car
+        // Create target for spotlight - point forward from the car (negative Z due to car flip)
         const lightTarget = new THREE.Object3D();
-        lightTarget.position.set(0, 0, 5 / meshScale); // Point far ahead in local Z
+        lightTarget.position.set(0, 0, -5 / meshScale); // Point far ahead in local -Z
         mesh.add(lightTarget);
         light.target = lightTarget;
         mesh.add(light);
@@ -3035,6 +3389,7 @@ const GUI = window.lil.GUI;
 
         mesh.position.set(roadPoint.x, 0, roadPoint.z);
         projectYOnRoad(mesh.position);
+        mesh.position.y += settings.chaserHeightOffset;
         mesh.visible = true;
 
         const chaserObj = {
@@ -3071,6 +3426,8 @@ const GUI = window.lil.GUI;
     setupGUI();
     initPostProcessing();
     initAudio();
+    loadHelicopter();
+    loadClouds();
 
     // Load path graph from GLB and initialize actors
     rebuildPathGraph();
