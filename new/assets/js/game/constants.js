@@ -4,6 +4,12 @@ export const PATHS = {
   models: {
     level: "assets/models/BuildingV11.glb",
     roads: "assets/models/roads.glb",
+    cars: [
+      "assets/models/car-Red Car.glb",
+      "assets/models/car-Jeep.glb",
+      "assets/models/car-Mazda RX-7.glb",
+      "assets/models/car-cartoon banana car.glb",
+    ],
   },
   images: {
     building: "assets/images/building.png",

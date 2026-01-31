@@ -11,7 +11,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { FXAAShader } from "./lib/three/addons/shaders/FXAAShader.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS, CARDINAL_DIRS } from "./game/constants.js";
+import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=2";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -704,11 +704,11 @@ const GUI = window.lil.GUI;
       for (const c of chasers) c.speed = v;
     });
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
-    gameFolder.add(settings, "showNavmesh").name("Show Navmesh").onChange((v) => {
-      const navmeshDebug = scene.getObjectByName("NavmeshDebug");
-      if (navmeshDebug) navmeshDebug.visible = v;
+    gameFolder.add(settings, "showNavmesh").name("Show Path Debug").onChange((v) => {
+      const pathGraphDebug = scene.getObjectByName("PathGraphDebug");
+      if (pathGraphDebug) pathGraphDebug.visible = v;
     });
-    gameFolder.add(settings, "actorScale", 0.5, 2, 0.05).name("Actor Scale (reload)");
+    gameFolder.add(settings, "actorScale", 0.5, 2.5, 0.1).name("Actor Scale (reload)");
     gameFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
     gameFolder.add(settings, "faceSwapFade").name("Face Swap Fade");
     gameFolder.add(settings, "faceSwapFadeDuration", 0.1, 3, 0.1).name("Fade Duration (sec)");
@@ -808,6 +808,7 @@ const GUI = window.lil.GUI;
     chaserLightFolder.addColor(settings, "chaser3Color").name("Chaser 3").onChange(updateChaserLights);
     chaserLightFolder.addColor(settings, "chaser4Color").name("Chaser 4").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightIntensity", 0, 100, 1).name("Intensity").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightHeight", 0, 10, 0.1).name("Height").onChange(updateChaserLights);
     chaserLightFolder.close();
 
     lightsFolder.close();
@@ -815,7 +816,7 @@ const GUI = window.lil.GUI;
     // ==================== FUGITIVE WIRES ====================
     const wireFolder = guiLeft.addFolder("Fugitive Wires");
     wireFolder.add(settings, "wireEnabled").name("Enabled");
-    wireFolder.add(settings, "wireHeight", 2, 20, 0.5).name("Height");
+    wireFolder.add(settings, "wireHeight", 0.1, 5, 0.1).name("Height");
     wireFolder.add(settings, "wireGravity", 0, 0.5, 0.01).name("Gravity");
     wireFolder.add(settings, "wireFriction", 0.8, 0.99, 0.01).name("Friction");
     wireFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
@@ -826,6 +827,8 @@ const GUI = window.lil.GUI;
         }
       }
     });
+    wireFolder.add(settings, "billboardCenterPull", 0, 1, 0.05).name("Center Pull");
+    wireFolder.add(settings, "billboardMaxDistance", 0, 5, 0.01).name("Max Distance");
     wireFolder.close();
 
     // ==================== BUILDING PLANE ====================
@@ -1156,17 +1159,31 @@ const GUI = window.lil.GUI;
 
   function updateChaserLights() {
     const colors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    console.log(`Updating ${chasers.length} chaser lights, height=${settings.chaserLightHeight}`);
     for (let i = 0; i < chasers.length; i++) {
       const c = chasers[i];
       const color = colors[i] || colors[0];
       if (c.light) {
         c.light.color.set(color);
-        c.light.intensity = settings.chaserLightIntensity;
+        // Keep dimmed if not active
+        c.light.intensity = c.active ? settings.chaserLightIntensity : settings.chaserLightIntensity * 0.1;
+        // Account for mesh scale when setting light height
+        const meshScale = c.mesh.scale.y || 1;
+        c.light.position.y = settings.chaserLightHeight / meshScale;
       }
-      if (c.mesh && c.mesh.material) {
+      // Update materials (handle both box and car models)
+      if (c.isCarModel) {
+        c.mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material.color.set(color);
+            child.material.emissive.set(color);
+            child.material.emissiveIntensity = c.active ? 0.3 : 0.05;
+          }
+        });
+      } else if (c.mesh && c.mesh.material) {
         c.mesh.material.color.set(color);
         c.mesh.material.emissive.set(color);
-        c.mesh.material.emissiveIntensity = 0.3;
+        c.mesh.material.emissiveIntensity = c.active ? 0.3 : 0.05;
       }
     }
   }
@@ -1291,10 +1308,14 @@ const GUI = window.lil.GUI;
 
       const material = new THREE.LineBasicMaterial({
         color: this.color,
-        linewidth: 2
+        linewidth: 2,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false
       });
 
       this.line = new THREE.Line(geometry, material);
+      this.line.renderOrder = 1000;
       scene.add(this.line);
 
       const billboardSize = settings.wireCubeSize * this.actorSize * 2;
@@ -1304,12 +1325,13 @@ const GUI = window.lil.GUI;
         color: new THREE.Color(brightness, brightness, brightness),
         side: THREE.DoubleSide,
         transparent: true,
-        depthWrite: false
+        depthWrite: false,
+        depthTest: false
       });
       this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
       this.billboard.rotation.x = -Math.PI / 2;
       this.billboard.castShadow = false;
-      this.billboard.renderOrder = 10; // Render after glass
+      this.billboard.renderOrder = 1001; // Render on top of wire and glass
       scene.add(this.billboard);
 
       if (!this.isChaser) {
@@ -1426,7 +1448,25 @@ const GUI = window.lil.GUI;
       const time = performance.now() * 0.001;
       const swayX = Math.sin(time * 1.5 + this.actorSize * 10) * 0.3 * this.actorSize;
       const swayZ = Math.cos(time * 1.2 + this.actorSize * 5) * 0.3 * this.actorSize;
-      topPoint.setPos(actorPos.x + swayX, actorPos.y + totalHeight, actorPos.z + swayZ);
+
+      // Pull billboard toward center of level
+      const center = STATE.levelCenter || { x: 0, z: 0 };
+      const centerPull = settings.billboardCenterPull;
+      let targetX = actorPos.x + (center.x - actorPos.x) * centerPull + swayX;
+      let targetZ = actorPos.z + (center.z - actorPos.z) * centerPull + swayZ;
+
+      // Limit distance from actor
+      const maxDist = settings.billboardMaxDistance;
+      const dx = targetX - actorPos.x;
+      const dz = targetZ - actorPos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > maxDist) {
+        const scale = maxDist / dist;
+        targetX = actorPos.x + dx * scale;
+        targetZ = actorPos.z + dz * scale;
+      }
+
+      topPoint.setPos(targetX, actorPos.y + totalHeight, targetZ);
 
       const gravity = settings.wireGravity * this.actorSize;
       const friction = settings.wireFriction;
@@ -1455,8 +1495,23 @@ const GUI = window.lil.GUI;
       }
       this.line.geometry.attributes.position.needsUpdate = true;
 
-      const lastPoint = this.points[this.points.length - 1];
-      this.billboard.position.copy(lastPoint.pos);
+      // Billboard position: start at actor, offset toward center (clamped by maxDist)
+      let billboardX = actorPos.x;
+      let billboardZ = actorPos.z;
+
+      // Calculate offset toward center
+      const toCenterX = center.x - actorPos.x;
+      const toCenterZ = center.z - actorPos.z;
+      const toCenterDist = Math.sqrt(toCenterX * toCenterX + toCenterZ * toCenterZ);
+
+      if (toCenterDist > 0.01 && maxDist > 0) {
+        // Offset toward center, limited by maxDist
+        const pullStrength = Math.min(maxDist, toCenterDist * centerPull);
+        billboardX = actorPos.x + (toCenterX / toCenterDist) * pullStrength;
+        billboardZ = actorPos.z + (toCenterZ / toCenterDist) * pullStrength;
+      }
+
+      this.billboard.position.set(billboardX, actorPos.y + totalHeight, billboardZ);
     }
 
     dispose() {
@@ -1502,244 +1557,298 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
-  // PATHFINDING
+  // PATH-BASED MOVEMENT
   // ============================================
 
-  function measurePathLength(startX, startZ, dir, maxDist, isOnRoad) {
-    let dist = 0;
-    const step = 0.5;
-    let x = startX;
-    let z = startZ;
+  // Initialize actor on path graph
+  function initActorOnPath(actor) {
+    const { pathGraph, findNearestEdgePoint, projectYOnRoad } = STATE;
+    if (!pathGraph || pathGraph.edges.length === 0) return;
 
-    while (dist < maxDist) {
-      const nextX = x + dir.x * step;
-      const nextZ = z + dir.z * step;
-      if (!isOnRoad(nextX, nextZ)) break;
-      x = nextX;
-      z = nextZ;
-      dist += step;
+    const pos = actor.mesh.position;
+    const nearest = findNearestEdgePoint(pos.x, pos.z, pathGraph);
+
+    if (nearest.edge) {
+      actor.currentEdge = nearest.edge;
+      actor.edgeT = nearest.t; // 0-1 position along edge
+      actor.edgeDir = 1; // +1 = toward node2, -1 = toward node1
+
+      // Snap to edge
+      pos.x = nearest.point.x;
+      pos.z = nearest.point.z;
+      projectYOnRoad(pos);
+
+      // Set direction based on edge
+      const dx = actor.currentEdge.x2 - actor.currentEdge.x1;
+      const dz = actor.currentEdge.z2 - actor.currentEdge.z1;
+      actor.dirX = Math.sign(dx) || 0;
+      actor.dirZ = Math.sign(dz) || 0;
     }
-    return dist;
   }
 
-  function getAvailableDirections(x, z, isOnRoad, minDist = 0.5) {
-    const available = [];
-    for (const dir of CARDINAL_DIRS) {
-      const testX = x + dir.x * minDist;
-      const testZ = z + dir.z * minDist;
-      if (isOnRoad(testX, testZ)) {
-        available.push(dir);
+  // Get position on edge from t value
+  function getEdgePosition(edge, t) {
+    return {
+      x: edge.x1 + (edge.x2 - edge.x1) * t,
+      z: edge.z1 + (edge.z2 - edge.z1) * t
+    };
+  }
+
+  // Find edge at node going in specified direction (uses dot product for best match)
+  function findEdgeInDirection(node, dirX, dirZ, pathGraph, excludeEdge = null) {
+    let bestMatch = null;
+    let bestDot = -Infinity;
+
+    for (const edgeId of node.edges) {
+      if (excludeEdge && edgeId === excludeEdge.id) continue;
+
+      const edge = pathGraph.edges[edgeId];
+      let edgeDirX, edgeDirZ;
+
+      if (edge.node1 === node.id) {
+        edgeDirX = edge.x2 - edge.x1;
+        edgeDirZ = edge.z2 - edge.z1;
+      } else {
+        edgeDirX = edge.x1 - edge.x2;
+        edgeDirZ = edge.z1 - edge.z2;
+      }
+
+      // Normalize edge direction
+      const len = Math.sqrt(edgeDirX * edgeDirX + edgeDirZ * edgeDirZ);
+      if (len < 0.001) continue;
+      edgeDirX /= len;
+      edgeDirZ /= len;
+
+      // Dot product with requested direction
+      const dot = edgeDirX * dirX + edgeDirZ * dirZ;
+
+      // Only consider edges going roughly in the right direction (dot > 0.5 = within ~60 degrees)
+      if (dot > 0.5 && dot > bestDot) {
+        bestDot = dot;
+        bestMatch = { edge, startFromNode1: edge.node1 === node.id };
       }
     }
-    return available;
+    return bestMatch;
   }
 
-  function scoreDirection(startX, startZ, dir, targetX, targetZ, isOnRoad, lookAhead = 15) {
-    const pathLen = measurePathLength(startX, startZ, dir, lookAhead, isOnRoad);
-    if (pathLen < 0.5) return -1000;
+  // Get all available directions at a node
+  function getAvailableDirectionsAtNode(node, pathGraph) {
+    const directions = [];
+    for (const edgeId of node.edges) {
+      const edge = pathGraph.edges[edgeId];
+      let dirX, dirZ, startFromNode1;
 
-    const endX = startX + dir.x * pathLen;
-    const endZ = startZ + dir.z * pathLen;
+      if (edge.node1 === node.id) {
+        dirX = edge.x2 - edge.x1;
+        dirZ = edge.z2 - edge.z1;
+        startFromNode1 = true;
+      } else {
+        dirX = edge.x1 - edge.x2;
+        dirZ = edge.z1 - edge.z2;
+        startFromNode1 = false;
+      }
 
-    const futureOptions = getAvailableDirections(endX, endZ, isOnRoad);
+      // Normalize direction
+      const len = Math.sqrt(dirX * dirX + dirZ * dirZ);
+      if (len > 0.001) {
+        dirX /= len;
+        dirZ /= len;
+      }
 
-    const distToTarget = Math.sqrt((targetX - endX) ** 2 + (targetZ - endZ) ** 2);
-
-    const dx = targetX - startX;
-    const dz = targetZ - startZ;
-    const targetDist = Math.sqrt(dx * dx + dz * dz);
-    const alignment = targetDist > 0.1 ? (dir.x * dx + dir.z * dz) / targetDist : 0;
-
-    return alignment * 10 - distToTarget * 0.5 + pathLen * 0.3 + futureOptions.length * 2;
+      directions.push({ edge, dirX, dirZ, startFromNode1 });
+    }
+    return directions;
   }
 
-  // ============================================
-  // MOVEMENT
-  // ============================================
-
-  function updateFugitiveMovement(actor, dt) {
-    const { tryMove, projectYOnRoad, isOnRoad, findNearestRoadPoint } = STATE;
-    const intelligence = settings.fugitiveIntelligence;
+  function updateFugitiveMovementPath(actor, dt) {
+    const { pathGraph, projectYOnRoad } = STATE;
+    if (!pathGraph || !actor.currentEdge) return;
 
     const pos = actor.mesh.position;
     const moveDistance = actor.speed * dt;
 
-    if (!isOnRoad(pos.x, pos.z)) {
-      const roadPoint = findNearestRoadPoint(pos.x, pos.z);
-      pos.x = roadPoint.x;
-      pos.z = roadPoint.z;
-      projectYOnRoad(pos);
-      return;
+    // Move along current edge
+    const edgeLength = actor.currentEdge.length;
+    const tDelta = (moveDistance / edgeLength) * actor.edgeDir;
+    actor.edgeT += tDelta;
+
+    // Check if reached a node
+    if (actor.edgeT >= 1) {
+      actor.edgeT = 1;
+      const nodeId = actor.currentEdge.node2;
+      handleFugitiveAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
+    } else if (actor.edgeT <= 0) {
+      actor.edgeT = 0;
+      const nodeId = actor.currentEdge.node1;
+      handleFugitiveAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
     }
 
-    const newPos = tryMove(pos.x, pos.z, actor.dirX, actor.dirZ, moveDistance, 0);
-    const moved = Math.abs(newPos.x - pos.x) > 0.001 || Math.abs(newPos.z - pos.z) > 0.001;
+    // Update position
+    const newPos = getEdgePosition(actor.currentEdge, actor.edgeT);
+    pos.x = newPos.x;
+    pos.z = newPos.z;
+    projectYOnRoad(pos);
+  }
 
-    if (moved) {
-      pos.x = newPos.x;
-      pos.z = newPos.z;
-      projectYOnRoad(pos);
-    }
+  function handleFugitiveAtNode(actor, node, pathGraph) {
+    const intelligence = settings.fugitiveIntelligence;
+    const available = getAvailableDirectionsAtNode(node, pathGraph);
 
-    const available = getAvailableDirections(pos.x, pos.z, isOnRoad);
     if (available.length === 0) return;
 
-    const currentDir = CARDINAL_DIRS.find(d => d.x === actor.dirX && d.z === actor.dirZ);
-    const reverseDir = CARDINAL_DIRS.find(d => d.x === -actor.dirX && d.z === -actor.dirZ);
-    const hasNewOptions = available.some(d => d !== currentDir && d !== reverseDir);
-    const isIntersection = available.length >= 3 || (available.length === 2 && hasNewOptions);
+    // Calculate threat direction from chasers
+    let threatX = 0, threatZ = 0;
+    let closestDist = Infinity;
 
-    const distFromLastDecision = Math.sqrt(
-      Math.pow(pos.x - actor.lastIntersectionX, 2) +
-      Math.pow(pos.z - actor.lastIntersectionZ, 2)
-    );
-    const canDecide = distFromLastDecision > 2.0;
+    for (const c of chasers) {
+      if (!c.active) continue;
+      const dx = actor.mesh.position.x - c.mesh.position.x;
+      const dz = actor.mesh.position.z - c.mesh.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < closestDist) closestDist = dist;
+      if (dist > 0.1) {
+        const weight = 1 / (dist * dist + 0.1);
+        threatX += (dx / dist) * weight;
+        threatZ += (dz / dist) * weight;
+      }
+    }
 
-    const needsNewDirection = !moved || (isIntersection && canDecide);
+    const threatLen = Math.sqrt(threatX * threatX + threatZ * threatZ);
+    const hasThreat = threatLen > 0.01 && closestDist < 30;
 
-    if (needsNewDirection) {
-      actor.lastIntersectionX = pos.x;
-      actor.lastIntersectionZ = pos.z;
+    let chosen;
 
-      let threatX = 0;
-      let threatZ = 0;
-      let closestChaserDist = Infinity;
+    if (hasThreat && Math.random() < intelligence) {
+      // Escape: choose direction most aligned with escape
+      threatX /= threatLen;
+      threatZ /= threatLen;
 
-      for (const c of chasers) {
-        if (!c.active) continue;
-        const dx = pos.x - c.mesh.position.x;
-        const dz = pos.z - c.mesh.position.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist < closestChaserDist) closestChaserDist = dist;
-        if (dist > 0.1) {
-          const weight = 1 / (dist * dist + 0.1);
-          threatX += (dx / dist) * weight;
-          threatZ += (dz / dist) * weight;
+      let bestScore = -Infinity;
+      for (const dir of available) {
+        const score = dir.dirX * threatX + dir.dirZ * threatZ;
+        if (score > bestScore) {
+          bestScore = score;
+          chosen = dir;
         }
       }
+    } else {
+      // Random: prefer not reversing
+      const currentDirX = actor.dirX;
+      const currentDirZ = actor.dirZ;
+      const nonReverse = available.filter(d =>
+        !(d.dirX === -currentDirX && d.dirZ === -currentDirZ)
+      );
+      const choices = nonReverse.length > 0 ? nonReverse : available;
+      chosen = choices[Math.floor(Math.random() * choices.length)];
+    }
 
-      const threatLen = Math.sqrt(threatX * threatX + threatZ * threatZ);
-      const hasThreat = threatLen > 0.01 && closestChaserDist < 30;
-
-      let chosenDir;
-
-      if (hasThreat) {
-        threatX /= threatLen;
-        threatZ /= threatLen;
-        const escapeTargetX = pos.x + threatX * 50;
-        const escapeTargetZ = pos.z + threatZ * 50;
-
-        const scored = available.map(dir => ({
-          dir,
-          score: scoreDirection(pos.x, pos.z, dir, escapeTargetX, escapeTargetZ, isOnRoad, 20)
-        }));
-        scored.sort((a, b) => b.score - a.score);
-
-        const randomChance = 1 - intelligence;
-        if (Math.random() < randomChance && scored.length > 1) {
-          chosenDir = scored[Math.floor(Math.random() * Math.min(2, scored.length))].dir;
-        } else {
-          chosenDir = scored[0].dir;
-        }
-      } else {
-        const canContinue = currentDir && available.includes(currentDir);
-
-        if (canContinue && !moved) {
-          const otherDirs = available.filter(d => d !== currentDir);
-          chosenDir = otherDirs[Math.floor(Math.random() * otherDirs.length)] || available[0];
-        } else if (available.length >= 3) {
-          const nonReverse = available.filter(d => d !== reverseDir);
-          if (Math.random() < 0.4 && canContinue) {
-            chosenDir = currentDir;
-          } else {
-            const newDirs = nonReverse.filter(d => d !== currentDir);
-            chosenDir = newDirs.length > 0
-              ? newDirs[Math.floor(Math.random() * newDirs.length)]
-              : nonReverse[Math.floor(Math.random() * nonReverse.length)];
-          }
-        } else if (canContinue) {
-          chosenDir = currentDir;
-        } else {
-          const nonReverse = available.filter(d => d !== reverseDir);
-          const choices = nonReverse.length > 0 ? nonReverse : available;
-          chosenDir = choices[Math.floor(Math.random() * choices.length)];
-        }
-      }
-
-      actor.dirX = chosenDir.x;
-      actor.dirZ = chosenDir.z;
+    if (chosen) {
+      actor.currentEdge = chosen.edge;
+      actor.edgeT = chosen.startFromNode1 ? 0 : 1;
+      actor.edgeDir = chosen.startFromNode1 ? 1 : -1;
+      actor.dirX = chosen.dirX;
+      actor.dirZ = chosen.dirZ;
     }
   }
 
-  function updateChaserMovement(actor, dt, chaserIndex) {
-    const { tryMove, projectYOnRoad, isOnRoad, findNearestRoadPoint } = STATE;
+  function updateChaserMovementPath(actor, dt, chaserIndex) {
+    const { pathGraph, projectYOnRoad } = STATE;
+    if (!pathGraph || !actor.currentEdge || !actor.active) {
+      return;
+    }
 
     const pos = actor.mesh.position;
     const moveDistance = actor.speed * dt;
 
-    if (!isOnRoad(pos.x, pos.z)) {
-      const roadPoint = findNearestRoadPoint(pos.x, pos.z);
-      pos.x = roadPoint.x;
-      pos.z = roadPoint.z;
-      projectYOnRoad(pos);
+    // Move along current edge
+    const edgeLength = actor.currentEdge.length;
+    const tDelta = (moveDistance / edgeLength) * actor.edgeDir;
+    actor.edgeT += tDelta;
+
+    // Check if reached a node
+    if (actor.edgeT >= 1) {
+      const overshoot = actor.edgeT - 1;
+      actor.edgeT = 1;
+      const nodeId = actor.currentEdge.node2;
+      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
+      // Apply overshoot to new edge
+      if (actor.edgeT === 0) actor.edgeT = overshoot * (edgeLength / actor.currentEdge.length);
+    } else if (actor.edgeT <= 0) {
+      const overshoot = -actor.edgeT;
+      actor.edgeT = 0;
+      const nodeId = actor.currentEdge.node1;
+      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
+      // Apply overshoot to new edge
+      if (actor.edgeT === 1) actor.edgeT = 1 - overshoot * (edgeLength / actor.currentEdge.length);
+    }
+
+    // Update position
+    const newPos = getEdgePosition(actor.currentEdge, actor.edgeT);
+    pos.x = newPos.x;
+    pos.z = newPos.z;
+    projectYOnRoad(pos);
+
+    // Rotate to face movement direction
+    if (actor.isCarModel) {
+      const edge = actor.currentEdge;
+      const travelDirX = (edge.x2 - edge.x1) * actor.edgeDir;
+      const travelDirZ = (edge.z2 - edge.z1) * actor.edgeDir;
+      if (Math.abs(travelDirX) > 0.01 || Math.abs(travelDirZ) > 0.01) {
+        actor.mesh.rotation.y = Math.atan2(travelDirX, travelDirZ);
+      }
+    }
+  }
+
+  function handleChaserAtNode(actor, node, pathGraph) {
+    if (!node) return;
+
+    // Get current cardinal direction (edges are strictly H or V)
+    const curEdge = actor.currentEdge;
+    const travelDirX = Math.sign(curEdge.x2 - curEdge.x1) * actor.edgeDir;
+    const travelDirZ = Math.sign(curEdge.z2 - curEdge.z1) * actor.edgeDir;
+
+    // Collect available edges with their cardinal directions
+    const options = [];
+    for (const edgeId of node.edges) {
+      if (edgeId === actor.currentEdge.id) continue;
+
+      const edge = pathGraph.edges[edgeId];
+      const startFromNode1 = edge.node1 === node.id;
+      const dirX = startFromNode1 ? edge.dirX : -edge.dirX;
+      const dirZ = startFromNode1 ? edge.dirZ : -edge.dirZ;
+
+      options.push({ edge, startFromNode1, dirX, dirZ });
+    }
+
+    if (options.length === 0) return; // Dead end
+
+    // Priority 1: Match queued input exactly (cardinal)
+    if (actor.queuedDirX !== 0 || actor.queuedDirZ !== 0) {
+      const match = options.find(o => o.dirX === actor.queuedDirX && o.dirZ === actor.queuedDirZ);
+      if (match) {
+        actor.currentEdge = match.edge;
+        actor.edgeT = match.startFromNode1 ? 0 : 1;
+        actor.edgeDir = match.startFromNode1 ? 1 : -1;
+        actor.queuedDirX = 0;
+        actor.queuedDirZ = 0;
+        return;
+      }
+    }
+
+    // Priority 2: Continue straight
+    const straight = options.find(o => o.dirX === travelDirX && o.dirZ === travelDirZ);
+    if (straight) {
+      actor.currentEdge = straight.edge;
+      actor.edgeT = straight.startFromNode1 ? 0 : 1;
+      actor.edgeDir = straight.startFromNode1 ? 1 : -1;
       return;
     }
 
-    const inputDir = getChaserInputDirection(chaserIndex);
-
-    // Queue the direction when player presses a key
-    if (inputDir.hasInput) {
-      // Check if this is a 180-degree turn (reverse) - allow immediately
-      const isReverse = (inputDir.x === -actor.dirX && inputDir.z === -actor.dirZ);
-      if (isReverse && (actor.dirX !== 0 || actor.dirZ !== 0)) {
-        actor.dirX = inputDir.x;
-        actor.dirZ = inputDir.z;
-        actor.queuedDirX = 0;
-        actor.queuedDirZ = 0;
-      } else {
-        // Queue the direction - it will be executed when a path becomes available
-        actor.queuedDirX = inputDir.x;
-        actor.queuedDirZ = inputDir.z;
-      }
-    }
-
-    // Check if we can move in a direction (look ahead a bit)
-    function canMoveInDirection(dx, dz) {
-      // Check multiple distances to find if there's a path nearby
-      const checkDistances = [0.5, 1.0, 1.5, 2.0];
-      for (const dist of checkDistances) {
-        const targetX = pos.x + dx * dist;
-        const targetZ = pos.z + dz * dist;
-        if (isOnRoad(targetX, targetZ)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // Try to execute the queued direction
-    if (actor.queuedDirX !== 0 || actor.queuedDirZ !== 0) {
-      if (canMoveInDirection(actor.queuedDirX, actor.queuedDirZ)) {
-        actor.dirX = actor.queuedDirX;
-        actor.dirZ = actor.queuedDirZ;
-        actor.queuedDirX = 0;
-        actor.queuedDirZ = 0;
-      }
-      // Keep the queued direction until it becomes valid or player changes it
-    }
-
-    // Move in current direction
-    if (actor.dirX !== 0 || actor.dirZ !== 0) {
-      const newPos = tryMove(pos.x, pos.z, actor.dirX, actor.dirZ, moveDistance, 0);
-
-      const moved = Math.abs(newPos.x - pos.x) > 0.001 || Math.abs(newPos.z - pos.z) > 0.001;
-
-      if (moved) {
-        pos.x = newPos.x;
-        pos.z = newPos.z;
-        projectYOnRoad(pos);
-      }
-    }
+    // Priority 3: Take any available path (corner)
+    const any = options[0];
+    actor.currentEdge = any.edge;
+    actor.edgeT = any.startFromNode1 ? 0 : 1;
+    actor.edgeDir = any.startFromNode1 ? 1 : -1;
   }
 
   // ============================================
@@ -1787,8 +1896,6 @@ const GUI = window.lil.GUI;
   function updateGame(dt) {
     if (!STATE.loaded) return;
 
-    const { tryMove, projectYOnRoad } = STATE;
-
     const activeChaserCount = chasers.filter(c => c.active).length;
     let chaserSpeedBonus = 0;
     let fugitiveSpeedBonus = 0;
@@ -1806,7 +1913,9 @@ const GUI = window.lil.GUI;
     for (const f of fugitives) {
       if (f.captured) continue;
       f.speed = settings.fugitiveSpeed + fugitiveSpeedBonus;
-      updateFugitiveMovement(f, dt);
+      if (f.currentEdge) {
+        updateFugitiveMovementPath(f, dt);
+      }
     }
 
     for (let i = 0; i < chasers.length; i++) {
@@ -1814,14 +1923,43 @@ const GUI = window.lil.GUI;
 
       const inputDir = getChaserInputDirection(i);
       if (!chaser.active && inputDir.hasInput) {
+        console.log(`Chaser ${i} activated by input:`, inputDir);
         chaser.active = true;
+
+        // Initialize on path when first activated
+        if (!chaser.currentEdge) {
+          initActorOnPath(chaser);
+        }
+
         // Set full opacity when activated
-        if (chaser.material) {
+        if (chaser.isCarModel) {
+          chaser.mesh.traverse((child) => {
+            if (child.isMesh && child.material) {
+              child.material.opacity = 1.0;
+              child.material.transparent = false;
+            }
+          });
+        } else if (chaser.material) {
           chaser.material.opacity = 1.0;
           chaser.material.transparent = false;
         }
         if (chaser.light) {
           chaser.light.intensity = settings.chaserLightIntensity;
+        }
+        // Set initial direction based on first input
+        if (chaser.currentEdge) {
+          const edge = chaser.currentEdge;
+          const isHorizontal = Math.abs(edge.dirZ) < 0.1;
+          const isVertical = Math.abs(edge.dirX) < 0.1;
+
+          if (isVertical && inputDir.z !== 0) {
+            // Vertical edge: match input Z direction
+            // If input is up (z=-1) and edge goes down (dirZ=1), go backward (edgeDir=-1)
+            chaser.edgeDir = (inputDir.z * edge.dirZ) > 0 ? 1 : -1;
+          } else if (isHorizontal && inputDir.x !== 0) {
+            // Horizontal edge: match input X direction
+            chaser.edgeDir = (inputDir.x * edge.dirX) > 0 ? 1 : -1;
+          }
         }
       }
 
@@ -1829,7 +1967,36 @@ const GUI = window.lil.GUI;
 
       chaser.speed = settings.chaserSpeed + chaserSpeedBonus;
 
-      updateChaserMovement(chaser, dt, i);
+      // Handle input for path-based movement
+      if (inputDir.hasInput && chaser.currentEdge) {
+        // Get current travel direction
+        const edge = chaser.currentEdge;
+        let travelDirX = (edge.x2 - edge.x1) * chaser.edgeDir;
+        let travelDirZ = (edge.z2 - edge.z1) * chaser.edgeDir;
+        const travelLen = Math.sqrt(travelDirX * travelDirX + travelDirZ * travelDirZ);
+        if (travelLen > 0.001) {
+          travelDirX /= travelLen;
+          travelDirZ /= travelLen;
+        }
+
+        // Check if input is roughly opposite to travel direction (180 turn)
+        const dotWithTravel = inputDir.x * travelDirX + inputDir.z * travelDirZ;
+        if (dotWithTravel < -0.3) {
+          // Reverse direction immediately
+          chaser.edgeDir *= -1;
+          chaser.queuedDirX = 0;
+          chaser.queuedDirZ = 0;
+        } else {
+          // Queue the turn for next intersection
+          chaser.queuedDirX = inputDir.x;
+          chaser.queuedDirZ = inputDir.z;
+        }
+      }
+
+      // Path-based movement - only move while input is held
+      if (chaser.currentEdge && inputDir.hasInput) {
+        updateChaserMovementPath(chaser, dt, i);
+      }
 
       for (const f of fugitives) {
         if (f.captured) continue;
@@ -1885,6 +2052,7 @@ const GUI = window.lil.GUI;
 
     const fugitiveSpawns = [];
     const chaserSpawns = [];
+    let baseActorSize = null;
 
     for (let i = 1; i <= 4; i++) {
       const marker = levelContainer.getObjectByName(`F${i}`);
@@ -1892,6 +2060,23 @@ const GUI = window.lil.GUI;
         const worldPos = new THREE.Vector3();
         marker.getWorldPosition(worldPos);
         fugitiveSpawns.push(worldPos);
+
+        // Get actor size from F1 marker (matches road width)
+        if (i === 1 && !baseActorSize) {
+          marker.traverse((child) => {
+            if (child.isMesh && child.geometry) {
+              child.geometry.computeBoundingBox();
+              const geoBox = child.geometry.boundingBox;
+              const geoSize = new THREE.Vector3();
+              geoBox.getSize(geoSize);
+              const childWorldScale = new THREE.Vector3();
+              child.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), childWorldScale);
+              const worldSize = geoSize.clone().multiply(childWorldScale);
+              baseActorSize = Math.min(worldSize.x, worldSize.z);
+            }
+          });
+        }
+
         marker.parent.remove(marker);
       }
     }
@@ -1924,6 +2109,22 @@ const GUI = window.lil.GUI;
 
     if (foundGlassMeshes.length > 0) {
       setupGlassMeshes(foundGlassMeshes);
+    }
+
+    // Find Nav nodes for path grid (objects with names starting with "Nav")
+    let navNodes = [];
+    levelContainer.traverse((obj) => {
+      if (obj.name && obj.name.toLowerCase().startsWith("nav")) {
+        const worldPos = new THREE.Vector3();
+        obj.getWorldPosition(worldPos);
+        navNodes.push({ name: obj.name, x: worldPos.x, z: worldPos.z });
+        obj.visible = false;
+      }
+    });
+    if (navNodes.length > 0) {
+      console.log(`Found ${navNodes.length} Nav nodes for path grid`);
+    } else {
+      console.log("No Nav nodes found - add objects with names starting with 'Nav' in Blender");
     }
 
     if (roadsMeshes.length === 0) {
@@ -1996,34 +2197,6 @@ const GUI = window.lil.GUI;
       }
     }
 
-    // Analyze path widths from triangles
-    const triangleSizes = navTriangles.map(tri => {
-      const width = tri.maxX - tri.minX;
-      const height = tri.maxZ - tri.minZ;
-      return { width, height, max: Math.max(width, height), min: Math.min(width, height) };
-    });
-
-    // Measure actual corridor width by sampling from center of navmesh
-    function measureCorridorWidth(x, z, dirX, dirZ) {
-      // Measure perpendicular to direction
-      const perpX = -dirZ;
-      const perpZ = dirX;
-      let leftDist = 0;
-      let rightDist = 0;
-
-      // Measure left
-      for (let d = 0.01; d < 5; d += 0.01) {
-        if (!pointInTriangleAny(x + perpX * d, z + perpZ * d)) break;
-        leftDist = d;
-      }
-      // Measure right
-      for (let d = 0.01; d < 5; d += 0.01) {
-        if (!pointInTriangleAny(x - perpX * d, z - perpZ * d)) break;
-        rightDist = d;
-      }
-      return leftDist + rightDist;
-    }
-
     function pointInTriangleAny(px, pz) {
       for (const tri of navTriangles) {
         if (px < tri.minX || px > tri.maxX || pz < tri.minZ || pz > tri.maxZ) continue;
@@ -2068,81 +2241,392 @@ const GUI = window.lil.GUI;
       return false;
     }
 
-    let actorSize = 1;
-    const c1Marker = levelContainer.getObjectByName("C1");
-    if (c1Marker) {
-      const markerBox = new THREE.Box3().setFromObject(c1Marker);
-      const markerSize = new THREE.Vector3();
-      markerBox.getSize(markerSize);
+    // ==================== PATH GRAPH GENERATION ====================
+    // Generate a graph of nodes (intersections) and edges (path segments)
+    // for Pac-Man style movement
 
-      let geometrySize = null;
-      c1Marker.traverse((child) => {
-        if (child.isMesh && child.geometry) {
-          child.geometry.computeBoundingBox();
-          const geoBox = child.geometry.boundingBox;
-          const geoSize = new THREE.Vector3();
-          geoBox.getSize(geoSize);
-          const childWorldScale = new THREE.Vector3();
-          child.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), childWorldScale);
-          geometrySize = { world: geoSize.clone().multiply(childWorldScale) };
+
+    // Find nearest point on the path graph
+    function findNearestEdgePoint(x, z, pathGraph) {
+      let nearestEdge = null;
+      let nearestDist = Infinity;
+      let nearestPoint = { x, z };
+      let nearestT = 0;
+
+      for (const edge of pathGraph.edges) {
+        // Project point onto edge line segment
+        const dx = edge.x2 - edge.x1;
+        const dz = edge.z2 - edge.z1;
+        const len2 = dx * dx + dz * dz;
+
+        if (len2 < 0.0001) continue;
+
+        let t = ((x - edge.x1) * dx + (z - edge.z1) * dz) / len2;
+        t = Math.max(0, Math.min(1, t));
+
+        const projX = edge.x1 + t * dx;
+        const projZ = edge.z1 + t * dz;
+
+        const dist = Math.sqrt((x - projX) ** 2 + (z - projZ) ** 2);
+
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestEdge = edge;
+          nearestPoint = { x: projX, z: projZ };
+          nearestT = t;
         }
-      });
-
-      if (geometrySize && geometrySize.world) {
-        actorSize = Math.min(geometrySize.world.x, geometrySize.world.z);
-      } else {
-        actorSize = Math.min(markerSize.x, markerSize.z);
       }
-    } else {
+
+      return { edge: nearestEdge, point: nearestPoint, t: nearestT, distance: nearestDist };
+    }
+
+    // Get available directions at a node
+    function getNodeDirections(node, pathGraph) {
+      const directions = [];
+      for (const edgeId of node.edges) {
+        const edge = pathGraph.edges[edgeId];
+        let dirX, dirZ;
+        if (edge.node1 === node.id) {
+          dirX = Math.sign(edge.x2 - edge.x1) || edge.dirX;
+          dirZ = Math.sign(edge.z2 - edge.z1) || edge.dirZ;
+        } else {
+          dirX = Math.sign(edge.x1 - edge.x2) || -edge.dirX;
+          dirZ = Math.sign(edge.z1 - edge.z2) || -edge.dirZ;
+        }
+        directions.push({ edgeId, dirX, dirZ });
+      }
+      return directions;
+    }
+
+    // Use F1 marker size (matches road width) for Pac-Man style movement
+    let actorSize = baseActorSize || 1;
+    if (!baseActorSize) {
       const baseUnit = horizontalSize || 100;
       actorSize = baseUnit / 150;
     }
     actorSize *= settings.actorScale;
 
-    function isOnRoadWithMargin(x, z, margin) {
-      if (!isOnRoad(x, z)) return false;
+    // Path graph will be loaded/generated after setup
+    let pathGraph = { nodes: [], edges: [], gridStep: actorSize };
 
-      const angles = [0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4];
-      for (const angle of angles) {
-        const testX = x + Math.cos(angle) * margin;
-        const testZ = z + Math.sin(angle) * margin;
-        if (!isOnRoad(testX, testZ)) {
-          return false;
+    // Build path graph from spawn points - creates a simple Pac-Man grid
+    function buildPathGraphFromSpawns() {
+      const nodes = [];
+      const edges = [];
+      const nodeMap = new Map();
+
+      // Get all spawn positions to determine the grid bounds
+      const allSpawns = [...fugitiveSpawns, ...chaserSpawns];
+      if (allSpawns.length === 0) return null;
+
+      // Find grid bounds from spawns
+      let minX = Infinity, maxX = -Infinity;
+      let minZ = Infinity, maxZ = -Infinity;
+      for (const sp of allSpawns) {
+        minX = Math.min(minX, sp.x);
+        maxX = Math.max(maxX, sp.x);
+        minZ = Math.min(minZ, sp.z);
+        maxZ = Math.max(maxZ, sp.z);
+      }
+
+      // Use spawn positions to create nodes
+      const gridStep = actorSize * 1.2; // Spacing between grid lines
+
+      function getOrCreateNode(x, z) {
+        // Snap to grid
+        const sx = Math.round(x / gridStep) * gridStep;
+        const sz = Math.round(z / gridStep) * gridStep;
+        const key = `${sx.toFixed(2)},${sz.toFixed(2)}`;
+
+        if (nodeMap.has(key)) return nodeMap.get(key);
+
+        const idx = nodes.length;
+        nodes.push({ id: idx, x: sx, z: sz, edges: [] });
+        nodeMap.set(key, idx);
+        return idx;
+      }
+
+      function addEdge(n1Idx, n2Idx) {
+        if (n1Idx === n2Idx) return;
+
+        // Check if edge exists
+        for (const eid of nodes[n1Idx].edges) {
+          const e = edges[eid];
+          if ((e.node1 === n1Idx && e.node2 === n2Idx) ||
+              (e.node1 === n2Idx && e.node2 === n1Idx)) return;
+        }
+
+        const n1 = nodes[n1Idx];
+        const n2 = nodes[n2Idx];
+        const dx = n2.x - n1.x;
+        const dz = n2.z - n1.z;
+        const length = Math.sqrt(dx * dx + dz * dz);
+
+        const edge = {
+          id: edges.length,
+          node1: n1Idx,
+          node2: n2Idx,
+          x1: n1.x, z1: n1.z,
+          x2: n2.x, z2: n2.z,
+          length,
+          dirX: Math.sign(dx),
+          dirZ: Math.sign(dz)
+        };
+        edges.push(edge);
+        n1.edges.push(edge.id);
+        n2.edges.push(edge.id);
+      }
+
+      // Create nodes at each spawn point
+      for (const sp of allSpawns) {
+        getOrCreateNode(sp.x, sp.z);
+      }
+
+      // Connect nodes that are aligned horizontally or vertically
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const n1 = nodes[i];
+          const n2 = nodes[j];
+          const dx = Math.abs(n2.x - n1.x);
+          const dz = Math.abs(n2.z - n1.z);
+
+          // Only connect if aligned (H or V) and reasonably close
+          const isHorizontal = dz < gridStep * 0.5;
+          const isVertical = dx < gridStep * 0.5;
+
+          if ((isHorizontal || isVertical) && (dx + dz) < gridStep * 8) {
+            addEdge(i, j);
+          }
         }
       }
-      return true;
+
+      console.log(`Spawn-based path: ${nodes.length} nodes, ${edges.length} edges`);
+      return { nodes, edges, gridStep, source: 'spawns' };
     }
 
-    function tryMove(currentX, currentZ, dirX, dirZ, distance, margin = 0) {
-      if (!isOnRoad(currentX, currentZ)) {
-        return { x: currentX, z: currentZ };
+    // Build grid from Nav nodes placed in Blender
+    function buildGridFromNavNodes() {
+      if (!navNodes || navNodes.length < 2) {
+        return null;
       }
 
-      const stepSize = 0.1;
-      const steps = Math.max(1, Math.ceil(distance / stepSize));
-      const actualStep = distance / steps;
+      const nodes = navNodes.map((n, idx) => ({
+        id: idx,
+        x: n.x,
+        z: n.z,
+        edges: []
+      }));
 
-      let x = currentX;
-      let z = currentZ;
+      const edges = [];
+      const maxEdgeDist = actorSize * 15; // Max distance for an edge
+      const checkStep = actorSize * 0.5; // Step size for obstacle checking
 
-      const checkFn = margin > 0
-        ? (px, pz) => isOnRoadWithMargin(px, pz, margin)
-        : isOnRoad;
+      // Check if path between two points is clear (no obstacles)
+      function isPathClear(x1, z1, x2, z2) {
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        const steps = Math.ceil(dist / checkStep);
 
-      for (let i = 0; i < steps; i++) {
-        const newX = x + dirX * actualStep;
-        const newZ = z + dirZ * actualStep;
+        for (let s = 1; s < steps; s++) {
+          const t = s / steps;
+          const testX = x1 + dx * t;
+          const testZ = z1 + dz * t;
+          if (!isOnRoad(testX, testZ)) {
+            return false;
+          }
+        }
+        return true;
+      }
 
-        if (checkFn(newX, newZ)) {
-          x = newX;
-          z = newZ;
-        } else {
-          break;
+      function addEdge(n1, n2) {
+        if (n1 === n2) return;
+        // Check duplicate
+        for (const eid of nodes[n1].edges) {
+          const e = edges[eid];
+          if ((e.node1 === n1 && e.node2 === n2) || (e.node1 === n2 && e.node2 === n1)) return;
+        }
+
+        const node1 = nodes[n1];
+        const node2 = nodes[n2];
+        const dx = node2.x - node1.x;
+        const dz = node2.z - node1.z;
+
+        // Only cardinal directions (H or V, not diagonal)
+        const isHorizontal = Math.abs(dz) < actorSize * 0.5;
+        const isVertical = Math.abs(dx) < actorSize * 0.5;
+        if (!isHorizontal && !isVertical) return;
+
+        const length = Math.sqrt(dx * dx + dz * dz);
+        const eid = edges.length;
+        edges.push({
+          id: eid,
+          node1: n1,
+          node2: n2,
+          x1: node1.x,
+          z1: node1.z,
+          x2: node2.x,
+          z2: node2.z,
+          length: length,
+          dirX: isHorizontal ? Math.sign(dx) : 0,
+          dirZ: isVertical ? Math.sign(dz) : 0
+        });
+        nodes[n1].edges.push(eid);
+        nodes[n2].edges.push(eid);
+      }
+
+      // Connect each node to its nearest aligned neighbors
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+
+        let nearestRight = null, nearestRightDist = Infinity;
+        let nearestLeft = null, nearestLeftDist = Infinity;
+        let nearestDown = null, nearestDownDist = Infinity;
+        let nearestUp = null, nearestUpDist = Infinity;
+
+        for (let j = 0; j < nodes.length; j++) {
+          if (i === j) continue;
+          const other = nodes[j];
+          const dx = other.x - node.x;
+          const dz = other.z - node.z;
+
+          // Horizontal alignment
+          if (Math.abs(dz) < actorSize * 0.5 && Math.abs(dx) < maxEdgeDist) {
+            // Check if path is clear before considering this neighbor
+            if (isPathClear(node.x, node.z, other.x, other.z)) {
+              if (dx > 0 && dx < nearestRightDist) {
+                nearestRight = j;
+                nearestRightDist = dx;
+              } else if (dx < 0 && -dx < nearestLeftDist) {
+                nearestLeft = j;
+                nearestLeftDist = -dx;
+              }
+            }
+          }
+
+          // Vertical alignment
+          if (Math.abs(dx) < actorSize * 0.5 && Math.abs(dz) < maxEdgeDist) {
+            // Check if path is clear before considering this neighbor
+            if (isPathClear(node.x, node.z, other.x, other.z)) {
+              if (dz > 0 && dz < nearestDownDist) {
+                nearestDown = j;
+                nearestDownDist = dz;
+              } else if (dz < 0 && -dz < nearestUpDist) {
+                nearestUp = j;
+                nearestUpDist = -dz;
+              }
+            }
+          }
+        }
+
+        if (nearestRight !== null) addEdge(i, nearestRight);
+        if (nearestLeft !== null) addEdge(i, nearestLeft);
+        if (nearestDown !== null) addEdge(i, nearestDown);
+        if (nearestUp !== null) addEdge(i, nearestUp);
+      }
+
+      console.log(`Nav grid: ${nodes.length} nodes, ${edges.length} edges`);
+      return { nodes, edges, gridStep: actorSize, source: 'nav' };
+    }
+
+    // Function to load path graph
+    function loadPathGraph() {
+      // Use Nav nodes from Blender
+      const navGraph = buildGridFromNavNodes();
+      if (navGraph && navGraph.edges.length >= 1) {
+        return navGraph;
+      }
+
+      console.warn("No Nav nodes found in model - add Nav parent with child objects in Blender");
+      return { nodes: [], edges: [], gridStep: actorSize, source: 'empty' };
+    }
+
+    // Function to rebuild path graph and update visualization
+    function rebuildPathGraph() {
+      pathGraph = loadPathGraph();
+      STATE.pathGraph = pathGraph;
+
+      // Update debug visualization
+      const oldDebug = scene.getObjectByName("PathGraphDebug");
+      if (oldDebug) {
+        oldDebug.parent.remove(oldDebug);
+      }
+
+      const pathGraphDebug = new THREE.Group();
+      pathGraphDebug.name = "PathGraphDebug";
+
+      // Different colors for different sources
+      // GLB: green, SVG: cyan, Generated: yellow
+      const source = pathGraph.source || 'generated';
+      let edgeColor, nodeColor;
+      if (source === 'glb') {
+        edgeColor = 0x00ff00; // Green for GLB
+        nodeColor = 0x00ff88;
+      } else if (source === 'svg') {
+        edgeColor = 0x00ffff; // Cyan for SVG
+        nodeColor = 0xff00ff;
+      } else {
+        edgeColor = 0xffff00; // Yellow for generated
+        nodeColor = 0xff0000;
+      }
+
+      // Create tube geometry for edges (more visible than lines)
+      const edgeMat = new THREE.MeshBasicMaterial({ color: edgeColor });
+      const tubeRadius = actorSize * 0.08;
+
+      for (const edge of pathGraph.edges) {
+        const start = new THREE.Vector3(edge.x1, STATE.streetY + 0.3, edge.z1);
+        const end = new THREE.Vector3(edge.x2, STATE.streetY + 0.3, edge.z2);
+        const dir = new THREE.Vector3().subVectors(end, start);
+        const length = dir.length();
+
+        if (length > 0.01) {
+          const tubeGeo = new THREE.CylinderGeometry(tubeRadius, tubeRadius, length, 6);
+          const tube = new THREE.Mesh(tubeGeo, edgeMat);
+
+          // Position at midpoint
+          tube.position.copy(start).add(end).multiplyScalar(0.5);
+
+          // Rotate to align with edge direction
+          tube.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            dir.normalize()
+          );
+
+          pathGraphDebug.add(tube);
         }
       }
 
-      return { x, z };
+      // Bigger spheres for nodes
+      const nodeMat = new THREE.MeshBasicMaterial({ color: nodeColor });
+      const nodeGeo = new THREE.SphereGeometry(actorSize * 0.3, 12, 12);
+      for (const node of pathGraph.nodes) {
+        const sphere = new THREE.Mesh(nodeGeo, nodeMat);
+        sphere.position.set(node.x, STATE.streetY + 0.3, node.z);
+        pathGraphDebug.add(sphere);
+      }
+
+      console.log(`Path visualization: ${source.toUpperCase()} - ${pathGraph.edges.length} edges, ${pathGraph.nodes.length} nodes`);
+
+      scene.add(pathGraphDebug);
+      pathGraphDebug.visible = settings.showNavmesh;
+
+      // Re-initialize actors on new path graph
+      for (const f of fugitives) {
+        initActorOnPath(f);
+      }
+      // Only re-initialize active chasers
+      for (const c of chasers) {
+        if (c.active) {
+          initActorOnPath(c);
+        }
+      }
+
+      console.log(`Path graph updated: ${pathGraph.nodes.length} nodes, ${pathGraph.edges.length} edges`);
     }
+
+    // Store rebuild function in STATE for GUI access
+    STATE.rebuildPathGraph = rebuildPathGraph;
 
     function findNearestRoadPoint(x, z) {
       if (isOnRoad(x, z)) {
@@ -2162,25 +2646,6 @@ const GUI = window.lil.GUI;
       console.warn(`Could not find road point near (${x.toFixed(2)}, ${z.toFixed(2)})`);
       return { x, z };
     }
-
-    const navmeshDebug = new THREE.Group();
-    navmeshDebug.name = "NavmeshDebug";
-    const debugMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
-
-    for (let i = 0; i < Math.min(navTriangles.length, 500); i++) {
-      const tri = navTriangles[i];
-      const points = [
-        new THREE.Vector3(tri.ax, streetY + 0.1, tri.az),
-        new THREE.Vector3(tri.bx, streetY + 0.1, tri.bz),
-        new THREE.Vector3(tri.cx, streetY + 0.1, tri.cz),
-        new THREE.Vector3(tri.ax, streetY + 0.1, tri.az),
-      ];
-      const geo = new THREE.BufferGeometry().setFromPoints(points);
-      const line = new THREE.Line(geo, debugMat);
-      navmeshDebug.add(line);
-    }
-    scene.add(navmeshDebug);
-    navmeshDebug.visible = settings.showNavmesh;
 
     function projectYOnRoad(pos) {
       pos.y = streetY + actorSize * 0.5;
@@ -2272,60 +2737,121 @@ const GUI = window.lil.GUI;
       fugitiveWires.push(wire);
     }
 
-    const chaserGeo = new THREE.BoxGeometry(actorSize, actorSize, actorSize);
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
 
-    for (let i = 0; i < chaserSpawns.length; i++) {
-      const color = chaserColors[i] || chaserColors[0];
-      const material = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color,
-        emissiveIntensity: 0.3,
-      });
-      const mesh = new THREE.Mesh(chaserGeo, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+    // Load car models for chasers
+    const carPaths = PATHS.models.cars || [];
+    console.log("Car paths to load:", carPaths);
+    const carPromises = carPaths.map(path =>
+      new Promise((resolve) => {
+        loader.load(path,
+          (gltf) => {
+            console.log("Loaded car:", path);
+            resolve(gltf.scene);
+          },
+          undefined,
+          (err) => {
+            console.error("Failed to load car:", path, err);
+            resolve(null);
+          }
+        );
+      })
+    );
 
-      const light = new THREE.PointLight(color, settings.chaserLightIntensity, 100);
-      light.position.set(0, 0, 0);
-      light.castShadow = true;
-      light.shadow.mapSize.width = 512;
-      light.shadow.mapSize.height = 512;
-      light.shadow.camera.near = 0.1;
-      light.shadow.camera.far = 50;
-      light.shadow.bias = -0.001;
-      mesh.add(light);
+    Promise.all(carPromises).then((carModels) => {
+      console.log("Car models loaded:", carModels.filter(m => m !== null).length, "of", carModels.length);
 
-      const spawnPos = chaserSpawns[i];
-      const roadPoint = findNearestRoadPoint(spawnPos.x, spawnPos.z);
+      for (let i = 0; i < chaserSpawns.length; i++) {
+        const color = chaserColors[i] || chaserColors[0];
 
-      mesh.position.set(roadPoint.x, 0, roadPoint.z);
-      projectYOnRoad(mesh.position);
-      mesh.visible = true;
-      // Start dimmed at 20% opacity
-      material.transparent = true;
-      material.opacity = 0.2;
-      light.intensity = settings.chaserLightIntensity * 0.2;
+        let mesh;
+        const carModel = carModels.length > 0 ? carModels[i % carModels.length] : null;
 
-      const chaserObj = {
-        mesh,
-        light,
-        material,
-        speed: settings.chaserSpeed,
-        dirX: 0,
-        dirZ: 0,
-        queuedDirX: 0,
-        queuedDirZ: 0,
-        active: false,
-      };
-      scene.add(mesh);
-      chasers.push(chaserObj);
-    }
+        if (carModel) {
+          mesh = carModel.clone();
+          // Scale car to fit actor size
+          const box = new THREE.Box3().setFromObject(mesh);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const scale = (actorSize * 2) / maxDim; // Make car 2x actor size for visibility
+          mesh.scale.setScalar(scale);
+          console.log(`Chaser ${i}: using car model, scale=${scale.toFixed(3)}, size=${maxDim.toFixed(2)}`);
 
-    STATE.isOnRoad = isOnRoad;
-    STATE.tryMove = tryMove;
+          // Apply color to all meshes in the car
+          mesh.traverse((child) => {
+            if (child.isMesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+              // Store original material for reference
+              child.userData.originalMaterial = child.material;
+              child.material = new THREE.MeshStandardMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.3,
+                transparent: true,
+                opacity: 0.1,
+              });
+            }
+          });
+        } else {
+          // Fallback to box if car model failed to load
+          const chaserGeo = new THREE.BoxGeometry(actorSize, actorSize, actorSize);
+          const material = new THREE.MeshStandardMaterial({
+            color: color,
+            emissive: color,
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.1,
+          });
+          mesh = new THREE.Mesh(chaserGeo, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+        }
+
+        const light = new THREE.PointLight(color, settings.chaserLightIntensity * 0.1, 100);
+        // Account for mesh scale when setting light height
+        const meshScale = mesh.scale.y || 1;
+        light.position.set(0, settings.chaserLightHeight / meshScale, 0);
+        light.castShadow = true;
+        light.shadow.mapSize.width = 512;
+        light.shadow.mapSize.height = 512;
+        light.shadow.camera.near = 0.1;
+        light.shadow.camera.far = 50;
+        light.shadow.bias = -0.001;
+        mesh.add(light);
+
+        const spawnPos = chaserSpawns[i];
+        const roadPoint = findNearestRoadPoint(spawnPos.x, spawnPos.z);
+
+        mesh.position.set(roadPoint.x, 0, roadPoint.z);
+        projectYOnRoad(mesh.position);
+        mesh.visible = true;
+
+        const chaserObj = {
+          mesh,
+          light,
+          material: null, // Materials are on child meshes now
+          speed: settings.chaserSpeed,
+          dirX: 0,
+          dirZ: 0,
+          queuedDirX: 0,
+          queuedDirZ: 0,
+          active: false,
+          isCarModel: !!carModel,
+        };
+        scene.add(mesh);
+        chasers.push(chaserObj);
+      }
+
+      // Don't initialize chasers on path yet - wait until they're activated
+    });
+
     STATE.findNearestRoadPoint = findNearestRoadPoint;
     STATE.projectYOnRoad = projectYOnRoad;
+    STATE.pathGraph = pathGraph;
+    STATE.findNearestEdgePoint = findNearestEdgePoint;
+    STATE.getNodeDirections = getNodeDirections;
     STATE.actorSize = actorSize;
     STATE.actorRadius = actorSize * 0.5;
     STATE.roadsMeshes = roadsMeshes;
@@ -2334,6 +2860,10 @@ const GUI = window.lil.GUI;
     setupGUI();
     initPostProcessing();
     initAudio();
+
+    // Load path graph from GLB and initialize actors
+    rebuildPathGraph();
+    console.log("Path graph ready");
     initVideoPlanes();
     setupGLBPartsGUI();
 
