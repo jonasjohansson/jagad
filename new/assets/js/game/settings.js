@@ -32,7 +32,7 @@ export const defaultSettings = {
   perspPosZ: 10,
   // Lighting
   toneMapping: "Neutral",
-  exposure: 1.5,
+  exposure: 1,
   environmentIntensity: 1.0,
   punctualLights: true,
   ambientIntensity: 2.0,
