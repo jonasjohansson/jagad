@@ -817,7 +817,7 @@ const GUI = window.lil.GUI;
     chaserLightFolder.add(settings, "chaserLightDistance", 10, 200, 5).name("Distance").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightAngle", 10, 90, 1).name("Angle (°)").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightOffset", 0, 5, 0.1).name("Offset").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightOffset", 0, 0.2, 0.01).name("Offset").onChange(updateChaserLights);
     chaserLightFolder.close();
 
     lightsFolder.close();
@@ -1634,7 +1634,7 @@ const GUI = window.lil.GUI;
       if (c.isCarModel) {
         c.mesh.traverse((child) => {
           if (child.isMesh && child.material) {
-            child.material.opacity = 0.3;
+            child.material.opacity = 0.5;
             child.material.transparent = true;
           }
         });
@@ -1947,7 +1947,16 @@ const GUI = window.lil.GUI;
     const travelDirX = (edge.x2 - edge.x1) * actor.edgeDir;
     const travelDirZ = (edge.z2 - edge.z1) * actor.edgeDir;
     if (Math.abs(travelDirX) > 0.01 || Math.abs(travelDirZ) > 0.01) {
-      actor.mesh.rotation.y = Math.atan2(travelDirX, travelDirZ);
+      const targetRotation = Math.atan2(travelDirX, travelDirZ);
+      // Smooth rotation interpolation
+      let currentRotation = actor.mesh.rotation.y;
+      let diff = targetRotation - currentRotation;
+      // Handle angle wrapping (-PI to PI)
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      // Lerp towards target (adjust speed with multiplier)
+      const rotationSpeed = 10;
+      actor.mesh.rotation.y += diff * Math.min(1, rotationSpeed * dt);
     }
   }
 
@@ -2954,7 +2963,8 @@ const GUI = window.lil.GUI;
         const color = chaserColors[i] || chaserColors[0];
 
         let mesh;
-        const carModel = carModels.length > 0 ? carModels[i % carModels.length] : null;
+        // Use the first car model for all chasers
+        const carModel = carModels.length > 0 ? carModels[0] : null;
 
         if (carModel) {
           mesh = carModel.clone();
@@ -2969,6 +2979,7 @@ const GUI = window.lil.GUI;
 
           // Apply color to all meshes in the car
           mesh.traverse((child) => {
+            child.visible = true;
             if (child.isMesh) {
               child.castShadow = true;
               child.receiveShadow = true;
@@ -2979,10 +2990,11 @@ const GUI = window.lil.GUI;
                 emissive: color,
                 emissiveIntensity: 0.3,
                 transparent: true,
-                opacity: 0.1,
+                opacity: 0.5,
               });
             }
           });
+          mesh.visible = true;
         } else {
           // Fallback to box if car model failed to load
           const chaserGeo = new THREE.BoxGeometry(actorSize, actorSize, actorSize);
@@ -3000,7 +3012,7 @@ const GUI = window.lil.GUI;
 
         // Create spotlight as headlight at the front of the car
         const angleRad = (settings.chaserLightAngle * Math.PI) / 180;
-        const light = new THREE.SpotLight(color, settings.chaserLightIntensity * 0.1, settings.chaserLightDistance, angleRad, settings.chaserLightPenumbra, 1);
+        const light = new THREE.SpotLight(color, 0, settings.chaserLightDistance, angleRad, settings.chaserLightPenumbra, 1);
         const meshScale = mesh.scale.y || 1;
         // Position at front of car (local Z+) and at set height
         light.position.set(0, settings.chaserLightHeight / meshScale, settings.chaserLightOffset / meshScale);
