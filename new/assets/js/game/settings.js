@@ -59,7 +59,7 @@ export const defaultSettings = {
   buildingScaleY: 1.12,
   buildingOffsetX: 0.11,
   buildingOffsetY: -0.5,
-  buildingOffsetZ: 0.91,
+  buildingOffsetZ: 0.65,
   buildingOpacity: 1.0,
   bloomEnabled: false,
   bloomThreshold: 0.5,
@@ -87,7 +87,7 @@ export const defaultSettings = {
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
   glassTextShuffle: true,
-  glassTextShuffleSpeed: 1.0,
+  glassTextShuffleSpeed: 0.3,
   // Video Planes
   videoPlane1Enabled: false,
   videoPlane1PosX: -3.2,
@@ -116,7 +116,7 @@ export const defaultSettings = {
   helicopterLightColor: "#ffffff",
   helicopterLightAngle: 10,
   // Clouds
-  cloudsEnabled: true,
+  cloudsEnabled: false,
   cloudCount: 3,
   cloudOpacity: 0.6,
   cloudScaleMin: 2,

@@ -1,5 +1,8 @@
 // Jagad - Chase Game
 // Main entry point
+// Optimized version
+
+const DEBUG = false; // Set to true for console logging
 
 import * as THREE from "./lib/three/three.module.js";
 import { GLTFLoader } from "./lib/three/addons/loaders/GLTFLoader.js";
@@ -146,7 +149,11 @@ const GUI = window.lil.GUI;
     gameTimerRemaining: 90,
     showingScore: false,
     scoreDisplayTime: 0,
+    activeChaserCount: 0, // Cached count to avoid filter() every frame
   };
+
+  // Helper to get level center (avoids creating new Vector3)
+  const getLevelCenter = () => STATE.levelCenter;
 
   // ============================================
   // AUDIO
@@ -203,7 +210,7 @@ const GUI = window.lil.GUI;
       const maxDim = Math.max(size.x, size.y, size.z);
       const scale = (settings.helicopterScale * 2) / maxDim;
       mesh.scale.setScalar(scale);
-      console.log("Helicopter size:", size, "maxDim:", maxDim, "scale:", scale);
+      if (DEBUG) console.log("Helicopter size:", size, "maxDim:", maxDim, "scale:", scale);
 
       // Position above the level - start near chaser spawn area
       const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
@@ -212,7 +219,7 @@ const GUI = window.lil.GUI;
       const startX = center.x + (Math.random() - 0.5) * levelRadius;
       const startZ = center.z + (Math.random() - 0.5) * levelRadius;
       mesh.position.set(startX, settings.helicopterHeight, startZ);
-      console.log("Helicopter position:", mesh.position, "center:", center, "levelRadius:", levelRadius);
+      if (DEBUG) console.log("Helicopter position:", mesh.position, "center:", center, "levelRadius:", levelRadius);
 
       // Add spotlight facing down
       const angleRad = (settings.helicopterLightAngle * Math.PI) / 180;
@@ -265,7 +272,7 @@ const GUI = window.lil.GUI;
         }
       });
 
-      console.log("Helicopter loaded");
+      if (DEBUG) console.log("Helicopter loaded");
     }, undefined, (err) => {
       console.warn("Failed to load helicopter:", err);
     });
@@ -353,21 +360,21 @@ const GUI = window.lil.GUI;
   };
 
   function loadClouds() {
-    console.log("Loading clouds, path:", PATHS.images.cloud);
+    if (DEBUG) console.log("Loading clouds, path:", PATHS.images.cloud);
     if (!PATHS.images.cloud) {
-      console.warn("No cloud path defined");
+      if (DEBUG) console.warn("No cloud path defined");
       return;
     }
 
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(PATHS.images.cloud, (texture) => {
-      console.log("Cloud texture loaded:", texture);
+      if (DEBUG) console.log("Cloud texture loaded:", texture);
 
       // Store texture for spawning new clouds later
       STATE.cloudTexture = texture;
       spawnClouds();
 
-      console.log("Clouds system initialized");
+      if (DEBUG) console.log("Clouds system initialized");
     }, undefined, (err) => {
       console.warn("Failed to load cloud texture:", err);
     });
@@ -433,7 +440,7 @@ const GUI = window.lil.GUI;
       });
     }
 
-    console.log("Spawned", cloudCount, "clouds");
+    if (DEBUG) console.log("Spawned", cloudCount, "clouds");
   }
 
   function updateClouds(dt) {
@@ -507,11 +514,13 @@ const GUI = window.lil.GUI;
     state.shuffleTime = 0;
     state.charDelays = [];
     // Each character has a random delay before it locks in (adjusted by speed setting)
-    const baseDelay = 100 / Math.max(0.1, settings.glassTextShuffleSpeed);
-    const stagger = 60 / Math.max(0.1, settings.glassTextShuffleSpeed);
+    const speedFactor = Math.max(0.1, settings.glassTextShuffleSpeed);
+    const baseDelay = 100 / speedFactor;
+    const stagger = 60 / speedFactor;
     for (let i = 0; i < targetText.length; i++) {
       state.charDelays.push(baseDelay + Math.random() * baseDelay + i * stagger);
     }
+    state.maxDelay = state.charDelays.length > 0 ? state.charDelays[state.charDelays.length - 1] : 0;
   }
 
   function updateShuffleRow(rowIndex, dt) {
@@ -567,9 +576,8 @@ const GUI = window.lil.GUI;
     if (!settings.glassTextShuffle) return false;
     for (let i = 0; i < 4; i++) {
       const state = textShuffleState.rows[i];
-      if (state.target && state.charDelays) {
-        const maxDelay = Math.max(...state.charDelays);
-        if (state.shuffleTime < maxDelay) return true;
+      if (state.target && state.maxDelay && state.shuffleTime < state.maxDelay) {
+        return true;
       }
     }
     return false;
@@ -1617,7 +1625,6 @@ const GUI = window.lil.GUI;
 
   function updateChaserLights() {
     const colors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
-    console.log(`Updating ${chasers.length} chaser lights, height=${settings.chaserLightHeight}`);
     for (let i = 0; i < chasers.length; i++) {
       const c = chasers[i];
       const color = colors[i] || colors[0];
@@ -1783,12 +1790,14 @@ const GUI = window.lil.GUI;
       const billboardSize = settings.wireCubeSize * this.actorSize * 2;
       const billboardGeo = new THREE.PlaneGeometry(billboardSize, billboardSize);
       const brightness = settings.billboardBrightness;
-      const billboardMat = new THREE.MeshBasicMaterial({
+      const billboardMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(brightness, brightness, brightness),
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
-        depthTest: false
+        depthTest: false,
+        roughness: 1.0,
+        metalness: 0.0
       });
       this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
       this.billboard.rotation.x = -Math.PI / 2;
@@ -2043,6 +2052,7 @@ const GUI = window.lil.GUI;
     STATE.showingScore = false;
     STATE.scoreDisplayTime = 0;
     STATE.capturedCount = 0;
+    STATE.activeChaserCount = 0;
     settings.gameStarted = false;
 
     // Reset text rows
@@ -2553,7 +2563,7 @@ const GUI = window.lil.GUI;
   function updateGame(dt) {
     if (!STATE.loaded) return;
 
-    const activeChaserCount = chasers.filter(c => c.active).length;
+    const activeChaserCount = STATE.activeChaserCount;
     let chaserSpeedBonus = 0;
     let fugitiveSpeedBonus = 0;
 
@@ -2580,8 +2590,9 @@ const GUI = window.lil.GUI;
 
       const inputDir = getChaserInputDirection(i);
       if (!chaser.active && inputDir.hasInput) {
-        console.log(`Chaser ${i} activated by input:`, inputDir);
+        if (DEBUG) console.log(`Chaser ${i} activated by input:`, inputDir);
         chaser.active = true;
+        STATE.activeChaserCount++;
 
         // Start game timer when first chaser activates
         if (!STATE.gameTimerStarted) {
@@ -2793,9 +2804,9 @@ const GUI = window.lil.GUI;
       }
     });
     if (navNodes.length > 0) {
-      console.log(`Found ${navNodes.length} Nav nodes for path grid`);
+      if (DEBUG) console.log(`Found ${navNodes.length} Nav nodes for path grid`);
     } else {
-      console.log("No Nav nodes found - add objects with names starting with 'Nav' in Blender");
+      if (DEBUG) console.log("No Nav nodes found - add objects with names starting with 'Nav' in Blender");
     }
 
     if (roadsMeshes.length === 0) {
@@ -3071,7 +3082,7 @@ const GUI = window.lil.GUI;
         }
       }
 
-      console.log(`Spawn-based path: ${nodes.length} nodes, ${edges.length} edges`);
+      if (DEBUG) console.log(`Spawn-based path: ${nodes.length} nodes, ${edges.length} edges`);
       return { nodes, edges, gridStep, source: 'spawns' };
     }
 
@@ -3196,7 +3207,7 @@ const GUI = window.lil.GUI;
         if (nearestUp !== null) addEdge(i, nearestUp);
       }
 
-      console.log(`Nav grid: ${nodes.length} nodes, ${edges.length} edges`);
+      if (DEBUG) console.log(`Nav grid: ${nodes.length} nodes, ${edges.length} edges`);
       return { nodes, edges, gridStep: actorSize, source: 'nav' };
     }
 
@@ -3277,7 +3288,7 @@ const GUI = window.lil.GUI;
         pathGraphDebug.add(sphere);
       }
 
-      console.log(`Path visualization: ${source.toUpperCase()} - ${pathGraph.edges.length} edges, ${pathGraph.nodes.length} nodes`);
+      if (DEBUG) console.log(`Path visualization: ${source.toUpperCase()} - ${pathGraph.edges.length} edges, ${pathGraph.nodes.length} nodes`);
 
       scene.add(pathGraphDebug);
       pathGraphDebug.visible = settings.showNavmesh;
@@ -3293,7 +3304,7 @@ const GUI = window.lil.GUI;
         }
       }
 
-      console.log(`Path graph updated: ${pathGraph.nodes.length} nodes, ${pathGraph.edges.length} edges`);
+      if (DEBUG) console.log(`Path graph updated: ${pathGraph.nodes.length} nodes, ${pathGraph.edges.length} edges`);
     }
 
     // Store rebuild function in STATE for GUI access
@@ -3412,12 +3423,12 @@ const GUI = window.lil.GUI;
 
     // Load car models for chasers
     const carPaths = PATHS.models.cars || [];
-    console.log("Car paths to load:", carPaths);
+    if (DEBUG) console.log("Car paths to load:", carPaths);
     const carPromises = carPaths.map(path =>
       new Promise((resolve) => {
         loader.load(path,
           (gltf) => {
-            console.log("Loaded car:", path);
+            if (DEBUG) console.log("Loaded car:", path);
             resolve(gltf.scene);
           },
           undefined,
@@ -3430,7 +3441,7 @@ const GUI = window.lil.GUI;
     );
 
     Promise.all(carPromises).then((carModels) => {
-      console.log("Car models loaded:", carModels.filter(m => m !== null).length, "of", carModels.length);
+      if (DEBUG) console.log("Car models loaded:", carModels.filter(m => m !== null).length, "of", carModels.length);
 
       for (let i = 0; i < chaserSpawns.length; i++) {
         const color = chaserColors[i] || chaserColors[0];
@@ -3448,7 +3459,7 @@ const GUI = window.lil.GUI;
           const maxDim = Math.max(size.x, size.y, size.z);
           const scale = (actorSize * 2) / maxDim; // Make car 2x actor size for visibility
           mesh.scale.setScalar(scale);
-          console.log(`Chaser ${i}: using car model, scale=${scale.toFixed(3)}, size=${maxDim.toFixed(2)}`);
+          if (DEBUG) console.log(`Chaser ${i}: using car model, scale=${scale.toFixed(3)}, size=${maxDim.toFixed(2)}`);
 
           // Apply color to all meshes in the car
           mesh.traverse((child) => {
@@ -3550,7 +3561,7 @@ const GUI = window.lil.GUI;
 
     // Load path graph from GLB and initialize actors
     rebuildPathGraph();
-    console.log("Path graph ready");
+    if (DEBUG) console.log("Path graph ready");
     initVideoPlanes();
     setupGLBPartsGUI();
 
