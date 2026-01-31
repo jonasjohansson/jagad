@@ -809,6 +809,10 @@ const GUI = window.lil.GUI;
     chaserLightFolder.addColor(settings, "chaser4Color").name("Chaser 4").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightIntensity", 0, 100, 1).name("Intensity").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightHeight", 0, 10, 0.1).name("Height").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightDistance", 10, 200, 5).name("Distance").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightAngle", 10, 90, 1).name("Angle (°)").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightOffset", 0, 5, 0.1).name("Offset").onChange(updateChaserLights);
     chaserLightFolder.close();
 
     lightsFolder.close();
@@ -1167,9 +1171,13 @@ const GUI = window.lil.GUI;
         c.light.color.set(color);
         // Keep dimmed if not active
         c.light.intensity = c.active ? settings.chaserLightIntensity : settings.chaserLightIntensity * 0.1;
-        // Account for mesh scale when setting light height
+        c.light.distance = settings.chaserLightDistance;
+        c.light.angle = (settings.chaserLightAngle * Math.PI) / 180; // Convert degrees to radians
+        c.light.penumbra = settings.chaserLightPenumbra;
+        // Account for mesh scale when setting light position
         const meshScale = c.mesh.scale.y || 1;
         c.light.position.y = settings.chaserLightHeight / meshScale;
+        c.light.position.z = settings.chaserLightOffset / meshScale; // Front offset
       }
       // Update materials (handle both box and car models)
       if (c.isCarModel) {
@@ -1788,14 +1796,12 @@ const GUI = window.lil.GUI;
     pos.z = newPos.z;
     projectYOnRoad(pos);
 
-    // Rotate to face movement direction
-    if (actor.isCarModel) {
-      const edge = actor.currentEdge;
-      const travelDirX = (edge.x2 - edge.x1) * actor.edgeDir;
-      const travelDirZ = (edge.z2 - edge.z1) * actor.edgeDir;
-      if (Math.abs(travelDirX) > 0.01 || Math.abs(travelDirZ) > 0.01) {
-        actor.mesh.rotation.y = Math.atan2(travelDirX, travelDirZ);
-      }
+    // Rotate to face movement direction (headlight rotates with car automatically)
+    const edge = actor.currentEdge;
+    const travelDirX = (edge.x2 - edge.x1) * actor.edgeDir;
+    const travelDirZ = (edge.z2 - edge.z1) * actor.edgeDir;
+    if (Math.abs(travelDirX) > 0.01 || Math.abs(travelDirZ) > 0.01) {
+      actor.mesh.rotation.y = Math.atan2(travelDirX, travelDirZ);
     }
   }
 
@@ -2809,16 +2815,24 @@ const GUI = window.lil.GUI;
           mesh.receiveShadow = true;
         }
 
-        const light = new THREE.PointLight(color, settings.chaserLightIntensity * 0.1, 100);
-        // Account for mesh scale when setting light height
+        // Create spotlight as headlight at the front of the car
+        const angleRad = (settings.chaserLightAngle * Math.PI) / 180;
+        const light = new THREE.SpotLight(color, settings.chaserLightIntensity * 0.1, settings.chaserLightDistance, angleRad, settings.chaserLightPenumbra, 1);
         const meshScale = mesh.scale.y || 1;
-        light.position.set(0, settings.chaserLightHeight / meshScale, 0);
+        // Position at front of car (local Z+) and at set height
+        light.position.set(0, settings.chaserLightHeight / meshScale, settings.chaserLightOffset / meshScale);
         light.castShadow = true;
         light.shadow.mapSize.width = 512;
         light.shadow.mapSize.height = 512;
         light.shadow.camera.near = 0.1;
         light.shadow.camera.far = 50;
         light.shadow.bias = -0.001;
+
+        // Create target for spotlight - point forward from the car
+        const lightTarget = new THREE.Object3D();
+        lightTarget.position.set(0, 0, 5 / meshScale); // Point far ahead in local Z
+        mesh.add(lightTarget);
+        light.target = lightTarget;
         mesh.add(light);
 
         const spawnPos = chaserSpawns[i];
@@ -2831,6 +2845,7 @@ const GUI = window.lil.GUI;
         const chaserObj = {
           mesh,
           light,
+          lightTarget,
           material: null, // Materials are on child meshes now
           speed: settings.chaserSpeed,
           dirX: 0,
