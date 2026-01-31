@@ -87,6 +87,7 @@ export const defaultSettings = {
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
   glassTextShuffle: true,
+  glassTextShuffleSpeed: 1.0,
   // Video Planes
   videoPlane1Enabled: false,
   videoPlane1PosX: -3.2,

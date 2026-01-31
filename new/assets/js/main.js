@@ -51,6 +51,38 @@ const GUI = window.lil.GUI;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+  // Debug axis helper (corner inset)
+  const axisScene = new THREE.Scene();
+  const axisCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  axisCamera.position.set(0, 2, 3);
+  axisCamera.lookAt(0, 0, 0);
+  const axisHelper = new THREE.AxesHelper(1.5);
+  axisScene.add(axisHelper);
+  // Add labels
+  const axisLabels = new THREE.Group();
+  const createLabel = (text, color, pos) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = color;
+    ctx.font = "bold 48px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 32, 32);
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(material);
+    sprite.position.copy(pos);
+    sprite.scale.set(0.5, 0.5, 1);
+    return sprite;
+  };
+  axisLabels.add(createLabel("X", "#ff0000", new THREE.Vector3(2, 0, 0)));
+  axisLabels.add(createLabel("Y", "#00ff00", new THREE.Vector3(0, 2, 0)));
+  axisLabels.add(createLabel("Z", "#0000ff", new THREE.Vector3(0, 0, 2)));
+  axisScene.add(axisLabels);
+  let showAxisHelper = true;
+
 
   // ============================================
   // STATE
@@ -391,7 +423,8 @@ const GUI = window.lil.GUI;
       // Spread clouds across the level, starting from different X positions
       const spreadX = 25;
       const startX = center.x - spreadX + (Math.random() * spreadX * 2);
-      const z = center.z + (Math.random() - 0.5) * 4; // Slight Z variation
+      const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
+      const z = center.z + (Math.random() - 0.5) * levelRadius * 1.5; // Wide Z variation across level
 
       mesh.position.set(startX, height, z);
 
@@ -437,7 +470,8 @@ const GUI = window.lil.GUI;
         cloud.height = settings.cloudHeightMin + Math.random() * (settings.cloudHeightMax - settings.cloudHeightMin);
         cloud.speed = settings.cloudSpeedMin + Math.random() * (settings.cloudSpeedMax - settings.cloudSpeedMin);
         cloud.scale = settings.cloudScaleMin + Math.random() * (settings.cloudScaleMax - settings.cloudScaleMin);
-        cloud.zOffset = (Math.random() - 0.5) * 4;
+        const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
+      cloud.zOffset = (Math.random() - 0.5) * levelRadius * 1.5;
       }
 
       // Calculate opacity based on position (fade in/out at edges)
@@ -479,9 +513,11 @@ const GUI = window.lil.GUI;
     state.lockedChars = 0;
     state.shuffleTime = 0;
     state.charDelays = [];
-    // Each character has a random delay before it locks in
+    // Each character has a random delay before it locks in (adjusted by speed setting)
+    const baseDelay = 100 / Math.max(0.1, settings.glassTextShuffleSpeed);
+    const stagger = 60 / Math.max(0.1, settings.glassTextShuffleSpeed);
     for (let i = 0; i < targetText.length; i++) {
-      state.charDelays.push(50 + Math.random() * 100 + i * 30); // Stagger effect
+      state.charDelays.push(baseDelay + Math.random() * baseDelay + i * stagger);
     }
   }
 
@@ -489,7 +525,7 @@ const GUI = window.lil.GUI;
     const state = textShuffleState.rows[rowIndex];
     if (!state.target) return state.target || "";
 
-    state.shuffleTime += dt * 1000; // Convert to ms
+    state.shuffleTime += dt * 1000 * settings.glassTextShuffleSpeed; // Convert to ms, adjusted by speed
 
     let result = "";
     for (let i = 0; i < state.target.length; i++) {
@@ -1332,6 +1368,7 @@ const GUI = window.lil.GUI;
     marqueeFolder.add(settings, "glassTextMarqueeSpeed", 0, 500, 5).name("Speed (px/s)");
     marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
     marqueeFolder.add(settings, "glassTextShuffle").name("Text Shuffle Effect");
+    marqueeFolder.add(settings, "glassTextShuffleSpeed", 0.2, 3, 0.1).name("Shuffle Speed");
     marqueeFolder.close();
     glassFolder.close();
 
@@ -2504,6 +2541,20 @@ const GUI = window.lil.GUI;
     } else {
       renderer.render(scene, camera);
     }
+
+    // Render axis helper in corner
+    if (showAxisHelper) {
+      const size = 120;
+      const margin = 10;
+      renderer.setViewport(window.innerWidth - size - margin, margin, size, size);
+      renderer.setScissor(window.innerWidth - size - margin, margin, size, size);
+      renderer.setScissorTest(true);
+      renderer.setClearColor(0x222222, 0.8);
+      renderer.clear();
+      renderer.render(axisScene, axisCamera);
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+    }
   }
 
   function updateGame(dt) {
@@ -3410,7 +3461,7 @@ const GUI = window.lil.GUI;
           mesh.traverse((child) => {
             child.visible = true;
             if (child.isMesh) {
-              child.castShadow = true;
+              child.castShadow = false; // Don't cast shadows so lights pass through other chasers
               child.receiveShadow = true;
               // Store original material for reference
               child.userData.originalMaterial = child.material;
