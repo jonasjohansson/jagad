@@ -1826,7 +1826,11 @@ const GUI = window.lil.GUI;
       options.push({ edge, startFromNode1, dirX, dirZ });
     }
 
-    if (options.length === 0) return; // Dead end
+    // Dead end - stop moving
+    if (options.length === 0) {
+      actor.isMoving = false;
+      return;
+    }
 
     // Priority 1: Match queued input exactly (cardinal)
     if (actor.queuedDirX !== 0 || actor.queuedDirZ !== 0) {
@@ -1841,7 +1845,7 @@ const GUI = window.lil.GUI;
       }
     }
 
-    // Priority 2: Continue straight
+    // Priority 2: Continue straight if possible
     const straight = options.find(o => o.dirX === travelDirX && o.dirZ === travelDirZ);
     if (straight) {
       actor.currentEdge = straight.edge;
@@ -1850,11 +1854,8 @@ const GUI = window.lil.GUI;
       return;
     }
 
-    // Priority 3: Take any available path (corner)
-    const any = options[0];
-    actor.currentEdge = any.edge;
-    actor.edgeT = any.startFromNode1 ? 0 : 1;
-    actor.edgeDir = any.startFromNode1 ? 1 : -1;
+    // No straight path and no queued turn - stop at intersection
+    actor.isMoving = false;
   }
 
   // ============================================
@@ -1975,6 +1976,9 @@ const GUI = window.lil.GUI;
 
       // Handle input for path-based movement
       if (inputDir.hasInput && chaser.currentEdge) {
+        // Start moving when input is given
+        chaser.isMoving = true;
+
         // Get current travel direction
         const edge = chaser.currentEdge;
         let travelDirX = (edge.x2 - edge.x1) * chaser.edgeDir;
@@ -1999,8 +2003,8 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Path-based movement - only move while input is held
-      if (chaser.currentEdge && inputDir.hasInput) {
+      // Path-based movement - keep moving once started
+      if (chaser.currentEdge && chaser.isMoving) {
         updateChaserMovementPath(chaser, dt, i);
       }
 
@@ -2853,6 +2857,7 @@ const GUI = window.lil.GUI;
           queuedDirX: 0,
           queuedDirZ: 0,
           active: false,
+          isMoving: false,
           isCarModel: !!carModel,
         };
         scene.add(mesh);
