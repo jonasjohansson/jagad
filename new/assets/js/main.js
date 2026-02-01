@@ -2281,9 +2281,12 @@ const GUI = window.lil.GUI;
     for (const f of fugitives) {
       f.captured = false;
       f.mesh.visible = true;
-      if (f.light) f.light.visible = true;
+      if (f.light) {
+        f.light.visible = true;
+        f.light.intensity = settings.fugitiveLightIntensity;
+      }
 
-      // Re-initialize on path
+      // Re-initialize on path (this also resets position)
       initActorOnPath(f);
 
       // Re-show billboard and wire
@@ -2894,15 +2897,21 @@ const GUI = window.lil.GUI;
       for (const f of fugitives) {
         if (f.captured) continue;
         if (checkCollision(chaser.mesh, f.mesh, STATE.actorRadius || 2.5)) {
+          // Mark as captured - visibility will be handled smoothly
           f.captured = true;
-          f.mesh.visible = false;
-          if (f.light) f.light.visible = false;
+          STATE.capturedCount = (STATE.capturedCount || 0) + 1;
+
+          // Hide by moving off-screen instead of toggling visibility
+          // This avoids scene graph updates that cause stutter
+          f.mesh.position.y = -1000;
+          if (f.light) f.light.intensity = 0;
+
           const wire = fugitiveWires[f.index];
           if (wire) {
             if (wire.billboard) wire.billboard.visible = false;
             if (wire.line) wire.line.visible = false;
           }
-          STATE.capturedCount = (STATE.capturedCount || 0) + 1;
+          break; // One capture per chaser per frame
         }
       }
     }
