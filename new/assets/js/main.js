@@ -281,42 +281,76 @@ const GUI = window.lil.GUI;
       mesh.add(light);
 
       // Volumetric light cone - small at top (helicopter), wide at bottom (ground)
+      // Multiple nested layers for fuzzy volumetric effect
       const coneHeight = settings.helicopterConeHeight;
       const topRadius = settings.helicopterConeTopRadius;
       const bottomRadius = settings.helicopterConeBottomRadius;
       const coneOffsetY = settings.helicopterConeOffsetY;
 
-      // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments, heightSegments, openEnded)
-      const coneGeo = new THREE.CylinderGeometry(topRadius, bottomRadius, coneHeight, 32, 1, true);
-
-      // Vertex colors: bright at top (helicopter), fading toward bottom
-      const colors = [];
-      const positions = coneGeo.attributes.position;
-      for (let i = 0; i < positions.count; i++) {
-        const y = positions.getY(i);
-        // t = 1 at top, 0 at bottom
-        const t = (y + coneHeight / 2) / coneHeight;
-        const alpha = Math.pow(t, 0.5);
-        colors.push(1, 1, 1, alpha);
-      }
-      coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
-
-      const coneMat = new THREE.MeshBasicMaterial({
-        color: settings.helicopterLightColor,
-        transparent: true,
-        opacity: settings.helicopterVolumetricOpacity,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        vertexColors: true
-      });
-
-      const lightCone = new THREE.Mesh(coneGeo, coneMat);
-      // Position: top of cone at -offsetY, extends downward
+      // Create a group to hold multiple cone layers
+      const lightCone = new THREE.Group();
       lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
-      // Ensure light cone doesn't interfere with directional light shadows
-      lightCone.castShadow = false;
-      lightCone.receiveShadow = false;
+
+      // Create multiple layers for fuzzy effect
+      const layerCount = 5;
+      const coneLayers = [];
+
+      for (let layer = 0; layer < layerCount; layer++) {
+        // Each layer slightly smaller, creating soft edges
+        const layerScale = 1 - (layer * 0.15);
+        const layerTopRadius = topRadius * layerScale;
+        const layerBottomRadius = bottomRadius * layerScale;
+
+        // More segments for smoother appearance
+        const coneGeo = new THREE.CylinderGeometry(layerTopRadius, layerBottomRadius, coneHeight, 48, 24, true);
+
+        // Vertex colors with soft falloff
+        const colors = [];
+        const positions = coneGeo.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+          const x = positions.getX(i);
+          const y = positions.getY(i);
+          const z = positions.getZ(i);
+
+          // Vertical fade: t = 1 at top, 0 at bottom
+          const t = (y + coneHeight / 2) / coneHeight;
+          // Softer exponential falloff
+          const verticalFade = Math.pow(t, 0.3);
+
+          // Edge fade based on distance from center
+          const radiusAtHeight = layerTopRadius + (layerBottomRadius - layerTopRadius) * (1 - t);
+          const distFromCenter = Math.sqrt(x * x + z * z);
+          const edgeT = radiusAtHeight > 0 ? distFromCenter / radiusAtHeight : 0;
+          // Soft gaussian-like edge falloff
+          const edgeFade = Math.exp(-edgeT * edgeT * 2);
+
+          const brightness = verticalFade * edgeFade;
+          colors.push(brightness, brightness, brightness);
+        }
+        coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+
+        // Inner layers are brighter, outer layers dimmer
+        const layerOpacity = settings.helicopterVolumetricOpacity * (1 - layer * 0.15);
+
+        const coneMat = new THREE.MeshBasicMaterial({
+          color: settings.helicopterLightColor,
+          transparent: true,
+          opacity: layerOpacity,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          vertexColors: true
+        });
+
+        const layerMesh = new THREE.Mesh(coneGeo, coneMat);
+        layerMesh.castShadow = false;
+        layerMesh.receiveShadow = false;
+        lightCone.add(layerMesh);
+        coneLayers.push({ mesh: layerMesh, material: coneMat });
+      }
+
+      // Store layers for later updates
+      lightCone.userData.layers = coneLayers;
       mesh.add(lightCone);
 
       mesh.traverse((child) => {
@@ -343,7 +377,6 @@ const GUI = window.lil.GUI;
         light,
         lightTarget,
         lightCone,
-        coneMat,
         angle: 0,
         rotorAngle: 0,
         targetX: startX,
@@ -358,6 +391,9 @@ const GUI = window.lil.GUI;
           helicopter.rotors.push(child);
         }
       });
+
+      // Rebuild cone to ensure consistent appearance
+      rebuildHelicopterCone();
 
       if (DEBUG) console.log("Helicopter loaded");
     }, undefined, (err) => {
@@ -435,19 +471,31 @@ const GUI = window.lil.GUI;
     }
 
     // Update light cone appearance
-    if (helicopter.lightCone && helicopter.coneMat) {
+    if (helicopter.lightCone) {
       helicopter.lightCone.visible = settings.helicopterVolumetric;
-      helicopter.coneMat.opacity = settings.helicopterVolumetricOpacity;
-      helicopter.coneMat.color.set(settings.helicopterLightColor);
+      // Update all layers
+      if (helicopter.lightCone.userData.layers) {
+        helicopter.lightCone.userData.layers.forEach((layer, i) => {
+          layer.material.opacity = settings.helicopterVolumetricOpacity * (1 - i * 0.15);
+          layer.material.color.set(settings.helicopterLightColor);
+        });
+      }
     }
   }
 
   function rebuildHelicopterCone() {
     if (!helicopter || !helicopter.mesh || !helicopter.lightCone) return;
 
-    // Remove old cone from parent
+    // Remove old cone group from parent
     helicopter.mesh.remove(helicopter.lightCone);
-    helicopter.lightCone.geometry.dispose();
+
+    // Dispose old layers
+    if (helicopter.lightCone.userData.layers) {
+      for (const layer of helicopter.lightCone.userData.layers) {
+        layer.mesh.geometry.dispose();
+        layer.material.dispose();
+      }
+    }
 
     // Create new geometry with updated dimensions
     const coneHeight = settings.helicopterConeHeight;
@@ -455,22 +503,62 @@ const GUI = window.lil.GUI;
     const bottomRadius = settings.helicopterConeBottomRadius;
     const coneOffsetY = settings.helicopterConeOffsetY;
 
-    const coneGeo = new THREE.CylinderGeometry(topRadius, bottomRadius, coneHeight, 32, 1, true);
+    // Create new group
+    const lightCone = new THREE.Group();
+    lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
 
-    // Vertex colors: bright at top, fading toward bottom
-    const colors = [];
-    const positions = coneGeo.attributes.position;
-    for (let i = 0; i < positions.count; i++) {
-      const y = positions.getY(i);
-      const t = (y + coneHeight / 2) / coneHeight;
-      const alpha = Math.pow(t, 0.5);
-      colors.push(1, 1, 1, alpha);
+    const layerCount = 5;
+    const coneLayers = [];
+
+    for (let layer = 0; layer < layerCount; layer++) {
+      const layerScale = 1 - (layer * 0.15);
+      const layerTopRadius = topRadius * layerScale;
+      const layerBottomRadius = bottomRadius * layerScale;
+
+      const coneGeo = new THREE.CylinderGeometry(layerTopRadius, layerBottomRadius, coneHeight, 48, 24, true);
+
+      const colors = [];
+      const positions = coneGeo.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const y = positions.getY(i);
+        const z = positions.getZ(i);
+
+        const t = (y + coneHeight / 2) / coneHeight;
+        const verticalFade = Math.pow(t, 0.3);
+
+        const radiusAtHeight = layerTopRadius + (layerBottomRadius - layerTopRadius) * (1 - t);
+        const distFromCenter = Math.sqrt(x * x + z * z);
+        const edgeT = radiusAtHeight > 0 ? distFromCenter / radiusAtHeight : 0;
+        const edgeFade = Math.exp(-edgeT * edgeT * 2);
+
+        const brightness = verticalFade * edgeFade;
+        colors.push(brightness, brightness, brightness);
+      }
+      coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+
+      const layerOpacity = settings.helicopterVolumetricOpacity * (1 - layer * 0.15);
+
+      const coneMat = new THREE.MeshBasicMaterial({
+        color: settings.helicopterLightColor,
+        transparent: true,
+        opacity: layerOpacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: true
+      });
+
+      const layerMesh = new THREE.Mesh(coneGeo, coneMat);
+      layerMesh.castShadow = false;
+      layerMesh.receiveShadow = false;
+      lightCone.add(layerMesh);
+      coneLayers.push({ mesh: layerMesh, material: coneMat });
     }
-    coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
 
-    helicopter.lightCone.geometry = coneGeo;
-    helicopter.lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
-    helicopter.mesh.add(helicopter.lightCone);
+    lightCone.userData.layers = coneLayers;
+    helicopter.lightCone = lightCone;
+    helicopter.mesh.add(lightCone);
   }
 
   // ============================================
@@ -1369,7 +1457,7 @@ const GUI = window.lil.GUI;
     chaserLightFolder.addColor(settings, "chaser2Color").name("Chaser 2").onChange(updateChaserLights);
     chaserLightFolder.addColor(settings, "chaser3Color").name("Chaser 3").onChange(updateChaserLights);
     chaserLightFolder.addColor(settings, "chaser4Color").name("Chaser 4").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightIntensity", 0, 100, 1).name("Intensity").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Intensity").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightHeight", 0, 10, 0.1).name("Height").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightDistance", 10, 200, 5).name("Distance").onChange(updateChaserLights);
     chaserLightFolder.add(settings, "chaserLightAngle", 10, 90, 1).name("Angle (°)").onChange(updateChaserLights);
@@ -1532,7 +1620,11 @@ const GUI = window.lil.GUI;
     // Light cone controls
     helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
     helicopterFolder.add(settings, "helicopterVolumetricOpacity", 0, 1, 0.01).name("Cone Opacity").onChange((v) => {
-      if (helicopter && helicopter.coneMat) helicopter.coneMat.opacity = v;
+      if (helicopter && helicopter.lightCone && helicopter.lightCone.userData.layers) {
+        helicopter.lightCone.userData.layers.forEach((layer, i) => {
+          layer.material.opacity = v * (1 - i * 0.15);
+        });
+      }
     });
     helicopterFolder.add(settings, "helicopterConeOffsetY", 0, 3, 0.1).name("Cone Y Offset").onChange(rebuildHelicopterCone);
     helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(rebuildHelicopterCone);
