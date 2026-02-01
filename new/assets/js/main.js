@@ -10,6 +10,7 @@ import { RenderPass } from "./lib/three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
+import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
@@ -107,7 +108,6 @@ const GUI = window.lil.GUI;
   const fugitives = [];
   const chasers = [];
   let helicopter = null;
-  let clouds = [];
 
   const settings = {
     gameStarted: false,
@@ -562,144 +562,6 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
-  // CLOUDS
-  // ============================================
-
-  const BLEND_MODES = {
-    "Normal": THREE.NormalBlending,
-    "Additive": THREE.AdditiveBlending,
-    "Multiply": THREE.MultiplyBlending,
-    "Screen": THREE.CustomBlending,
-  };
-
-  function loadClouds() {
-    if (DEBUG) console.log("Loading clouds, path:", PATHS.images.cloud);
-    if (!PATHS.images.cloud) {
-      if (DEBUG) console.warn("No cloud path defined");
-      return;
-    }
-
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(PATHS.images.cloud, (texture) => {
-      if (DEBUG) console.log("Cloud texture loaded:", texture);
-
-      // Store texture for spawning new clouds later
-      STATE.cloudTexture = texture;
-      spawnClouds();
-
-      if (DEBUG) console.log("Clouds system initialized");
-    }, undefined, (err) => {
-      console.warn("Failed to load cloud texture:", err);
-    });
-  }
-
-  function spawnClouds() {
-    if (!STATE.cloudTexture) return;
-
-    // Clear existing clouds
-    for (const cloud of clouds) {
-      scene.remove(cloud.mesh);
-      cloud.material.dispose();
-      cloud.mesh.geometry.dispose();
-    }
-    clouds.length = 0;
-
-    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const cloudCount = settings.cloudCount;
-
-    for (let i = 0; i < cloudCount; i++) {
-      const geometry = new THREE.PlaneGeometry(1, 1);
-      const material = new THREE.MeshBasicMaterial({
-        map: STATE.cloudTexture,
-        transparent: true,
-        opacity: 0, // Start invisible, fade in
-        blending: BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
-
-      // Rotate to be horizontal and face upward (visible from camera above)
-      mesh.rotation.x = Math.PI / 2;
-
-      // Random scale within range
-      const scale = settings.cloudScaleMin + Math.random() * (settings.cloudScaleMax - settings.cloudScaleMin);
-      mesh.scale.set(scale, scale * 0.6, 1);
-
-      // Random height within range
-      const height = settings.cloudHeightMin + Math.random() * (settings.cloudHeightMax - settings.cloudHeightMin);
-
-      // Random speed within range
-      const speed = settings.cloudSpeedMin + Math.random() * (settings.cloudSpeedMax - settings.cloudSpeedMin);
-
-      // Spread clouds across the level, starting from different X positions
-      const spreadX = 25;
-      const startX = center.x - spreadX + (Math.random() * spreadX * 2);
-      const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
-      const z = center.z + (Math.random() - 0.5) * levelRadius * 1.5; // Wide Z variation across level
-
-      mesh.position.set(startX, height, z);
-
-      scene.add(mesh);
-      clouds.push({
-        mesh,
-        material,
-        speed,
-        height,
-        scale,
-        zOffset: z - center.z,
-        index: i,
-      });
-    }
-
-    if (DEBUG) console.log("Spawned", cloudCount, "clouds");
-  }
-
-  function updateClouds(dt) {
-    if (!settings.cloudsEnabled) {
-      for (const cloud of clouds) {
-        cloud.mesh.visible = false;
-      }
-      return;
-    }
-
-    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const resetX = center.x - 15;
-    const endX = center.x + 15;
-
-    for (const cloud of clouds) {
-      cloud.mesh.visible = true;
-
-      // Move cloud from left to right
-      cloud.mesh.position.x += cloud.speed * dt;
-      cloud.mesh.position.y = cloud.height; // Use individual cloud height
-      cloud.mesh.position.z = center.z + cloud.zOffset; // Keep Z offset
-
-      // Reset when cloud moves off the right side (respawn on left with new random properties)
-      if (cloud.mesh.position.x > endX) {
-        cloud.mesh.position.x = resetX - Math.random() * 5;
-        // Randomize properties on respawn
-        cloud.height = settings.cloudHeightMin + Math.random() * (settings.cloudHeightMax - settings.cloudHeightMin);
-        cloud.speed = settings.cloudSpeedMin + Math.random() * (settings.cloudSpeedMax - settings.cloudSpeedMin);
-        cloud.scale = settings.cloudScaleMin + Math.random() * (settings.cloudScaleMax - settings.cloudScaleMin);
-        const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
-      cloud.zOffset = (Math.random() - 0.5) * levelRadius * 1.5;
-      }
-
-      // Calculate opacity based on position (fade in/out at edges)
-      const distFromCenter = Math.abs(cloud.mesh.position.x - center.x);
-      const maxDist = 12;
-      const edgeFade = Math.max(0, 1 - (distFromCenter / maxDist));
-      cloud.material.opacity = settings.cloudOpacity * edgeFade;
-
-      // Update scale and blending
-      cloud.mesh.scale.set(cloud.scale, cloud.scale * 0.6, 1);
-      cloud.material.blending = BLEND_MODES[settings.cloudBlending] || THREE.NormalBlending;
-    }
-  }
-
-  // ============================================
   // GLASS OVERLAY (Canvas texture on GLASS mesh)
   // ============================================
 
@@ -712,48 +574,66 @@ const GUI = window.lil.GUI;
   let glassVideo = null;
   let glassVideoReady = false;
 
-  // Text shuffle effect
-  const SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*<>[]{}";
+  // Text shuffle effect - only shuffles characters that change
+  const SHUFFLE_CHARS = "0123456789";
   const textShuffleState = {
     rows: [{}, {}, {}, {}], // State for each row
     lastTexts: ["", "", "", ""], // Track previous text to detect changes
   };
 
-  function initShuffleRow(rowIndex, targetText) {
+  function initShuffleRow(rowIndex, targetText, previousText) {
     const state = textShuffleState.rows[rowIndex];
     state.target = targetText;
-    state.current = "";
-    state.lockedChars = 0;
+    state.previous = previousText || "";
     state.shuffleTime = 0;
     state.charDelays = [];
-    // Each character has a random delay before it locks in (adjusted by speed setting)
-    const speedFactor = Math.max(0.1, settings.glassTextShuffleSpeed);
-    const baseDelay = 100 / speedFactor;
-    const stagger = 60 / speedFactor;
-    for (let i = 0; i < targetText.length; i++) {
-      state.charDelays.push(baseDelay + Math.random() * baseDelay + i * stagger);
+    state.changedIndices = [];
+
+    // Find which characters changed
+    const maxLen = Math.max(targetText.length, state.previous.length);
+    for (let i = 0; i < maxLen; i++) {
+      const oldChar = state.previous[i] || "";
+      const newChar = targetText[i] || "";
+      if (oldChar !== newChar && newChar !== " ") {
+        state.changedIndices.push(i);
+      }
     }
-    state.maxDelay = state.charDelays.length > 0 ? state.charDelays[state.charDelays.length - 1] : 0;
+
+    // Fast delays - only for changed characters
+    const speedFactor = Math.max(0.1, settings.glassTextShuffleSpeed);
+    const baseDelay = 30 / speedFactor; // Much faster
+    const shuffleIterations = 3; // Only 3 shuffle cycles
+    for (let i = 0; i < targetText.length; i++) {
+      if (state.changedIndices.includes(i)) {
+        state.charDelays.push(baseDelay * shuffleIterations);
+      } else {
+        state.charDelays.push(0); // Unchanged chars lock immediately
+      }
+    }
+    state.maxDelay = state.charDelays.length > 0 ? Math.max(...state.charDelays) : 0;
   }
 
   function updateShuffleRow(rowIndex, dt) {
     const state = textShuffleState.rows[rowIndex];
     if (!state.target) return state.target || "";
 
-    state.shuffleTime += dt * 1000 * settings.glassTextShuffleSpeed; // Convert to ms, adjusted by speed
+    state.shuffleTime += dt * 1000 * settings.glassTextShuffleSpeed;
 
     let result = "";
     for (let i = 0; i < state.target.length; i++) {
       if (state.shuffleTime >= state.charDelays[i]) {
         // Character is locked
         result += state.target[i];
-      } else {
-        // Character is still shuffling
+      } else if (state.changedIndices.includes(i)) {
+        // Only shuffle changed characters
         if (state.target[i] === " ") {
           result += " ";
         } else {
           result += SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
         }
+      } else {
+        // Unchanged character - show target immediately
+        result += state.target[i];
       }
     }
     state.current = result;
@@ -769,16 +649,16 @@ const GUI = window.lil.GUI;
 
     // Check if text changed
     if (textShuffleState.lastTexts[rowIndex] !== targetText) {
+      const previousText = textShuffleState.lastTexts[rowIndex];
       textShuffleState.lastTexts[rowIndex] = targetText;
-      initShuffleRow(rowIndex, targetText);
+      initShuffleRow(rowIndex, targetText, previousText);
     }
 
     const state = textShuffleState.rows[rowIndex];
     if (!state.target) return targetText;
 
     // Check if shuffle is complete
-    const maxDelay = Math.max(...(state.charDelays || [0]));
-    if (state.shuffleTime >= maxDelay) {
+    if (state.shuffleTime >= state.maxDelay) {
       return targetText;
     }
 
@@ -794,64 +674,6 @@ const GUI = window.lil.GUI;
       }
     }
     return false;
-  }
-
-  // Video planes
-  let videoPlane1 = null;
-  let videoPlane2 = null;
-
-  function initVideoPlanes() {
-    const textureLoader = new THREE.TextureLoader();
-
-    // Create plane 1 (left screen)
-    const geo1 = new THREE.PlaneGeometry(1, 1);
-    const mat1 = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-      transparent: true
-    });
-    videoPlane1 = new THREE.Mesh(geo1, mat1);
-    videoPlane1.rotation.x = -Math.PI / 2; // Lay flat
-    videoPlane1.visible = settings.videoPlane1Enabled;
-    updateVideoPlane1();
-    scene.add(videoPlane1);
-
-    // Load left screen texture
-    textureLoader.load(PATHS.images.leftScreen, (texture) => {
-      videoPlane1.material.map = texture;
-      videoPlane1.material.needsUpdate = true;
-    });
-
-    // Create plane 2 (right screen)
-    const geo2 = new THREE.PlaneGeometry(1, 1);
-    const mat2 = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-      transparent: true
-    });
-    videoPlane2 = new THREE.Mesh(geo2, mat2);
-    videoPlane2.rotation.x = -Math.PI / 2; // Lay flat
-    videoPlane2.visible = settings.videoPlane2Enabled;
-    updateVideoPlane2();
-    scene.add(videoPlane2);
-
-    // Load right screen texture
-    textureLoader.load(PATHS.images.rightScreen, (texture) => {
-      videoPlane2.material.map = texture;
-      videoPlane2.material.needsUpdate = true;
-    });
-  }
-
-  function updateVideoPlane1() {
-    if (!videoPlane1) return;
-    videoPlane1.position.set(settings.videoPlane1PosX, settings.videoPlane1PosY, settings.videoPlane1PosZ);
-    videoPlane1.scale.set(settings.videoPlane1ScaleX, settings.videoPlane1ScaleY, settings.videoPlane1ScaleZ);
-  }
-
-  function updateVideoPlane2() {
-    if (!videoPlane2) return;
-    videoPlane2.position.set(settings.videoPlane2PosX, settings.videoPlane2PosY, settings.videoPlane2PosZ);
-    videoPlane2.scale.set(settings.videoPlane2ScaleX, settings.videoPlane2ScaleY, settings.videoPlane2ScaleZ);
   }
 
   // Preload fonts for canvas usage
@@ -1377,149 +1199,68 @@ const GUI = window.lil.GUI;
 
   function setupGUI() {
     // Single unified GUI
-    guiLeft = new GUI({ title: "Controls" });
+    guiLeft = new GUI({ title: "Jagad Controls" });
     guiLeft.domElement.style.position = "absolute";
     guiLeft.domElement.style.left = "10px";
     guiLeft.domElement.style.top = "0px";
 
-    const gameCanvas = document.getElementById("game-canvas");
-
     // Settings controls at the top
-    guiLeft.add(settings, "saveSettings").name("Save Settings");
-    guiLeft.add(settings, "clearSettings").name("Clear Settings");
+    guiLeft.add(settings, "saveSettings").name("💾 Save Settings");
+    guiLeft.add(settings, "clearSettings").name("🗑️ Clear Settings");
+    guiLeft.add({ showInfo: function() {
+      alert(
+        "JAGAD - The Chase Game\n\n" +
+        "HOW TO PLAY:\n" +
+        "- Fugitives (white) try to escape\n" +
+        "- Chasers (colored) hunt the fugitives\n" +
+        "- Game ends when all fugitives are caught or time runs out\n\n" +
+        "KEYBOARD SHORTCUTS:\n" +
+        "- Keys 1-4: Trigger capture for fugitive 1-4\n" +
+        "- Space: Toggle game start\n\n" +
+        "TIPS:\n" +
+        "- Adjust speeds and AI in Game settings\n" +
+        "- Customize colors in Actors settings\n" +
+        "- Save your settings to preserve them"
+      );
+    }}, "showInfo").name("ℹ️ How to Play");
 
     // ==================== GAME ====================
-    const gameFolder = guiLeft.addFolder("Game");
-    gameFolder.add(settings, "startGame").name("Start Game");
+    const gameFolder = guiLeft.addFolder("🎮 Game");
     gameFolder.add(settings, "fugitiveSpeed", 0.1, 15, 0.1).name("Fugitive Speed").onChange((v) => {
       for (const f of fugitives) f.speed = v;
     });
     gameFolder.add(settings, "chaserSpeed", 0.1, 15, 0.1).name("Chaser Speed").onChange((v) => {
       for (const c of chasers) c.speed = v;
     });
-    gameFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Chaser Height");
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
-    gameFolder.add(settings, "showNavmesh").name("Show Path Debug").onChange((v) => {
-      const pathGraphDebug = scene.getObjectByName("PathGraphDebug");
-      if (pathGraphDebug) pathGraphDebug.visible = v;
-    });
-    gameFolder.add(settings, "actorScale", 0.5, 2.5, 0.1).name("Actor Scale (reload)");
-    gameFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
-    gameFolder.add(settings, "faceSwapFade").name("Face Swap Fade");
-    gameFolder.add(settings, "faceSwapFadeDuration", 0.1, 3, 0.1).name("Fade Duration (sec)");
     gameFolder.close();
 
-    // ==================== CAMERA ====================
-    const cameraFolder = guiLeft.addFolder("Camera");
-    cameraFolder.add(settings, "cameraType", ["orthographic", "perspective"])
-      .name("Type")
-      .onChange((v) => switchCamera(v));
+    // ==================== ACTORS ====================
+    const actorsFolder = guiLeft.addFolder("👥 Actors");
 
-    const orthoFolder = cameraFolder.addFolder("Orthographic");
-    orthoFolder.add(settings, "orthoZoom", 0.1, 3, 0.1).name("Zoom").onChange((v) => {
-      if (orthoCamera) {
-        orthoCamera.zoom = v;
-        orthoCamera.updateProjectionMatrix();
-      }
-    });
-    orthoFolder.close();
+    const fugitiveFolder = actorsFolder.addFolder("Fugitives");
+    fugitiveFolder.addColor(settings, "fugitiveColor").name("Light Color").onChange(updateFugitiveLights);
+    fugitiveFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Light Intensity").onChange(updateFugitiveLights);
+    fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
+    fugitiveFolder.close();
 
-    const perspFolder = cameraFolder.addFolder("Perspective");
-    perspFolder.add(settings, "perspFov", 20, 120, 1).name("FOV").onChange((v) => {
-      if (perspCamera) {
-        perspCamera.fov = v;
-        perspCamera.updateProjectionMatrix();
-      }
-    });
+    const chaserFolder = actorsFolder.addFolder("Chasers");
+    chaserFolder.addColor(settings, "chaser1Color").name("Chaser 1 Color").onChange(updateChaserLights);
+    chaserFolder.addColor(settings, "chaser2Color").name("Chaser 2 Color").onChange(updateChaserLights);
+    chaserFolder.addColor(settings, "chaser3Color").name("Chaser 3 Color").onChange(updateChaserLights);
+    chaserFolder.addColor(settings, "chaser4Color").name("Chaser 4 Color").onChange(updateChaserLights);
+    chaserFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Light Intensity").onChange(updateChaserLights);
+    chaserFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Height Offset");
+    chaserFolder.add(settings, "motionTrailsEnabled").name("Motion Trails");
+    chaserFolder.add(settings, "motionTrailsLength", 3, 20, 1).name("Trail Length");
+    chaserFolder.add(settings, "motionTrailsOpacity", 0.1, 1, 0.05).name("Trail Opacity");
+    chaserFolder.close();
 
-    function updatePerspCameraPos() {
-      if (perspCamera) {
-        perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
-        perspCamera.lookAt(STATE.levelCenter);
-      }
-    }
-
-    perspFolder.add(settings, "perspPosX", -500, 500, 0.01).name("Pos X").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosY", 0, 500, 0.01).name("Pos Y").onChange(updatePerspCameraPos);
-    perspFolder.add(settings, "perspPosZ", -500, 500, 0.01).name("Pos Z").onChange(updatePerspCameraPos);
-    perspFolder.close();
-    cameraFolder.close();
-
-    // ==================== LIGHTING ====================
-    const lightsFolder = guiLeft.addFolder("Lighting");
-
-    lightsFolder.add(settings, "toneMapping", Object.keys(toneMappingOptions)).name("Tone Mapping").onChange((v) => {
-      renderer.toneMapping = toneMappingOptions[v];
-    });
-    lightsFolder.add(settings, "exposure", 0, 3, 0.01).name("Exposure").onChange((v) => {
-      renderer.toneMappingExposure = v;
-    });
-    lightsFolder.add(settings, "environmentIntensity", 0, 3, 0.1).name("Environment").onChange((v) => {
-      scene.environmentIntensity = v;
-    });
-    lightsFolder.add(settings, "punctualLights").name("Punctual Lights").onChange((v) => {
-      // Toggle fugitive and chaser lights
-      for (const f of fugitives) {
-        if (f.light) f.light.visible = v;
-      }
-      for (const c of chasers) {
-        if (c.light) c.light.visible = v;
-      }
-    });
-
-    const ambientFolder = lightsFolder.addFolder("Ambient Light");
-    ambientFolder.add(settings, "ambientIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
-      ambientLight.intensity = v;
-    });
-    ambientFolder.addColor(settings, "ambientColor").name("Color").onChange((v) => {
-      ambientLight.color.set(v);
-    });
-    ambientFolder.close();
-
-    const directFolder = lightsFolder.addFolder("Directional Light");
-    directFolder.add(settings, "directIntensity", 0, 5, 0.1).name("Intensity").onChange((v) => {
-      directionalLight.intensity = v;
-    });
-    directFolder.addColor(settings, "directColor").name("Color").onChange((v) => {
-      directionalLight.color.set(v);
-    });
-
-    function updateDirectLightPos() {
-      directionalLight.position.set(settings.directPosX, settings.directPosY, settings.directPosZ);
-    }
-    directFolder.add(settings, "directPosX", -20, 20, 0.5).name("Pos X").onChange(updateDirectLightPos);
-    directFolder.add(settings, "directPosY", 0, 30, 0.5).name("Pos Y").onChange(updateDirectLightPos);
-    directFolder.add(settings, "directPosZ", -20, 20, 0.5).name("Pos Z").onChange(updateDirectLightPos);
-    directFolder.close();
-
-    const fugitiveLightFolder = lightsFolder.addFolder("Fugitive Lights");
-    fugitiveLightFolder.addColor(settings, "fugitiveColor").name("Color").onChange(updateFugitiveLights);
-    fugitiveLightFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Intensity").onChange(updateFugitiveLights);
-    fugitiveLightFolder.close();
-
-    const chaserLightFolder = lightsFolder.addFolder("Chaser Lights");
-    chaserLightFolder.addColor(settings, "chaser1Color").name("Chaser 1").onChange(updateChaserLights);
-    chaserLightFolder.addColor(settings, "chaser2Color").name("Chaser 2").onChange(updateChaserLights);
-    chaserLightFolder.addColor(settings, "chaser3Color").name("Chaser 3").onChange(updateChaserLights);
-    chaserLightFolder.addColor(settings, "chaser4Color").name("Chaser 4").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Intensity").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightHeight", 0, 10, 0.1).name("Height").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightDistance", 10, 200, 5).name("Distance").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightAngle", 10, 90, 1).name("Angle (°)").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightOffset", 0, 0.2, 0.01).name("Offset").onChange(updateChaserLights);
-    chaserLightFolder.close();
-
-    lightsFolder.close();
-
-    // ==================== FUGITIVE WIRES ====================
-    const wireFolder = guiLeft.addFolder("Fugitive Wires");
+    const wireFolder = actorsFolder.addFolder("Face Billboards");
     wireFolder.add(settings, "wireEnabled").name("Enabled");
-    wireFolder.add(settings, "wireHeight", 0.1, 5, 0.1).name("Height");
-    wireFolder.add(settings, "wireGravity", 0, 0.5, 0.01).name("Gravity");
-    wireFolder.add(settings, "wireFriction", 0.8, 0.99, 0.01).name("Friction");
+    wireFolder.add(settings, "wireHeight", 0.1, 5, 0.1).name("Wire Height");
     wireFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
-    wireFolder.add(settings, "billboardBrightness", 0, 1, 0.05).name("Billboard Brightness").onChange((v) => {
+    wireFolder.add(settings, "billboardBrightness", 0, 1, 0.05).name("Brightness").onChange((v) => {
       for (const wire of fugitiveWires) {
         if (wire.billboard && wire.billboard.material) {
           wire.billboard.material.color.setRGB(v, v, v);
@@ -1527,84 +1268,32 @@ const GUI = window.lil.GUI;
       }
     });
     wireFolder.add(settings, "billboardCenterPull", 0, 1, 0.05).name("Center Pull");
-    wireFolder.add(settings, "billboardMaxDistance", 0, 5, 0.01).name("Max Distance");
     wireFolder.close();
 
-    // ==================== BUILDING PLANE ====================
-    function updateBuildingPlane() {
-      if (!buildingPlane || !STATE.levelCenter || !STATE.horizontalSize) return;
+    actorsFolder.close();
 
-      const sizeX = STATE.horizontalSize * settings.buildingScaleX;
-      const sizeY = STATE.horizontalSize * settings.buildingScaleY;
-      buildingPlane.geometry.dispose();
-      buildingPlane.geometry = new THREE.PlaneGeometry(sizeX, sizeY);
+    // ==================== ADDONS ====================
+    const addonsFolder = guiLeft.addFolder("🧩 Addons");
 
-      buildingPlane.position.set(
-        STATE.levelCenter.x + settings.buildingOffsetX,
-        (STATE.streetY || 0) + settings.buildingOffsetY,
-        STATE.levelCenter.z + settings.buildingOffsetZ
-      );
-
-      buildingPlane.material.opacity = settings.buildingOpacity;
-      buildingPlane.material.transparent = settings.buildingOpacity < 1;
-      buildingPlane.visible = settings.buildingEnabled;
-    }
-
-    const backdropFolder = guiLeft.addFolder("Building Plane");
-    backdropFolder.add(settings, "buildingEnabled").name("Enabled").onChange(updateBuildingPlane);
-    backdropFolder.add(settings, "buildingScaleX", 0.1, 3, 0.01).name("Scale X").onChange(updateBuildingPlane);
-    backdropFolder.add(settings, "buildingScaleY", 0.1, 3, 0.01).name("Scale Y").onChange(updateBuildingPlane);
-    backdropFolder.add(settings, "buildingOffsetX", -50, 50, 0.01).name("Offset X").onChange(updateBuildingPlane);
-    backdropFolder.add(settings, "buildingOffsetY", -50, 10, 0.01).name("Offset Y (Depth)").onChange(updateBuildingPlane);
-    backdropFolder.add(settings, "buildingOffsetZ", -50, 50, 0.01).name("Offset Z").onChange(updateBuildingPlane);
-    backdropFolder.add(settings, "buildingOpacity", 0, 1, 0.05).name("Opacity").onChange(updateBuildingPlane);
-    STATE.updateBuildingPlane = updateBuildingPlane;
-    backdropFolder.close();
-
-    // ==================== POST-PROCESSING ====================
-    const postFolder = guiLeft.addFolder("Post-Processing");
-
-    const bloomFolder = postFolder.addFolder("Bloom (Glow)");
-    bloomFolder.add(settings, "bloomEnabled").name("Enabled").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomThreshold", 0, 1, 0.01).name("Threshold").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomStrength", 0, 3, 0.1).name("Strength").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange(updatePostProcessing);
-    bloomFolder.close();
-
-    postFolder.add(settings, "fxaaEnabled").name("FXAA Anti-Aliasing").onChange(updatePostProcessing);
-    postFolder.close();
-
-    // ==================== GLASS OVERLAY ====================
-    const glassFolder = guiLeft.addFolder("Text");
-    glassFolder.add(settings, "glassEnabled").name("Enabled").onChange((v) => {
+    // Text Overlay
+    const textFolder = addonsFolder.addFolder("Text");
+    textFolder.add(settings, "glassEnabled").name("Enabled").onChange((v) => {
       for (const mesh of glassMeshes) {
         mesh.visible = v;
       }
     });
-    glassFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange((v) => {
+    textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange((v) => {
       updateGlassCanvas();
     });
-    glassFolder.add(settings, "glassVideoEnabled").name("Video Background").onChange((v) => {
-      if (glassVideo) {
-        if (v) {
-          glassVideo.play().catch(() => {});
-        } else {
-          glassVideo.pause();
-        }
-      }
-      updateGlassCanvas();
-    });
-    glassFolder.add(settings, "glassVideoOpacity", 0, 1, 0.05).name("Video Opacity");
-    glassFolder.add(settings, "glassVideoBrightness", 0, 2, 0.05).name("Video Brightness");
 
-    const textRowsFolder = glassFolder.addFolder("Text Rows");
+    const textRowsFolder = textFolder.addFolder("Text Rows");
     textRowsFolder.add(settings, "glassTextRow1").name("Row 1").onChange(() => updateGlassCanvas());
     textRowsFolder.add(settings, "glassTextRow2").name("Row 2").onChange(() => updateGlassCanvas());
     textRowsFolder.add(settings, "glassTextRow3").name("Row 3").onChange(() => updateGlassCanvas());
     textRowsFolder.add(settings, "glassTextRow4").name("Row 4").onChange(() => updateGlassCanvas());
     textRowsFolder.close();
 
-    const textStyleFolder = glassFolder.addFolder("Text Style");
+    const textStyleFolder = textFolder.addFolder("Text Style");
     textStyleFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textStyleFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
     textStyleFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
@@ -1614,7 +1303,7 @@ const GUI = window.lil.GUI;
     textStyleFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
     textStyleFolder.close();
 
-    const marqueeFolder = glassFolder.addFolder("Marquee Animation");
+    const marqueeFolder = textFolder.addFolder("Marquee Animation");
     marqueeFolder.add(settings, "glassTextMarquee").name("Enable Marquee").onChange((v) => {
       if (v) {
         marqueeOffset = 0;
@@ -1627,10 +1316,160 @@ const GUI = window.lil.GUI;
     marqueeFolder.add(settings, "glassTextShuffle").name("Text Shuffle Effect");
     marqueeFolder.add(settings, "glassTextShuffleSpeed", 0.2, 3, 0.1).name("Shuffle Speed");
     marqueeFolder.close();
-    glassFolder.close();
+    textFolder.close();
+
+    // Window Overlay (video background)
+    const windowOverlayFolder = addonsFolder.addFolder("Window Overlay");
+    windowOverlayFolder.add(settings, "glassVideoEnabled").name("Enabled").onChange((v) => {
+      if (glassVideo) {
+        if (v) {
+          glassVideo.play().catch(() => {});
+        } else {
+          glassVideo.pause();
+        }
+      }
+      updateGlassCanvas();
+    });
+    windowOverlayFolder.add(settings, "glassVideoOpacity", 0, 1, 0.05).name("Opacity");
+    windowOverlayFolder.add(settings, "glassVideoBrightness", 0, 2, 0.05).name("Brightness");
+    windowOverlayFolder.close();
+
+    // Helicopter
+    const helicopterFolder = addonsFolder.addFolder("Helicopter");
+    helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
+    helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Fly Height");
+    helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
+    helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
+    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale");
+    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Spotlight Intensity");
+    helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
+    helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
+    helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
+    helicopterFolder.add(settings, "helicopterVolumetricOpacity", 0, 1, 0.01).name("Cone Opacity").onChange((v) => {
+      if (helicopter && helicopter.lightCone && helicopter.lightCone.userData.layers) {
+        helicopter.lightCone.userData.layers.forEach((layer, i) => {
+          layer.material.opacity = v * (1 - i * 0.15);
+        });
+      }
+    });
+    helicopterFolder.add(settings, "helicopterConeOffsetY", 0, 3, 0.1).name("Cone Y Offset").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeTopRadius", 0, 2, 0.05).name("Cone Top Radius").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeBottomRadius", 0.5, 10, 0.5).name("Cone Bottom Radius").onChange(rebuildHelicopterCone);
+    helicopterFolder.close();
+
+    // Building Plane
+    const buildingPlaneFolderGUI = addonsFolder.addFolder("Building Plane");
+    buildingPlaneFolderGUI.add(settings, "buildingEnabled").name("Enabled").onChange((v) => {
+      if (buildingPlane) buildingPlane.visible = v;
+    });
+    buildingPlaneFolderGUI.add(settings, "buildingOpacity", 0, 1, 0.05).name("Opacity").onChange((v) => {
+      if (buildingPlane && buildingPlane.material) {
+        buildingPlane.material.opacity = v;
+      }
+    });
+    buildingPlaneFolderGUI.add(settings, "buildingOffsetX", -2, 2, 0.01).name("Offset X").onChange(() => {
+      if (buildingPlane) {
+        buildingPlane.position.x = STATE.levelCenter.x + settings.buildingOffsetX;
+      }
+    });
+    buildingPlaneFolderGUI.add(settings, "buildingOffsetY", -2, 2, 0.01).name("Offset Y").onChange(() => {
+      if (buildingPlane) {
+        buildingPlane.position.y = (STATE.streetY || 0) + settings.buildingOffsetY;
+      }
+    });
+    buildingPlaneFolderGUI.add(settings, "buildingOffsetZ", -2, 2, 0.01).name("Offset Z").onChange(() => {
+      if (buildingPlane) {
+        buildingPlane.position.z = STATE.levelCenter.z + settings.buildingOffsetZ;
+      }
+    });
+    buildingPlaneFolderGUI.close();
+
+    addonsFolder.close();
+
+    // ==================== SCENE ====================
+    const sceneFolder = guiLeft.addFolder("🌆 Scene");
+
+    const cameraFolder = sceneFolder.addFolder("Camera");
+    cameraFolder.add(settings, "cameraType", ["orthographic", "perspective"]).name("Type").onChange((v) => switchCamera(v));
+
+    function updatePerspCameraPos() {
+      if (perspCamera) {
+        perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
+        perspCamera.lookAt(STATE.levelCenter);
+      }
+    }
+    cameraFolder.add(settings, "orthoZoom", 0.1, 3, 0.1).name("Ortho Zoom").onChange((v) => {
+      if (orthoCamera) { orthoCamera.zoom = v; orthoCamera.updateProjectionMatrix(); }
+    });
+    cameraFolder.add(settings, "perspFov", 20, 120, 1).name("Persp FOV").onChange((v) => {
+      if (perspCamera) { perspCamera.fov = v; perspCamera.updateProjectionMatrix(); }
+    });
+    cameraFolder.add(settings, "perspPosY", 0, 500, 0.01).name("Persp Height").onChange(updatePerspCameraPos);
+    cameraFolder.close();
+
+    const lightsFolder = sceneFolder.addFolder("Lighting");
+    lightsFolder.add(settings, "toneMapping", Object.keys(toneMappingOptions)).name("Tone Mapping").onChange((v) => {
+      renderer.toneMapping = toneMappingOptions[v];
+    });
+    lightsFolder.add(settings, "exposure", 0, 3, 0.01).name("Exposure").onChange((v) => {
+      renderer.toneMappingExposure = v;
+    });
+    lightsFolder.add(settings, "ambientIntensity", 0, 5, 0.1).name("Ambient").onChange((v) => {
+      ambientLight.intensity = v;
+    });
+    lightsFolder.add(settings, "directIntensity", 0, 5, 0.1).name("Directional").onChange((v) => {
+      directionalLight.intensity = v;
+    });
+    lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
+      for (const f of fugitives) { if (f.light) f.light.visible = v; }
+      for (const c of chasers) { if (c.light) c.light.visible = v; }
+    });
+    lightsFolder.close();
+
+    sceneFolder.close();
+
+    // ==================== ENVIRONMENT ====================
+    const envFolder = guiLeft.addFolder("🌤️ Environment");
+
+    const atmosphereFolder = envFolder.addFolder("Atmosphere");
+    atmosphereFolder.add(settings, "fogEnabled").name("Fog").onChange(updatePostProcessing);
+    atmosphereFolder.addColor(settings, "fogColor").name("Fog Color").onChange(updatePostProcessing);
+    atmosphereFolder.add(settings, "fogNear", 1, 50, 1).name("Fog Near").onChange(updatePostProcessing);
+    atmosphereFolder.add(settings, "fogFar", 10, 100, 1).name("Fog Far").onChange(updatePostProcessing);
+    atmosphereFolder.add(settings, "dustEnabled").name("Dust Particles");
+    atmosphereFolder.add(settings, "dustOpacity", 0, 1, 0.05).name("Dust Opacity");
+    atmosphereFolder.add(settings, "cloudShadowsEnabled").name("Cloud Shadows");
+    atmosphereFolder.add(settings, "cloudShadowsOpacity", 0, 0.6, 0.05).name("Shadow Opacity");
+    atmosphereFolder.close();
+
+    envFolder.close();
+
+    // ==================== VFX ====================
+    const vfxFolder = guiLeft.addFolder("✨ VFX");
+
+    const bloomFolder = vfxFolder.addFolder("Bloom");
+    bloomFolder.add(settings, "bloomEnabled").name("Enabled").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomStrength", 0, 3, 0.1).name("Strength").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomThreshold", 0, 1, 0.01).name("Threshold").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange(updatePostProcessing);
+    bloomFolder.close();
+
+    const gradeFolder = vfxFolder.addFolder("Color Grading");
+    gradeFolder.add(settings, "vignetteEnabled").name("Vignette").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "vignetteIntensity", 0, 1, 0.05).name("Vignette Amount").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingSaturation", 0.5, 2, 0.05).name("Saturation").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingContrast", 0.5, 2, 0.05).name("Contrast").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "chromaticAberration", 0, 0.02, 0.001).name("Chromatic Aberr.").onChange(updatePostProcessing);
+    gradeFolder.addColor(settings, "colorGradingTint").name("Tint Color").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingIntensity", 0, 0.5, 0.01).name("Tint Amount").onChange(updatePostProcessing);
+    gradeFolder.close();
+
+    vfxFolder.add(settings, "fxaaEnabled").name("Anti-Aliasing").onChange(updatePostProcessing);
+    vfxFolder.close();
 
     // ==================== AUDIO ====================
-    const audioFolder = guiLeft.addFolder("Audio");
+    const audioFolder = guiLeft.addFolder("🔊 Audio");
     const audioControls = {
       play: function() {
         if (audioElement) {
@@ -1651,73 +1490,6 @@ const GUI = window.lil.GUI;
       setAudioTrack(v);
     });
     audioFolder.close();
-
-    // ==================== HELICOPTER ====================
-    const helicopterFolder = guiLeft.addFolder("Helicopter");
-    helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
-    helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Fly Height");
-    helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
-    helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
-    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale");
-    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Spotlight Intensity");
-    helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
-    helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
-    // Light cone controls
-    helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
-    helicopterFolder.add(settings, "helicopterVolumetricOpacity", 0, 1, 0.01).name("Cone Opacity").onChange((v) => {
-      if (helicopter && helicopter.lightCone && helicopter.lightCone.userData.layers) {
-        helicopter.lightCone.userData.layers.forEach((layer, i) => {
-          layer.material.opacity = v * (1 - i * 0.15);
-        });
-      }
-    });
-    helicopterFolder.add(settings, "helicopterConeOffsetY", 0, 3, 0.1).name("Cone Y Offset").onChange(rebuildHelicopterCone);
-    helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(rebuildHelicopterCone);
-    helicopterFolder.add(settings, "helicopterConeTopRadius", 0, 2, 0.05).name("Cone Top Radius").onChange(rebuildHelicopterCone);
-    helicopterFolder.add(settings, "helicopterConeBottomRadius", 0.5, 10, 0.5).name("Cone Bottom Radius").onChange(rebuildHelicopterCone);
-    helicopterFolder.close();
-
-    // ==================== CLOUDS ====================
-    const cloudsFolder = guiLeft.addFolder("Clouds");
-    cloudsFolder.add(settings, "cloudsEnabled").name("Enabled");
-    cloudsFolder.add(settings, "cloudCount", 1, 5, 1).name("Count").onChange(() => spawnClouds());
-    cloudsFolder.add(settings, "cloudOpacity", 0, 1, 0.05).name("Opacity");
-    cloudsFolder.add(settings, "cloudScaleMin", 1, 10, 0.5).name("Scale Min");
-    cloudsFolder.add(settings, "cloudScaleMax", 1, 15, 0.5).name("Scale Max");
-    cloudsFolder.add(settings, "cloudHeightMin", 3, 15, 0.5).name("Height Min");
-    cloudsFolder.add(settings, "cloudHeightMax", 5, 20, 0.5).name("Height Max");
-    cloudsFolder.add(settings, "cloudSpeedMin", 0.1, 1, 0.05).name("Speed Min");
-    cloudsFolder.add(settings, "cloudSpeedMax", 0.2, 2, 0.05).name("Speed Max");
-    cloudsFolder.add(settings, "cloudBlending", ["Normal", "Additive", "Multiply", "Screen"]).name("Blending");
-    cloudsFolder.add({ respawn: () => spawnClouds() }, "respawn").name("Respawn Clouds");
-    cloudsFolder.close();
-
-    // ==================== VIDEO PLANES ====================
-    const videoPlanesFolder = guiLeft.addFolder("Video Planes");
-
-    const plane1Folder = videoPlanesFolder.addFolder("Left Screen");
-    plane1Folder.add(settings, "videoPlane1Enabled").name("Enabled").onChange((v) => {
-      if (videoPlane1) videoPlane1.visible = v;
-    });
-    plane1Folder.add(settings, "videoPlane1PosX", -50, 50, 0.1).name("Pos X").onChange(updateVideoPlane1);
-    plane1Folder.add(settings, "videoPlane1PosY", -50, 50, 0.1).name("Pos Y").onChange(updateVideoPlane1);
-    plane1Folder.add(settings, "videoPlane1PosZ", -50, 50, 0.1).name("Pos Z").onChange(updateVideoPlane1);
-    plane1Folder.add(settings, "videoPlane1ScaleX", 0.1, 50, 0.1).name("Scale X").onChange(updateVideoPlane1);
-    plane1Folder.add(settings, "videoPlane1ScaleY", 0.1, 50, 0.1).name("Scale Y").onChange(updateVideoPlane1);
-    plane1Folder.close();
-
-    const plane2Folder = videoPlanesFolder.addFolder("Right Screen");
-    plane2Folder.add(settings, "videoPlane2Enabled").name("Enabled").onChange((v) => {
-      if (videoPlane2) videoPlane2.visible = v;
-    });
-    plane2Folder.add(settings, "videoPlane2PosX", -50, 50, 0.1).name("Pos X").onChange(updateVideoPlane2);
-    plane2Folder.add(settings, "videoPlane2PosY", -50, 50, 0.1).name("Pos Y").onChange(updateVideoPlane2);
-    plane2Folder.add(settings, "videoPlane2PosZ", -50, 50, 0.1).name("Pos Z").onChange(updateVideoPlane2);
-    plane2Folder.add(settings, "videoPlane2ScaleX", 0.1, 50, 0.1).name("Scale X").onChange(updateVideoPlane2);
-    plane2Folder.add(settings, "videoPlane2ScaleY", 0.1, 50, 0.1).name("Scale Y").onChange(updateVideoPlane2);
-    plane2Folder.close();
-
-    videoPlanesFolder.close();
 
     // Store reference for GLB parts to add to later
     STATE.mainGUI = guiLeft;
@@ -1816,6 +1588,314 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
+  // CYBERPUNK VFX SHADER
+  // ============================================
+
+  const CyberpunkShader = {
+    uniforms: {
+      'tDiffuse': { value: null },
+      'vignetteIntensity': { value: 0.4 },
+      'chromaticAberration': { value: 0.003 },
+      'tintColor': { value: new THREE.Color(0xff00ff) },
+      'tintIntensity': { value: 0.15 },
+      'saturation': { value: 1.2 },
+      'contrast': { value: 1.1 },
+      'time': { value: 0 }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D tDiffuse;
+      uniform float vignetteIntensity;
+      uniform float chromaticAberration;
+      uniform vec3 tintColor;
+      uniform float tintIntensity;
+      uniform float saturation;
+      uniform float contrast;
+      uniform float time;
+      varying vec2 vUv;
+
+      void main() {
+        vec2 uv = vUv;
+        vec2 center = uv - 0.5;
+        float dist = length(center);
+
+        // Chromatic aberration
+        float aberration = chromaticAberration * dist;
+        float r = texture2D(tDiffuse, uv + vec2(aberration, 0.0)).r;
+        float g = texture2D(tDiffuse, uv).g;
+        float b = texture2D(tDiffuse, uv - vec2(aberration, 0.0)).b;
+        vec3 color = vec3(r, g, b);
+
+        // Saturation
+        float luminance = dot(color, vec3(0.299, 0.587, 0.114));
+        color = mix(vec3(luminance), color, saturation);
+
+        // Contrast
+        color = (color - 0.5) * contrast + 0.5;
+
+        // Color tint (additive cyberpunk glow)
+        color += tintColor * tintIntensity * (0.5 + 0.5 * sin(time * 0.5));
+
+        // Vignette
+        float vignette = 1.0 - dist * vignetteIntensity * 2.0;
+        vignette = clamp(vignette, 0.0, 1.0);
+        vignette = smoothstep(0.0, 1.0, vignette);
+        color *= vignette;
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `
+  };
+
+  // ============================================
+  // ATMOSPHERE SYSTEMS (Dust, Cloud Shadows)
+  // ============================================
+
+  let dustParticles = null;
+  let cloudShadowPlane = null;
+  let motionTrails = [];
+
+  function initDustParticles() {
+    if (dustParticles) {
+      scene.remove(dustParticles);
+      dustParticles.geometry.dispose();
+      dustParticles.material.dispose();
+    }
+
+    const count = settings.dustCount;
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+    const bounds = STATE.horizontalSize || 20;
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * bounds;
+      positions[i * 3 + 1] = Math.random() * 8 + 0.5;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * bounds;
+      velocities.push({
+        x: (Math.random() - 0.5) * 0.2,
+        y: (Math.random() - 0.5) * 0.1,
+        z: (Math.random() - 0.5) * 0.2
+      });
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.05,
+      color: 0xffffff,
+      transparent: true,
+      opacity: settings.dustOpacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    dustParticles = new THREE.Points(geometry, material);
+    dustParticles.userData.velocities = velocities;
+    dustParticles.visible = settings.dustEnabled;
+    scene.add(dustParticles);
+  }
+
+  function updateDustParticles(dt) {
+    if (!dustParticles || !settings.dustEnabled) {
+      if (dustParticles) dustParticles.visible = false;
+      return;
+    }
+    dustParticles.visible = true;
+    dustParticles.material.opacity = settings.dustOpacity;
+
+    const positions = dustParticles.geometry.attributes.position.array;
+    const velocities = dustParticles.userData.velocities;
+    const bounds = (STATE.horizontalSize || 20) / 2;
+    const time = performance.now() * 0.001;
+
+    for (let i = 0; i < velocities.length; i++) {
+      const vel = velocities[i];
+      // Add subtle wind movement
+      positions[i * 3] += (vel.x + Math.sin(time + i) * 0.05) * dt;
+      positions[i * 3 + 1] += vel.y * dt;
+      positions[i * 3 + 2] += (vel.z + Math.cos(time + i * 0.7) * 0.05) * dt;
+
+      // Wrap around bounds
+      if (positions[i * 3] > bounds) positions[i * 3] = -bounds;
+      if (positions[i * 3] < -bounds) positions[i * 3] = bounds;
+      if (positions[i * 3 + 1] > 10) positions[i * 3 + 1] = 0.5;
+      if (positions[i * 3 + 1] < 0.5) positions[i * 3 + 1] = 10;
+      if (positions[i * 3 + 2] > bounds) positions[i * 3 + 2] = -bounds;
+      if (positions[i * 3 + 2] < -bounds) positions[i * 3 + 2] = bounds;
+    }
+    dustParticles.geometry.attributes.position.needsUpdate = true;
+  }
+
+  function initCloudShadows() {
+    if (cloudShadowPlane) {
+      scene.remove(cloudShadowPlane);
+      cloudShadowPlane.geometry.dispose();
+      cloudShadowPlane.material.dispose();
+    }
+
+    // Create a large plane with animated noise for cloud shadows
+    const size = 100;
+    const geometry = new THREE.PlaneGeometry(size, size);
+
+    // Create a canvas-based cloud texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Generate perlin-like noise pattern
+    const imageData = ctx.createImageData(512, 512);
+    for (let y = 0; y < 512; y++) {
+      for (let x = 0; x < 512; x++) {
+        const i = (y * 512 + x) * 4;
+        // Simple noise approximation
+        const noise = Math.sin(x * 0.02) * Math.cos(y * 0.02) * 0.5 +
+                     Math.sin(x * 0.05 + y * 0.03) * 0.3 +
+                     Math.sin(x * 0.01 - y * 0.02) * 0.2;
+        const value = Math.floor((noise + 1) * 0.5 * 255);
+        imageData.data[i] = 0;
+        imageData.data[i + 1] = 0;
+        imageData.data[i + 2] = 0;
+        imageData.data[i + 3] = value;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2, 2);
+
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: settings.cloudShadowsOpacity,
+      blending: THREE.MultiplyBlending,
+      depthWrite: false
+    });
+
+    cloudShadowPlane = new THREE.Mesh(geometry, material);
+    cloudShadowPlane.rotation.x = -Math.PI / 2;
+    cloudShadowPlane.position.y = 0.02;
+    cloudShadowPlane.visible = settings.cloudShadowsEnabled;
+    scene.add(cloudShadowPlane);
+  }
+
+  function updateCloudShadows(dt) {
+    if (!cloudShadowPlane) return;
+    cloudShadowPlane.visible = settings.cloudShadowsEnabled;
+    if (!settings.cloudShadowsEnabled) return;
+
+    cloudShadowPlane.material.opacity = settings.cloudShadowsOpacity;
+    const speed = settings.cloudShadowsSpeed;
+    cloudShadowPlane.material.map.offset.x += speed * dt * 0.1;
+    cloudShadowPlane.material.map.offset.y += speed * dt * 0.05;
+  }
+
+  // Motion trails for actors - creates glowing ribbon trails
+  function updateMotionTrails(dt) {
+    if (!settings.motionTrailsEnabled || !chasers || chasers.length === 0) {
+      // Clean up existing trails
+      for (const trail of motionTrails) {
+        if (trail.meshes) {
+          for (const m of trail.meshes) {
+            scene.remove(m);
+            m.geometry.dispose();
+            m.material.dispose();
+          }
+        }
+      }
+      motionTrails = [];
+      return;
+    }
+
+    // Add trail points for active chasers
+    for (let i = 0; i < chasers.length; i++) {
+      const chaser = chasers[i];
+      if (!chaser.active || !chaser.mesh) continue;
+
+      // Find or create trail for this chaser
+      let trail = motionTrails.find(t => t.chaserIndex === i);
+      if (!trail) {
+        const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+        trail = {
+          chaserIndex: i,
+          color: new THREE.Color(chaserColors[i]),
+          points: [],
+          meshes: []
+        };
+        motionTrails.push(trail);
+      }
+
+      // Add current position
+      const pos = chaser.mesh.position.clone();
+      pos.y += 0.3;
+      trail.points.unshift(pos);
+
+      // Limit trail length
+      const maxLen = settings.motionTrailsLength;
+      while (trail.points.length > maxLen) {
+        trail.points.pop();
+      }
+
+      // Remove old meshes
+      for (const m of trail.meshes) {
+        scene.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+      }
+      trail.meshes = [];
+
+      // Create spheres along the trail for visibility
+      for (let j = 0; j < trail.points.length; j++) {
+        const opacity = settings.motionTrailsOpacity * (1 - j / maxLen);
+        const scale = 0.15 * (1 - j / maxLen * 0.5);
+
+        const geo = new THREE.SphereGeometry(scale, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({
+          color: trail.color,
+          transparent: true,
+          opacity: opacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const sphere = new THREE.Mesh(geo, mat);
+        sphere.position.copy(trail.points[j]);
+        scene.add(sphere);
+        trail.meshes.push(sphere);
+      }
+    }
+  }
+
+  function initAtmosphere() {
+    initDustParticles();
+    initCloudShadows();
+
+    // Initialize fog
+    if (settings.fogEnabled) {
+      scene.fog = new THREE.Fog(settings.fogColor, settings.fogNear, settings.fogFar);
+    }
+  }
+
+  function updateAtmosphere(dt) {
+    updateDustParticles(dt);
+    updateCloudShadows(dt);
+    updateMotionTrails(dt);
+
+    // Update cyberpunk shader time
+    if (composer && composer.cyberpunkPass) {
+      composer.cyberpunkPass.uniforms['time'].value = performance.now() * 0.001;
+    }
+  }
+
+  // ============================================
   // POST-PROCESSING (WebGL EffectComposer)
   // ============================================
 
@@ -1835,6 +1915,16 @@ const GUI = window.lil.GUI;
     bloomPass.enabled = settings.bloomEnabled;
     composer.addPass(bloomPass);
 
+    // Cyberpunk shader pass (vignette, chromatic aberration, color grading)
+    const cyberpunkPass = new ShaderPass(CyberpunkShader);
+    cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
+    cyberpunkPass.uniforms['chromaticAberration'].value = settings.chromaticAberration;
+    cyberpunkPass.uniforms['tintColor'].value.set(settings.colorGradingTint);
+    cyberpunkPass.uniforms['tintIntensity'].value = settings.colorGradingEnabled ? settings.colorGradingIntensity : 0;
+    cyberpunkPass.uniforms['saturation'].value = settings.colorGradingSaturation;
+    cyberpunkPass.uniforms['contrast'].value = settings.colorGradingContrast;
+    composer.addPass(cyberpunkPass);
+
     // Output pass for tone mapping
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
@@ -1846,6 +1936,7 @@ const GUI = window.lil.GUI;
 
     // Store references for updates
     composer.bloomPass = bloomPass;
+    composer.cyberpunkPass = cyberpunkPass;
     composer.fxaaPass = fxaaPass;
     composer.renderPass = renderPass;
   }
@@ -1860,8 +1951,29 @@ const GUI = window.lil.GUI;
       composer.bloomPass.radius = settings.bloomRadius;
     }
 
+    if (composer.cyberpunkPass) {
+      composer.cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
+      composer.cyberpunkPass.uniforms['chromaticAberration'].value = settings.chromaticAberration;
+      composer.cyberpunkPass.uniforms['tintColor'].value.set(settings.colorGradingTint);
+      composer.cyberpunkPass.uniforms['tintIntensity'].value = settings.colorGradingEnabled ? settings.colorGradingIntensity : 0;
+      composer.cyberpunkPass.uniforms['saturation'].value = settings.colorGradingSaturation;
+      composer.cyberpunkPass.uniforms['contrast'].value = settings.colorGradingContrast;
+    }
+
     if (composer.fxaaPass) {
       composer.fxaaPass.enabled = settings.fxaaEnabled;
+    }
+
+    // Update fog
+    if (settings.fogEnabled) {
+      if (!scene.fog) {
+        scene.fog = new THREE.Fog(settings.fogColor, settings.fogNear, settings.fogFar);
+      }
+      scene.fog.color.set(settings.fogColor);
+      scene.fog.near = settings.fogNear;
+      scene.fog.far = settings.fogFar;
+    } else {
+      scene.fog = null;
     }
   }
 
@@ -2278,9 +2390,7 @@ const GUI = window.lil.GUI;
   // ============================================
 
   function formatTimer(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+    return `${Math.floor(seconds)}`;
   }
 
   function updateTimerDisplay() {
@@ -3003,10 +3113,10 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update helicopter, clouds, and capture effects
+      // Update helicopter, atmosphere and capture effects
       updateHelicopter(dt);
-      updateClouds(dt);
       updateCaptureEffects(dt);
+      updateAtmosphere(dt);
 
       // Update glass canvas for video/marquee/shuffle animation
       if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive())) {
@@ -4041,14 +4151,13 @@ const GUI = window.lil.GUI;
 
     setupGUI();
     initPostProcessing();
+    initAtmosphere();
     initAudio();
     loadHelicopter();
-    loadClouds();
 
     // Load path graph from GLB and initialize actors
     rebuildPathGraph();
     if (DEBUG) console.log("Path graph ready");
-    initVideoPlanes();
     setupGLBPartsGUI();
 
     // Apply initial settings after GUI is set up
