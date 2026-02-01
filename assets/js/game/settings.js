@@ -100,22 +100,24 @@ export const defaultSettings = {
   motionTrailsSize: 0.15,
   glassEnabled: true,
   glassOpacity: 0.8,
-  glassVideoEnabled: false,
-  glassVideoOpacity: 0.5,
+  glassVideoEnabled: true,
+  glassVideoOpacity: 0.25,
   glassVideoBrightness: 1.0,
   // Glass text builder
   glassTextRow1: "JAGAD",
   glassTextRow2: "THE CHASE IS ON",
   glassTextRow3: "CATCH THEM ALL",
   glassTextRow4: "LIVE NOW",
-  glassTextFontSize: 80,
-  glassTextLineHeight: 1.8,
+  glassTextFontSize: 70,
+  glassTextLineHeight: 2.1,
   glassTextFont: "BankGothic",
   glassTextColor: "#ffffff",
   glassTextAlign: "center",
-  glassTextOffsetX: -43,
-  glassTextOffsetY: -254,
-  glassTextLetterSpacing: 26,
+  glassTextOffsetX: -47,
+  glassTextOffsetY: -254.1,
+  glassTextLetterSpacing: 0,
+  glassTextMonospace: true,
+  glassTextCharWidth: 92,
   glassTextMarquee: false,
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
@@ -178,20 +180,20 @@ export const defaultSettings = {
   // Pre-game state text
   preGameTextRow1: "",
   preGameTextRow2: "JAGAD",
-  preGameTextRow3: "   4MARS",
+  preGameTextRow3: "4MARS",
   preGameTextRow4: "",
 
-  // Playing state text (supports ${score}, ${time}, ${caught})
+  // Playing state text (supports ${score}, ${time}, ${caught}, ${total}, ${status})
   playingTextRow1: "",
-  playingTextRow2: "TIME: ${time}",
-  playingTextRow3: "SCORE: ${score}",
+  playingTextRow2: "TIME:${time}",
+  playingTextRow3: "SCORE:${score}",
   playingTextRow4: "",
 
-  // Game Over state text (supports ${score}, ${time}, ${caught})
-  gameOverTextRow1: "GAME OVER",
-  gameOverTextRow2: "SCORE: ${score}",
-  gameOverTextRow3: "",
-  gameOverTextRow4: "",
+  // Game Over state text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3})
+  gameOverTextRow1: "  ${initials}${score} ",
+  gameOverTextRow2: "${s1} ",
+  gameOverTextRow3: "${s2} ",
+  gameOverTextRow4: "${s3} ",
 
   // State projection images
   preGameImage: "pre-game.png",

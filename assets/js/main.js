@@ -829,8 +829,36 @@ const GUI = window.lil.GUI;
     const startY = (h - totalHeight) / 2 + lineHeight / 2 + (settings.glassTextOffsetY || 0);
     const letterSpacing = settings.glassTextLetterSpacing || 0;
 
-    // Helper function to draw text with letter spacing
+    // Monospace settings
+    const monospace = settings.glassTextMonospace || false;
+    const charWidth = settings.glassTextCharWidth || 50;
+
+    // Helper function to draw text with letter spacing (and optional monospace)
     function drawTextWithSpacing(text, x, y, align = "left") {
+      if (monospace) {
+        // Monospace mode: each character gets fixed width, centered in cell
+        ctx.textAlign = "center";
+        const totalWidth = text.length * charWidth;
+        let startX = x;
+
+        // Adjust starting position for alignment
+        if (align === "center") {
+          startX = x - totalWidth / 2 + charWidth / 2;
+        } else if (align === "right") {
+          startX = x - totalWidth + charWidth / 2;
+        } else {
+          startX = x + charWidth / 2;
+        }
+
+        for (let i = 0; i < text.length; i++) {
+          const char = text[i];
+          const charX = startX + i * charWidth;
+          ctx.fillText(char, charX, y);
+        }
+        return;
+      }
+
+      // Variable width mode with letter spacing
       if (letterSpacing === 0) {
         ctx.textAlign = align;
         ctx.fillText(text, x, y);
@@ -858,8 +886,11 @@ const GUI = window.lil.GUI;
       }
     }
 
-    // Helper to measure text width with letter spacing
+    // Helper to measure text width with letter spacing (or monospace)
     function measureTextWithSpacing(text) {
+      if (monospace) {
+        return text.length * charWidth;
+      }
       if (letterSpacing === 0) return ctx.measureText(text).width;
       let totalWidth = 0;
       for (const char of text) {
@@ -1219,9 +1250,9 @@ const GUI = window.lil.GUI;
         setChasersOpacity(0.1);
         applyGameOverText();
         showGameScore();
-        // Reset to PRE_GAME after 10 seconds
+        // Reset to PRE_GAME after 10 seconds (unless entering high score)
         setTimeout(() => {
-          if (STATE.gameState === "GAME_OVER") {
+          if (STATE.gameState === "GAME_OVER" && !STATE.enteringHighScore) {
             setGameState("PRE_GAME");
           }
         }, 10000);
@@ -1241,12 +1272,35 @@ const GUI = window.lil.GUI;
   // TEMPLATE VARIABLE REPLACEMENT
   // ============================================
 
+  function getEndStatus() {
+    // Check if player got a new high score
+    const highScorePosition = checkHighScore(STATE.playerScore);
+    if (highScorePosition >= 0) return "NEWHIGHSCORE!";
+    return "GAMEOVER";
+  }
+
+  function getHighScoreString(position) {
+    const highScores = loadHighScores();
+    if (position >= 0 && position < highScores.length) {
+      const hs = highScores[position];
+      return `${position + 1} ${hs.initials}${hs.score}`;
+    }
+    return "";
+  }
+
   function replaceTemplateVars(text) {
     if (!text) return "";
+    const initials = STATE.highScoreInitials ? STATE.highScoreInitials.join("") : "___";
     return text
       .replace(/\$\{score\}/g, String(STATE.playerScore || 0))
       .replace(/\$\{time\}/g, String(Math.floor(STATE.gameTimerRemaining || 0)))
-      .replace(/\$\{caught\}/g, String(STATE.capturedCount || 0));
+      .replace(/\$\{caught\}/g, String(STATE.capturedCount || 0))
+      .replace(/\$\{total\}/g, String(fugitives.length || 4))
+      .replace(/\$\{status\}/g, getEndStatus())
+      .replace(/\$\{initials\}/g, initials)
+      .replace(/\$\{s1\}/g, getHighScoreString(0))
+      .replace(/\$\{s2\}/g, getHighScoreString(1))
+      .replace(/\$\{s3\}/g, getHighScoreString(2));
   }
 
   function applyPlayingText() {
@@ -1449,20 +1503,18 @@ const GUI = window.lil.GUI;
   }
 
   function updateHighScoreDisplay() {
-    const initials = STATE.highScoreInitials.map((char, i) => {
-      if (i === STATE.highScorePosition) {
-        return `[${char}]`; // Highlight current position
-      }
-      return char;
-    }).join(" ");
-
-    settings.glassTextRow1 = "NEW HIGH SCORE!";
-    settings.glassTextRow2 = `SCORE: ${Math.min(999, STATE.playerScore)}`;
-    settings.glassTextRow3 = `ENTER NAME: ${initials}`;
-    settings.glassTextRow4 = "W/S:CHANGE A/D:MOVE ENTER:OK";
+    // Use configured game over text with template variables
+    applyGameOverText();
+    updateGlassCanvas();
   }
 
   function confirmHighScoreEntry() {
+    // Check if all 3 initials are set (no underscores)
+    if (STATE.highScoreInitials.includes("_")) {
+      // Not all initials set - don't confirm yet
+      return;
+    }
+
     const initials = STATE.highScoreInitials.join("");
     const score = STATE.playerScore;
     const position = STATE.newHighScoreRank;
@@ -1481,11 +1533,9 @@ const GUI = window.lil.GUI;
   }
 
   function displayHighScores() {
-    const highScores = loadHighScores();
-    settings.glassTextRow1 = "HIGH SCORES";
-    settings.glassTextRow2 = `1. ${highScores[0].initials} ${highScores[0].score}`;
-    settings.glassTextRow3 = `2. ${highScores[1].initials} ${highScores[1].score}`;
-    settings.glassTextRow4 = `3. ${highScores[2].initials} ${highScores[2].score}`;
+    // Use configured game over text with template variables
+    applyGameOverText();
+    updateGlassCanvas();
 
     // Start reset timer
     STATE.showingScore = true;
@@ -1857,6 +1907,8 @@ const GUI = window.lil.GUI;
     textFolder.add(settings, "glassTextOffsetX", -500, 500, 0.1).name("Offset X").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextOffsetY", -500, 500, 0.1).name("Offset Y").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextMonospace").name("Monospace").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextCharWidth", 20, 200, 1).name("Char Width").onChange(() => updateGlassCanvas());
     textFolder.close();
 
     // ==================== ADDONS ====================
@@ -3018,28 +3070,14 @@ const GUI = window.lil.GUI;
   }
 
   function showGameScore() {
-    const caught = STATE.capturedCount || 0;
-    const total = fugitives.length;
-    const score = Math.min(999, STATE.playerScore); // Cap display at 999
-
-    // Determine end condition text
-    let endText = "GAME OVER";
-    if (caught >= total) {
-      endText = "ALL CAUGHT!";
-    } else if (STATE.gameTimerRemaining <= 0) {
-      endText = "TIME'S UP!";
-    }
-
-    settings.glassTextRow1 = endText;
-    settings.glassTextRow2 = `SCORE: ${score}`;
-    settings.glassTextRow3 = `CAUGHT ${caught} OF ${total}`;
-    settings.glassTextRow4 = "";
+    // Apply the configured game over text (with template variables)
+    applyGameOverText();
+    updateGlassCanvas();
 
     // Check for high score
     const highScorePosition = checkHighScore(STATE.playerScore);
     if (highScorePosition >= 0) {
       // Player made the high score list - start entry mode
-      settings.glassTextRow4 = "NEW HIGH SCORE!";
       setTimeout(() => {
         if (STATE.gameState === "GAME_OVER") {
           startHighScoreEntry(highScorePosition);
