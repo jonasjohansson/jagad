@@ -183,6 +183,12 @@ export const defaultSettings = {
   preGameTextRow3: "4MARS",
   preGameTextRow4: "",
 
+  // Starting state text (supports ${countdown} for 3, 2, 1, GO!)
+  startingTextRow1: "",
+  startingTextRow2: "${countdown}",
+  startingTextRow3: "",
+  startingTextRow4: "",
+
   // Playing state text (supports ${score}, ${time}, ${caught}, ${total}, ${status})
   playingTextRow1: "",
   playingTextRow2: "TIME:${time}",

@@ -1225,10 +1225,7 @@ const GUI = window.lil.GUI;
         // Begin countdown
         STATE.countdownValue = 3;
         STATE.countdownTimer = 0;
-        settings.glassTextRow1 = "";
-        settings.glassTextRow2 = "3";
-        settings.glassTextRow3 = "";
-        settings.glassTextRow4 = "";
+        applyStartingText();
         settings.gameStarted = true; // Mark as started but input blocked
         setChasersOpacity(0.1);
         break;
@@ -1288,6 +1285,12 @@ const GUI = window.lil.GUI;
     return "";
   }
 
+  function getCountdownText() {
+    if (STATE.countdownValue > 0) return String(STATE.countdownValue);
+    if (STATE.countdownValue === 0) return "GO!";
+    return "";
+  }
+
   function replaceTemplateVars(text) {
     if (!text) return "";
     const initials = STATE.highScoreInitials ? STATE.highScoreInitials.join("") : "___";
@@ -1298,9 +1301,17 @@ const GUI = window.lil.GUI;
       .replace(/\$\{total\}/g, String(fugitives.length || 4))
       .replace(/\$\{status\}/g, getEndStatus())
       .replace(/\$\{initials\}/g, initials)
+      .replace(/\$\{countdown\}/g, getCountdownText())
       .replace(/\$\{s1\}/g, getHighScoreString(0))
       .replace(/\$\{s2\}/g, getHighScoreString(1))
       .replace(/\$\{s3\}/g, getHighScoreString(2));
+  }
+
+  function applyStartingText() {
+    settings.glassTextRow1 = replaceTemplateVars(settings.startingTextRow1);
+    settings.glassTextRow2 = replaceTemplateVars(settings.startingTextRow2);
+    settings.glassTextRow3 = replaceTemplateVars(settings.startingTextRow3);
+    settings.glassTextRow4 = replaceTemplateVars(settings.startingTextRow4);
   }
 
   function applyPlayingText() {
@@ -1468,13 +1479,9 @@ const GUI = window.lil.GUI;
       STATE.countdownTimer -= 1.0;
       STATE.countdownValue--;
 
-      if (STATE.countdownValue > 0) {
-        // Show 3, 2, 1
-        settings.glassTextRow2 = String(STATE.countdownValue);
-        updateGlassCanvas();
-      } else if (STATE.countdownValue === 0) {
-        // Show GO!
-        settings.glassTextRow2 = "GO!";
+      if (STATE.countdownValue >= 0) {
+        // Show 3, 2, 1, GO!
+        applyStartingText();
         updateGlassCanvas();
       } else {
         // Countdown finished, start playing
@@ -1764,8 +1771,18 @@ const GUI = window.lil.GUI;
     });
     preGameFolder.close();
 
-    // Starting settings (image only - countdown text is automatic)
+    // Starting settings (text supports ${countdown})
     const startingFolder = statesFolder.addFolder("Starting");
+    const updateStartingText = () => {
+      if (STATE.gameState === "STARTING") {
+        applyStartingText();
+        updateGlassCanvas();
+      }
+    };
+    startingFolder.add(settings, "startingTextRow1").name("Text Row 1").onChange(updateStartingText);
+    startingFolder.add(settings, "startingTextRow2").name("Text Row 2").onChange(updateStartingText);
+    startingFolder.add(settings, "startingTextRow3").name("Text Row 3").onChange(updateStartingText);
+    startingFolder.add(settings, "startingTextRow4").name("Text Row 4").onChange(updateStartingText);
     startingFolder.add(settings, "startingImage").name("Image").onChange((v) => {
       loadProjectionImage("STARTING", v);
     });
