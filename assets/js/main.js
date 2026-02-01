@@ -2555,16 +2555,16 @@ const GUI = window.lil.GUI;
       // Re-initialize position
       initActorOnPath(c);
 
-      // Set to passive appearance
+      // Set to passive appearance (10% opacity when not in-play)
       if (c.isCarModel) {
         c.mesh.traverse((child) => {
           if (child.isMesh && child.material) {
-            child.material.opacity = 0.5;
+            child.material.opacity = 0.1;
             child.material.transparent = true;
           }
         });
       } else if (c.material) {
-        c.material.opacity = 0.3;
+        c.material.opacity = 0.1;
         c.material.transparent = true;
       }
       if (c.light) {
