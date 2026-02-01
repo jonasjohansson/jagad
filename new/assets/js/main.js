@@ -1153,9 +1153,54 @@ const GUI = window.lil.GUI;
         settings.gameStarted = true;
       }
     }
+
+    // Debug capture triggers: 1-4 triggers capture of F1-F4 by C1-C4
+    if (e.key >= "1" && e.key <= "4") {
+      const index = parseInt(e.key) - 1;
+      triggerCapture(index, index);
+    }
+
     keys.add(keyLower);
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+  function triggerCapture(fugitiveIndex, chaserIndex) {
+    if (!STATE.loaded) return;
+    if (fugitiveIndex >= fugitives.length) return;
+
+    const f = fugitives[fugitiveIndex];
+    if (f.captured) return;
+
+    // Mark as captured
+    f.captured = true;
+    STATE.capturedCount = (STATE.capturedCount || 0) + 1;
+
+    // Get chaser color for the effect
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    const chaserColor = chaserColors[chaserIndex] || "#ffffff";
+
+    // Get billboard before hiding
+    const wire = fugitiveWires[f.index];
+    const billboard = wire ? wire.billboard : null;
+
+    // Create capture effect at fugitive position
+    createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard);
+
+    // Hide fugitive
+    f.mesh.position.y = -1000;
+    if (f.light) f.light.intensity = 0;
+
+    if (wire) {
+      if (wire.billboard) wire.billboard.visible = false;
+      if (wire.line) wire.line.visible = false;
+    }
+
+    // Check if all captured
+    if (STATE.capturedCount >= fugitives.length && !STATE.gameOver) {
+      STATE.gameOver = true;
+      showGameScore();
+    }
+  }
 
   function getChaserInputDirection(chaserIndex) {
     if (chaserIndex >= CHASER_CONTROLS.length) return { x: 0, z: 0, hasInput: false };
@@ -2271,6 +2316,22 @@ const GUI = window.lil.GUI;
     STATE.activeChaserCount = 0;
     settings.gameStarted = false;
 
+    // Clear any active capture effects
+    for (const effect of captureEffects) {
+      for (const gl of effect.gridLines) {
+        scene.remove(gl.line);
+        gl.geometry.dispose();
+        gl.material.dispose();
+      }
+      scene.remove(effect.particles);
+      effect.particles.geometry.dispose();
+      effect.particleMat.dispose();
+      scene.remove(effect.flash);
+      effect.flash.geometry.dispose();
+      effect.flashMat.dispose();
+    }
+    captureEffects.length = 0;
+
     // Reset text rows
     settings.glassTextRow1 = defaultSettings.glassTextRow1;
     settings.glassTextRow2 = defaultSettings.glassTextRow2;
@@ -2323,6 +2384,201 @@ const GUI = window.lil.GUI;
       if (c.light) {
         c.light.intensity = settings.chaserLightIntensity * 0.1;
       }
+    }
+  }
+
+  // ============================================
+  // CAPTURE EFFECTS
+  // ============================================
+
+  const captureEffects = [];
+
+  function createCaptureEffect(position, chaserColor, billboard) {
+    const color = new THREE.Color(chaserColor);
+    const originX = position.x;
+    const originZ = position.z;
+
+    // Create grid pulse - glowing tubes along each edge that light up based on distance
+    const gridLines = [];
+    if (STATE.pathGraph && STATE.pathGraph.edges) {
+      const tubeRadius = 0.08;
+      for (const edge of STATE.pathGraph.edges) {
+        // Calculate edge length and direction
+        const dx = edge.x2 - edge.x1;
+        const dz = edge.z2 - edge.z1;
+        const length = Math.sqrt(dx * dx + dz * dz);
+        const angle = Math.atan2(dx, dz);
+
+        // Create a box geometry stretched along the edge
+        const tubeGeo = new THREE.BoxGeometry(tubeRadius * 2, tubeRadius, length);
+        const tubeMat = new THREE.MeshBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+
+        const tube = new THREE.Mesh(tubeGeo, tubeMat);
+        // Position at center of edge
+        const centerX = (edge.x1 + edge.x2) / 2;
+        const centerZ = (edge.z1 + edge.z2) / 2;
+        tube.position.set(centerX, 0.1, centerZ);
+        tube.rotation.y = angle;
+        scene.add(tube);
+
+        // Calculate distance from capture origin to edge center
+        const dist = Math.sqrt((centerX - originX) ** 2 + (centerZ - originZ) ** 2);
+
+        gridLines.push({ line: tube, material: tubeMat, geometry: tubeGeo, distance: dist });
+      }
+    }
+
+    // Create intense particle burst from billboard position
+    const particleCount = 120;
+    const particlePositions = new Float32Array(particleCount * 3);
+    const particleVelocities = [];
+    const particleColors = new Float32Array(particleCount * 3);
+    const particleSizes = new Float32Array(particleCount);
+
+    const billboardPos = billboard ? billboard.position.clone() : position.clone();
+    billboardPos.y = position.y + 2;
+
+    for (let i = 0; i < particleCount; i++) {
+      // Start at billboard position with some random spread
+      particlePositions[i * 3] = billboardPos.x + (Math.random() - 0.5) * 0.3;
+      particlePositions[i * 3 + 1] = billboardPos.y + (Math.random() - 0.5) * 0.3;
+      particlePositions[i * 3 + 2] = billboardPos.z + (Math.random() - 0.5) * 0.3;
+
+      // Small radius burst
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 1.5 + 0.5;
+      const upSpeed = Math.random() * 2 + 0.5;
+      particleVelocities.push({
+        x: Math.cos(angle) * speed,
+        y: upSpeed,
+        z: Math.sin(angle) * speed
+      });
+
+      // Bright colors - white core fading to chaser color
+      const t = Math.random();
+      const brightness = 1 + Math.random() * 0.5;
+      particleColors[i * 3] = Math.min(1, brightness * (1 * (1 - t) + color.r * t));
+      particleColors[i * 3 + 1] = Math.min(1, brightness * (1 * (1 - t) + color.g * t));
+      particleColors[i * 3 + 2] = Math.min(1, brightness * (1 * (1 - t) + color.b * t));
+
+      // Varied sizes
+      particleSizes[i] = Math.random() * 0.25 + 0.1;
+    }
+
+    const particleGeo = new THREE.BufferGeometry();
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+
+    const particleMat = new THREE.PointsMaterial({
+      size: 0.25,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true
+    });
+
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
+    // Create a flash at the capture point
+    const flashGeo = new THREE.SphereGeometry(0.5, 16, 16);
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const flash = new THREE.Mesh(flashGeo, flashMat);
+    flash.position.copy(billboardPos);
+    scene.add(flash);
+
+    captureEffects.push({
+      gridLines,
+      particles,
+      particleMat,
+      particleVelocities,
+      particleSizes,
+      flash,
+      flashMat,
+      originX,
+      originZ,
+      time: 0,
+      duration: 5.0,
+      pulseSpeed: 15,
+      pulseWidth: 5
+    });
+  }
+
+  function updateCaptureEffects(dt) {
+    for (let i = captureEffects.length - 1; i >= 0; i--) {
+      const effect = captureEffects[i];
+      effect.time += dt;
+      const t = effect.time / effect.duration;
+
+      if (t >= 1) {
+        // Remove effect
+        for (const gl of effect.gridLines) {
+          scene.remove(gl.line);
+          gl.geometry.dispose();
+          gl.material.dispose();
+        }
+        scene.remove(effect.particles);
+        effect.particles.geometry.dispose();
+        effect.particleMat.dispose();
+        scene.remove(effect.flash);
+        effect.flash.geometry.dispose();
+        effect.flashMat.dispose();
+        captureEffects.splice(i, 1);
+        continue;
+      }
+
+      // Animate grid pulse traveling along roads
+      const pulseRadius = effect.time * effect.pulseSpeed;
+      // Fade out only in the last 30% of duration
+      const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
+      for (const gl of effect.gridLines) {
+        const distFromPulse = Math.abs(gl.distance - pulseRadius);
+        if (distFromPulse < effect.pulseWidth) {
+          // Inside pulse wave - light up bright
+          const intensity = 1 - (distFromPulse / effect.pulseWidth);
+          const smoothIntensity = intensity * intensity; // Sharper falloff
+          gl.material.opacity = smoothIntensity * (1 - fadeOut);
+        } else {
+          gl.material.opacity = 0;
+        }
+      }
+
+      // Animate particles with physics
+      const positions = effect.particles.geometry.attributes.position.array;
+      for (let j = 0; j < effect.particleVelocities.length; j++) {
+        const vel = effect.particleVelocities[j];
+        positions[j * 3] += vel.x * dt;
+        positions[j * 3 + 1] += vel.y * dt;
+        positions[j * 3 + 2] += vel.z * dt;
+        // Light gravity
+        vel.y -= 3 * dt;
+        // Strong air resistance to keep particles close
+        vel.x *= 0.95;
+        vel.y *= 0.97;
+        vel.z *= 0.95;
+      }
+      effect.particles.geometry.attributes.position.needsUpdate = true;
+      effect.particleMat.opacity = Math.max(0, 1 - t * 1.2);
+      effect.particleMat.size = 0.25 * (1 - t * 0.3);
+
+      // Animate flash - quick bright flash that fades
+      const flashT = Math.min(1, effect.time * 5);
+      effect.flashMat.opacity = Math.max(0, 1 - flashT);
+      effect.flash.scale.setScalar(1 + flashT * 2);
     }
   }
 
@@ -2747,9 +3003,10 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update helicopter and clouds
+      // Update helicopter, clouds, and capture effects
       updateHelicopter(dt);
       updateClouds(dt);
+      updateCaptureEffects(dt);
 
       // Update glass canvas for video/marquee/shuffle animation
       if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive())) {
@@ -2897,16 +3154,25 @@ const GUI = window.lil.GUI;
       for (const f of fugitives) {
         if (f.captured) continue;
         if (checkCollision(chaser.mesh, f.mesh, STATE.actorRadius || 2.5)) {
-          // Mark as captured - visibility will be handled smoothly
+          // Mark as captured
           f.captured = true;
           STATE.capturedCount = (STATE.capturedCount || 0) + 1;
 
-          // Hide by moving off-screen instead of toggling visibility
-          // This avoids scene graph updates that cause stutter
+          // Get chaser color for the effect
+          const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+          const chaserColor = chaserColors[i] || "#ffffff";
+
+          // Get billboard before hiding
+          const wire = fugitiveWires[f.index];
+          const billboard = wire ? wire.billboard : null;
+
+          // Create capture effect at fugitive position
+          createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard);
+
+          // Hide fugitive
           f.mesh.position.y = -1000;
           if (f.light) f.light.intensity = 0;
 
-          const wire = fugitiveWires[f.index];
           if (wire) {
             if (wire.billboard) wire.billboard.visible = false;
             if (wire.line) wire.line.visible = false;
