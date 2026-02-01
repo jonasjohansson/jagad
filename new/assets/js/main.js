@@ -10,7 +10,6 @@ import { RenderPass } from "./lib/three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
-import { GodRaysPass } from "./lib/three/addons/postprocessing/GodRaysPass.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
@@ -281,17 +280,23 @@ const GUI = window.lil.GUI;
       light.target = lightTarget;
       mesh.add(light);
 
-      // Simple volumetric cone (WebGPU VolumeNodeMaterial disabled for now due to pipeline issues)
-      const coneHeight = settings.helicopterHeight;
-      const coneRadius = Math.tan(angleRad) * coneHeight;
-      const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 32, 1, true);
+      // Volumetric light cone - small at top (helicopter), wide at bottom (ground)
+      const coneHeight = settings.helicopterConeHeight;
+      const topRadius = settings.helicopterConeTopRadius;
+      const bottomRadius = settings.helicopterConeBottomRadius;
+      const coneOffsetY = settings.helicopterConeOffsetY;
 
+      // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments, heightSegments, openEnded)
+      const coneGeo = new THREE.CylinderGeometry(topRadius, bottomRadius, coneHeight, 32, 1, true);
+
+      // Vertex colors: bright at top (helicopter), fading toward bottom
       const colors = [];
       const positions = coneGeo.attributes.position;
       for (let i = 0; i < positions.count; i++) {
         const y = positions.getY(i);
+        // t = 1 at top, 0 at bottom
         const t = (y + coneHeight / 2) / coneHeight;
-        const alpha = t * t;
+        const alpha = Math.pow(t, 0.5);
         colors.push(1, 1, 1, alpha);
       }
       coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
@@ -307,11 +312,16 @@ const GUI = window.lil.GUI;
       });
 
       const lightCone = new THREE.Mesh(coneGeo, coneMat);
-      lightCone.rotation.x = Math.PI;
-      lightCone.position.set(0, -coneHeight / 2, 0);
+      // Position: top of cone at -offsetY, extends downward
+      lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
+      // Ensure light cone doesn't interfere with directional light shadows
+      lightCone.castShadow = false;
+      lightCone.receiveShadow = false;
       mesh.add(lightCone);
 
       mesh.traverse((child) => {
+        // Skip the lightCone - it should not cast/receive shadows
+        if (child === lightCone) return;
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
@@ -430,6 +440,37 @@ const GUI = window.lil.GUI;
       helicopter.coneMat.opacity = settings.helicopterVolumetricOpacity;
       helicopter.coneMat.color.set(settings.helicopterLightColor);
     }
+  }
+
+  function rebuildHelicopterCone() {
+    if (!helicopter || !helicopter.mesh || !helicopter.lightCone) return;
+
+    // Remove old cone from parent
+    helicopter.mesh.remove(helicopter.lightCone);
+    helicopter.lightCone.geometry.dispose();
+
+    // Create new geometry with updated dimensions
+    const coneHeight = settings.helicopterConeHeight;
+    const topRadius = settings.helicopterConeTopRadius;
+    const bottomRadius = settings.helicopterConeBottomRadius;
+    const coneOffsetY = settings.helicopterConeOffsetY;
+
+    const coneGeo = new THREE.CylinderGeometry(topRadius, bottomRadius, coneHeight, 32, 1, true);
+
+    // Vertex colors: bright at top, fading toward bottom
+    const colors = [];
+    const positions = coneGeo.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+      const y = positions.getY(i);
+      const t = (y + coneHeight / 2) / coneHeight;
+      const alpha = Math.pow(t, 0.5);
+      colors.push(1, 1, 1, alpha);
+    }
+    coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+
+    helicopter.lightCone.geometry = coneGeo;
+    helicopter.lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
+    helicopter.mesh.add(helicopter.lightCone);
   }
 
   // ============================================
@@ -1193,9 +1234,6 @@ const GUI = window.lil.GUI;
       if (composer.fxaaPass) {
         composer.fxaaPass.material.uniforms['resolution'].value.set(1 / width, 1 / height);
       }
-      if (composer.godRaysPass) {
-        composer.godRaysPass.setSize(width, height);
-      }
     }
   }
   window.addEventListener("resize", onResize);
@@ -1400,17 +1438,6 @@ const GUI = window.lil.GUI;
     bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange(updatePostProcessing);
     bloomFolder.close();
 
-    const godRaysFolder = postFolder.addFolder("God Rays (Helicopter)");
-    godRaysFolder.add(settings, "godRaysEnabled").name("Enabled").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysExposure", 0, 1, 0.01).name("Exposure").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysDecay", 0.9, 1, 0.01).name("Decay").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysDensity", 0.1, 2, 0.1).name("Density").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysWeight", 0.1, 1, 0.05).name("Weight").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysSamples", 20, 100, 5).name("Samples").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysLightRadius", 0.01, 0.3, 0.01).name("Light Size").onChange(updatePostProcessing);
-    godRaysFolder.add(settings, "godRaysIntensity", 0.1, 3, 0.1).name("Intensity").onChange(updatePostProcessing);
-    godRaysFolder.close();
-
     postFolder.add(settings, "fxaaEnabled").name("FXAA Anti-Aliasing").onChange(updatePostProcessing);
     postFolder.close();
 
@@ -1495,13 +1522,22 @@ const GUI = window.lil.GUI;
     // ==================== HELICOPTER ====================
     const helicopterFolder = guiLeft.addFolder("Helicopter");
     helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
-    helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Height");
+    helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Fly Height");
     helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
     helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
     helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale");
-    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Light Intensity");
+    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Spotlight Intensity");
     helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
-    helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Light Angle");
+    helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
+    // Light cone controls
+    helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
+    helicopterFolder.add(settings, "helicopterVolumetricOpacity", 0, 1, 0.01).name("Cone Opacity").onChange((v) => {
+      if (helicopter && helicopter.coneMat) helicopter.coneMat.opacity = v;
+    });
+    helicopterFolder.add(settings, "helicopterConeOffsetY", 0, 3, 0.1).name("Cone Y Offset").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeTopRadius", 0, 2, 0.05).name("Cone Top Radius").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeBottomRadius", 0.5, 10, 0.5).name("Cone Bottom Radius").onChange(rebuildHelicopterCone);
     helicopterFolder.close();
 
     // ==================== CLOUDS ====================
@@ -1646,9 +1682,6 @@ const GUI = window.lil.GUI;
   // POST-PROCESSING (WebGL EffectComposer)
   // ============================================
 
-  // Light position for god rays (updated each frame)
-  const godRaysLightPosition = new THREE.Vector3();
-
   function initPostProcessing() {
     composer = new EffectComposer(renderer);
 
@@ -1665,19 +1698,6 @@ const GUI = window.lil.GUI;
     bloomPass.enabled = settings.bloomEnabled;
     composer.addPass(bloomPass);
 
-    // God rays pass (volumetric light scattering from helicopter)
-    const godRaysPass = new GodRaysPass(godRaysLightPosition, camera);
-    godRaysPass.enabled = settings.godRaysEnabled;
-    godRaysPass.exposure = settings.godRaysExposure;
-    godRaysPass.decay = settings.godRaysDecay;
-    godRaysPass.density = settings.godRaysDensity;
-    godRaysPass.weight = settings.godRaysWeight;
-    godRaysPass.samples = settings.godRaysSamples;
-    godRaysPass.lightRadius = settings.godRaysLightRadius;
-    godRaysPass.lightIntensity = settings.godRaysIntensity;
-    godRaysPass.lightColor.set(settings.helicopterLightColor);
-    composer.addPass(godRaysPass);
-
     // Output pass for tone mapping
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
@@ -1689,7 +1709,6 @@ const GUI = window.lil.GUI;
 
     // Store references for updates
     composer.bloomPass = bloomPass;
-    composer.godRaysPass = godRaysPass;
     composer.fxaaPass = fxaaPass;
     composer.renderPass = renderPass;
   }
@@ -1704,31 +1723,9 @@ const GUI = window.lil.GUI;
       composer.bloomPass.radius = settings.bloomRadius;
     }
 
-    if (composer.godRaysPass) {
-      composer.godRaysPass.enabled = settings.godRaysEnabled && settings.helicopterEnabled;
-      composer.godRaysPass.exposure = settings.godRaysExposure;
-      composer.godRaysPass.decay = settings.godRaysDecay;
-      composer.godRaysPass.density = settings.godRaysDensity;
-      composer.godRaysPass.weight = settings.godRaysWeight;
-      composer.godRaysPass.samples = settings.godRaysSamples;
-      composer.godRaysPass.lightRadius = settings.godRaysLightRadius;
-      composer.godRaysPass.lightIntensity = settings.godRaysIntensity;
-      composer.godRaysPass.lightColor.set(settings.helicopterLightColor);
-      composer.godRaysPass.camera = camera;
-    }
-
     if (composer.fxaaPass) {
       composer.fxaaPass.enabled = settings.fxaaEnabled;
     }
-  }
-
-  function updateGodRaysLightPosition() {
-    if (!helicopter || !helicopter.mesh) return;
-
-    // Get the world position of the helicopter light (pointing down)
-    // The light cone points downward, so we want a point below the helicopter
-    const heliPos = helicopter.mesh.position;
-    godRaysLightPosition.set(heliPos.x, heliPos.y - settings.helicopterHeight * 0.5, heliPos.z);
   }
 
   // ============================================
@@ -2657,7 +2654,6 @@ const GUI = window.lil.GUI;
 
       // Update helicopter and clouds
       updateHelicopter(dt);
-      updateGodRaysLightPosition();
       updateClouds(dt);
 
       // Update glass canvas for video/marquee/shuffle animation
