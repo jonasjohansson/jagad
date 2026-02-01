@@ -12,7 +12,7 @@ import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js?v=2";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
 
 // lil-gui loaded via script tag in index.html
@@ -96,6 +96,10 @@ const GUI = window.lil.GUI;
   // ============================================
 
   let buildingPlane = null;
+  let leftPanel = null;
+  let rightPanel = null;
+  let leftPanelIframe = null;
+  let rightPanelIframe = null;
   let camera;
   let orthoCamera;
   let perspCamera;
@@ -1190,6 +1194,7 @@ const GUI = window.lil.GUI;
         composer.fxaaPass.material.uniforms['resolution'].value.set(1 / width, 1 / height);
       }
     }
+
   }
   window.addEventListener("resize", onResize);
 
@@ -1383,6 +1388,49 @@ const GUI = window.lil.GUI;
     buildingPlaneFolderGUI.close();
 
     addonsFolder.close();
+
+    // ==================== PANELS ====================
+    const panelsFolder = guiLeft.addFolder("📺 Panels");
+
+    // Left Panel (iframe) - 4 independent corners for skewing
+    const leftPanelFolder = panelsFolder.addFolder("Left Panel");
+    leftPanelFolder.add(settings, "leftPanelEnabled").name("Enabled").onChange((v) => {
+      if (leftPanel) leftPanel.visible = v;
+    });
+    const leftC1 = leftPanelFolder.addFolder("Corner 1 (top-left)");
+    leftC1.add(settings, "leftPanelC1X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
+    leftC1.add(settings, "leftPanelC1Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
+    const leftC2 = leftPanelFolder.addFolder("Corner 2 (top-right)");
+    leftC2.add(settings, "leftPanelC2X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
+    leftC2.add(settings, "leftPanelC2Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
+    const leftC3 = leftPanelFolder.addFolder("Corner 3 (bottom-right)");
+    leftC3.add(settings, "leftPanelC3X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
+    leftC3.add(settings, "leftPanelC3Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
+    const leftC4 = leftPanelFolder.addFolder("Corner 4 (bottom-left)");
+    leftC4.add(settings, "leftPanelC4X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
+    leftC4.add(settings, "leftPanelC4Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
+    leftPanelFolder.close();
+
+    // Right Panel (iframe) - 4 independent corners for skewing
+    const rightPanelFolder = panelsFolder.addFolder("Right Panel");
+    rightPanelFolder.add(settings, "rightPanelEnabled").name("Enabled").onChange((v) => {
+      if (rightPanel) rightPanel.visible = v;
+    });
+    const rightC1 = rightPanelFolder.addFolder("Corner 1 (top-left)");
+    rightC1.add(settings, "rightPanelC1X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
+    rightC1.add(settings, "rightPanelC1Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
+    const rightC2 = rightPanelFolder.addFolder("Corner 2 (top-right)");
+    rightC2.add(settings, "rightPanelC2X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
+    rightC2.add(settings, "rightPanelC2Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
+    const rightC3 = rightPanelFolder.addFolder("Corner 3 (bottom-right)");
+    rightC3.add(settings, "rightPanelC3X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
+    rightC3.add(settings, "rightPanelC3Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
+    const rightC4 = rightPanelFolder.addFolder("Corner 4 (bottom-left)");
+    rightC4.add(settings, "rightPanelC4X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
+    rightC4.add(settings, "rightPanelC4Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
+    rightPanelFolder.close();
+
+    panelsFolder.close();
 
     // ==================== SCENE ====================
     const sceneFolder = guiLeft.addFolder("🌆 Scene");
@@ -1646,6 +1694,262 @@ const GUI = window.lil.GUI;
       }
     `
   };
+
+  // ============================================
+  // IFRAME PANELS (Skewable WebGL Mesh)
+  // ============================================
+
+  function createPanelGeometry(c1x, c1z, c2x, c2z, c3x, c3z, c4x, c4z, y, subdivisions = 20) {
+    // Create a subdivided geometry for better texture mapping on skewed quads
+    // Corners: C1 (top-left), C2 (top-right), C3 (bottom-right), C4 (bottom-left)
+    const geometry = new THREE.BufferGeometry();
+
+    const segments = subdivisions;
+    const vertexCount = (segments + 1) * (segments + 1);
+    const vertices = new Float32Array(vertexCount * 3);
+    const uvs = new Float32Array(vertexCount * 2);
+    const indices = [];
+
+    // Generate vertices by bilinear interpolation
+    for (let j = 0; j <= segments; j++) {
+      const v = j / segments;
+      for (let i = 0; i <= segments; i++) {
+        const u = i / segments;
+        const idx = j * (segments + 1) + i;
+
+        // Bilinear interpolation of corner positions
+        const topX = c1x + (c2x - c1x) * u;
+        const topZ = c1z + (c2z - c1z) * u;
+        const bottomX = c4x + (c3x - c4x) * u;
+        const bottomZ = c4z + (c3z - c4z) * u;
+
+        const x = topX + (bottomX - topX) * v;
+        const z = topZ + (bottomZ - topZ) * v;
+
+        vertices[idx * 3] = x;
+        vertices[idx * 3 + 1] = y;
+        vertices[idx * 3 + 2] = z;
+
+        uvs[idx * 2] = u;
+        uvs[idx * 2 + 1] = 1 - v;
+      }
+    }
+
+    // Generate indices
+    for (let j = 0; j < segments; j++) {
+      for (let i = 0; i < segments; i++) {
+        const a = j * (segments + 1) + i;
+        const b = a + 1;
+        const c = a + (segments + 1);
+        const d = c + 1;
+        indices.push(a, b, d, a, d, c);
+      }
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    // Store subdivisions for later updates
+    geometry.userData.subdivisions = segments;
+
+    return geometry;
+  }
+
+  function updatePanelGeometry(panel, c1x, c1z, c2x, c2z, c3x, c3z, c4x, c4z, y) {
+    const geometry = panel.geometry;
+    const segments = geometry.userData.subdivisions || 20;
+    const positions = geometry.attributes.position.array;
+
+    // Regenerate vertices by bilinear interpolation
+    for (let j = 0; j <= segments; j++) {
+      const v = j / segments;
+      for (let i = 0; i <= segments; i++) {
+        const u = i / segments;
+        const idx = j * (segments + 1) + i;
+
+        const topX = c1x + (c2x - c1x) * u;
+        const topZ = c1z + (c2z - c1z) * u;
+        const bottomX = c4x + (c3x - c4x) * u;
+        const bottomZ = c4z + (c3z - c4z) * u;
+
+        positions[idx * 3] = topX + (bottomX - topX) * v;
+        positions[idx * 3 + 1] = y;
+        positions[idx * 3 + 2] = topZ + (bottomZ - topZ) * v;
+      }
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+  }
+
+  function calcPanelDimensions(c1x, c1z, c2x, c2z, c3x, c3z, c4x, c4z) {
+    // Calculate approximate width and height of the panel
+    const topWidth = Math.sqrt((c2x - c1x) ** 2 + (c2z - c1z) ** 2);
+    const bottomWidth = Math.sqrt((c3x - c4x) ** 2 + (c3z - c4z) ** 2);
+    const leftHeight = Math.sqrt((c4x - c1x) ** 2 + (c4z - c1z) ** 2);
+    const rightHeight = Math.sqrt((c3x - c2x) ** 2 + (c3z - c2z) ** 2);
+    const avgWidth = (topWidth + bottomWidth) / 2;
+    const avgHeight = (leftHeight + rightHeight) / 2;
+    return { width: avgWidth, height: avgHeight };
+  }
+
+  function initIframePanels() {
+    // Calculate panel dimensions for proper aspect ratio
+    const leftDims = calcPanelDimensions(
+      settings.leftPanelC1X, settings.leftPanelC1Z,
+      settings.leftPanelC2X, settings.leftPanelC2Z,
+      settings.leftPanelC3X, settings.leftPanelC3Z,
+      settings.leftPanelC4X, settings.leftPanelC4Z
+    );
+    const rightDims = calcPanelDimensions(
+      settings.rightPanelC1X, settings.rightPanelC1Z,
+      settings.rightPanelC2X, settings.rightPanelC2Z,
+      settings.rightPanelC3X, settings.rightPanelC3Z,
+      settings.rightPanelC4X, settings.rightPanelC4Z
+    );
+
+    // Base size and calculate dimensions matching aspect ratio
+    const baseSize = 512;
+    const leftAspect = leftDims.width / leftDims.height;
+    const leftCanvasW = leftAspect >= 1 ? baseSize : Math.round(baseSize * leftAspect);
+    const leftCanvasH = leftAspect >= 1 ? Math.round(baseSize / leftAspect) : baseSize;
+
+    const rightAspect = rightDims.width / rightDims.height;
+    const rightCanvasW = rightAspect >= 1 ? baseSize : Math.round(baseSize * rightAspect);
+    const rightCanvasH = rightAspect >= 1 ? Math.round(baseSize / rightAspect) : baseSize;
+
+    // Create hidden iframes for content with proper aspect ratio
+    leftPanelIframe = document.createElement('iframe');
+    leftPanelIframe.src = 'left.html';
+    leftPanelIframe.style.cssText = `position:absolute;left:-9999px;width:${leftCanvasW}px;height:${leftCanvasH}px;border:none;`;
+    document.body.appendChild(leftPanelIframe);
+
+    rightPanelIframe = document.createElement('iframe');
+    rightPanelIframe.src = 'right.html';
+    rightPanelIframe.style.cssText = `position:absolute;left:-9999px;width:${rightCanvasW}px;height:${rightCanvasH}px;border:none;`;
+    document.body.appendChild(rightPanelIframe);
+
+    // Create canvases for rendering with proper aspect ratio
+    const leftCanvas = document.createElement('canvas');
+    leftCanvas.width = leftCanvasW;
+    leftCanvas.height = leftCanvasH;
+
+    const leftTexture = new THREE.CanvasTexture(leftCanvas);
+    leftTexture.minFilter = THREE.LinearFilter;
+
+    const rightCanvas = document.createElement('canvas');
+    rightCanvas.width = rightCanvasW;
+    rightCanvas.height = rightCanvasH;
+
+    const rightTexture = new THREE.CanvasTexture(rightCanvas);
+    rightTexture.minFilter = THREE.LinearFilter;
+
+    // Create left panel with skewable geometry
+    const leftGeo = createPanelGeometry(
+      settings.leftPanelC1X, settings.leftPanelC1Z,
+      settings.leftPanelC2X, settings.leftPanelC2Z,
+      settings.leftPanelC3X, settings.leftPanelC3Z,
+      settings.leftPanelC4X, settings.leftPanelC4Z,
+      0.01
+    );
+    const leftMat = new THREE.MeshBasicMaterial({
+      map: leftTexture,
+      side: THREE.DoubleSide,
+      transparent: true
+    });
+    leftPanel = new THREE.Mesh(leftGeo, leftMat);
+    leftPanel.visible = settings.leftPanelEnabled;
+    leftPanel.userData = { canvas: leftCanvas, texture: leftTexture, iframe: leftPanelIframe };
+    scene.add(leftPanel);
+
+    // Create right panel with skewable geometry
+    const rightGeo = createPanelGeometry(
+      settings.rightPanelC1X, settings.rightPanelC1Z,
+      settings.rightPanelC2X, settings.rightPanelC2Z,
+      settings.rightPanelC3X, settings.rightPanelC3Z,
+      settings.rightPanelC4X, settings.rightPanelC4Z,
+      0.01
+    );
+    const rightMat = new THREE.MeshBasicMaterial({
+      map: rightTexture,
+      side: THREE.DoubleSide,
+      transparent: true
+    });
+    rightPanel = new THREE.Mesh(rightGeo, rightMat);
+    rightPanel.visible = settings.rightPanelEnabled;
+    rightPanel.userData = { canvas: rightCanvas, texture: rightTexture, iframe: rightPanelIframe };
+    scene.add(rightPanel);
+
+    // Set up periodic texture updates from iframe
+    setInterval(() => {
+      updatePanelTexture(leftPanel);
+      updatePanelTexture(rightPanel);
+    }, 100);
+
+    console.log('Skewable iframe panels initialized', { leftDims, rightDims });
+  }
+
+  function updatePanelTexture(panel) {
+    if (!panel || !panel.visible || !panel.userData.iframe) return;
+
+    try {
+      const iframe = panel.userData.iframe;
+      const canvas = panel.userData.canvas;
+      const ctx = canvas.getContext('2d');
+
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+
+      if (doc && doc.body) {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw iframe body background color
+        const bgColor = window.getComputedStyle(doc.body).backgroundColor;
+        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)') {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Draw text content centered
+        ctx.fillStyle = window.getComputedStyle(doc.body).color || '#fff';
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const text = doc.body.innerText || '';
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+        panel.userData.texture.needsUpdate = true;
+      }
+    } catch (e) {
+      // Cross-origin restriction - keep existing content
+    }
+  }
+
+  function updateLeftPanel() {
+    if (!leftPanel) return;
+    updatePanelGeometry(leftPanel,
+      settings.leftPanelC1X, settings.leftPanelC1Z,
+      settings.leftPanelC2X, settings.leftPanelC2Z,
+      settings.leftPanelC3X, settings.leftPanelC3Z,
+      settings.leftPanelC4X, settings.leftPanelC4Z,
+      0.01
+    );
+    leftPanel.visible = settings.leftPanelEnabled;
+  }
+
+  function updateRightPanel() {
+    if (!rightPanel) return;
+    updatePanelGeometry(rightPanel,
+      settings.rightPanelC1X, settings.rightPanelC1Z,
+      settings.rightPanelC2X, settings.rightPanelC2Z,
+      settings.rightPanelC3X, settings.rightPanelC3Z,
+      settings.rightPanelC4X, settings.rightPanelC4Z,
+      0.01
+    );
+    rightPanel.visible = settings.rightPanelEnabled;
+  }
 
   // ============================================
   // ATMOSPHERE SYSTEMS
@@ -3928,6 +4232,7 @@ const GUI = window.lil.GUI;
     initAtmosphere();
     initAudio();
     loadHelicopter();
+    initIframePanels();
 
     // Load path graph from GLB and initialize actors
     rebuildPathGraph();
