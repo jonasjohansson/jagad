@@ -909,10 +909,11 @@ const GUI = window.lil.GUI;
     } else {
       // Static text
       let xPos;
+      const offsetX = settings.glassTextOffsetX || 0;
       switch (settings.glassTextAlign) {
-        case "left": xPos = 50; break;
-        case "right": xPos = w - 50; break;
-        default: xPos = w / 2; break;
+        case "left": xPos = 50 + offsetX; break;
+        case "right": xPos = w - 50 + offsetX; break;
+        default: xPos = w / 2 + offsetX; break;
       }
 
       for (let i = 0; i < rows.length; i++) {
@@ -1203,10 +1204,7 @@ const GUI = window.lil.GUI;
 
       case "PLAYING":
         // Set playing text and start timer
-        settings.glassTextRow1 = settings.playingTextRow1;
-        settings.glassTextRow2 = settings.playingTextRow2;
-        settings.glassTextRow3 = settings.playingTextRow3;
-        settings.glassTextRow4 = "";
+        applyPlayingText();
         STATE.gameTimerStarted = true;
         STATE.gameTimerRemaining = 90;
         STATE.fugitiveValue = 250; // Reset fugitive value
@@ -1219,7 +1217,14 @@ const GUI = window.lil.GUI;
         STATE.gameOver = true;
         STATE.gameTimerStarted = false;
         setChasersOpacity(0.1);
+        applyGameOverText();
         showGameScore();
+        // Reset to PRE_GAME after 10 seconds
+        setTimeout(() => {
+          if (STATE.gameState === "GAME_OVER") {
+            setGameState("PRE_GAME");
+          }
+        }, 10000);
         break;
     }
 
@@ -1230,6 +1235,32 @@ const GUI = window.lil.GUI;
 
     // Update projection image for this state
     updateProjectionForState(newState);
+  }
+
+  // ============================================
+  // TEMPLATE VARIABLE REPLACEMENT
+  // ============================================
+
+  function replaceTemplateVars(text) {
+    if (!text) return "";
+    return text
+      .replace(/\$\{score\}/g, String(STATE.playerScore || 0))
+      .replace(/\$\{time\}/g, String(Math.floor(STATE.gameTimerRemaining || 0)))
+      .replace(/\$\{caught\}/g, String(STATE.capturedCount || 0));
+  }
+
+  function applyPlayingText() {
+    settings.glassTextRow1 = replaceTemplateVars(settings.playingTextRow1);
+    settings.glassTextRow2 = replaceTemplateVars(settings.playingTextRow2);
+    settings.glassTextRow3 = replaceTemplateVars(settings.playingTextRow3);
+    settings.glassTextRow4 = replaceTemplateVars(settings.playingTextRow4);
+  }
+
+  function applyGameOverText() {
+    settings.glassTextRow1 = replaceTemplateVars(settings.gameOverTextRow1);
+    settings.glassTextRow2 = replaceTemplateVars(settings.gameOverTextRow2);
+    settings.glassTextRow3 = replaceTemplateVars(settings.gameOverTextRow3);
+    settings.glassTextRow4 = replaceTemplateVars(settings.gameOverTextRow4);
   }
 
   // ============================================
@@ -1247,7 +1278,7 @@ const GUI = window.lil.GUI;
       opacity: settings.projectionOpacity,
       side: THREE.DoubleSide,
       depthWrite: false,
-      blending: THREE.AdditiveBlending, // Additive for projection look
+      blending: THREE.AdditiveBlending,
     });
 
     projectionPlane = new THREE.Mesh(geometry, material);
@@ -1386,9 +1417,11 @@ const GUI = window.lil.GUI;
       if (STATE.countdownValue > 0) {
         // Show 3, 2, 1
         settings.glassTextRow2 = String(STATE.countdownValue);
+        updateGlassCanvas();
       } else if (STATE.countdownValue === 0) {
         // Show GO!
         settings.glassTextRow2 = "GO!";
+        updateGlassCanvas();
       } else {
         // Countdown finished, start playing
         setGameState("PLAYING");
@@ -1692,22 +1725,31 @@ const GUI = window.lil.GUI;
     const playingFolder = statesFolder.addFolder("Playing");
     const updatePlayingText = () => {
       if (STATE.gameState === "PLAYING") {
-        settings.glassTextRow1 = settings.playingTextRow1;
-        settings.glassTextRow2 = settings.playingTextRow2;
-        settings.glassTextRow3 = settings.playingTextRow3;
+        applyPlayingText();
         updateGlassCanvas();
       }
     };
     playingFolder.add(settings, "playingTextRow1").name("Text Row 1").onChange(updatePlayingText);
     playingFolder.add(settings, "playingTextRow2").name("Text Row 2").onChange(updatePlayingText);
     playingFolder.add(settings, "playingTextRow3").name("Text Row 3").onChange(updatePlayingText);
+    playingFolder.add(settings, "playingTextRow4").name("Text Row 4").onChange(updatePlayingText);
     playingFolder.add(settings, "playingImage").name("Image").onChange((v) => {
       loadProjectionImage("PLAYING", v);
     });
     playingFolder.close();
 
-    // Game Over settings (image only - text is dynamic)
+    // Game Over settings (text supports ${score}, ${time}, ${caught})
     const gameOverFolder = statesFolder.addFolder("Game Over");
+    const updateGameOverText = () => {
+      if (STATE.gameState === "GAME_OVER") {
+        applyGameOverText();
+        updateGlassCanvas();
+      }
+    };
+    gameOverFolder.add(settings, "gameOverTextRow1").name("Text Row 1").onChange(updateGameOverText);
+    gameOverFolder.add(settings, "gameOverTextRow2").name("Text Row 2").onChange(updateGameOverText);
+    gameOverFolder.add(settings, "gameOverTextRow3").name("Text Row 3").onChange(updateGameOverText);
+    gameOverFolder.add(settings, "gameOverTextRow4").name("Text Row 4").onChange(updateGameOverText);
     gameOverFolder.add(settings, "gameOverImage").name("Image").onChange((v) => {
       loadProjectionImage("GAME_OVER", v);
     });
@@ -1812,7 +1854,8 @@ const GUI = window.lil.GUI;
     textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
     textFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
-    textFolder.add(settings, "glassTextOffsetY", -500, 500, 10).name("Offset Y").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextOffsetX", -500, 500, 0.1).name("Offset X").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextOffsetY", -500, 500, 0.1).name("Offset Y").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
     textFolder.close();
 
@@ -2969,8 +3012,8 @@ const GUI = window.lil.GUI;
     if (STATE.gameState !== "PLAYING") return;
 
     if (STATE.gameTimerStarted && !STATE.gameOver) {
-      const score = Math.min(999, STATE.playerScore);
-      settings.glassTextRow4 = `TIME ${formatTimer(STATE.gameTimerRemaining)}  SCORE ${score}`;
+      applyPlayingText();
+      updateGlassCanvas();
     }
   }
 

@@ -99,7 +99,7 @@ export const defaultSettings = {
   motionTrailsOpacity: 0.3,
   motionTrailsSize: 0.15,
   glassEnabled: true,
-  glassOpacity: 0.2,
+  glassOpacity: 0.8,
   glassVideoEnabled: false,
   glassVideoOpacity: 0.5,
   glassVideoBrightness: 1.0,
@@ -113,8 +113,9 @@ export const defaultSettings = {
   glassTextFont: "BankGothic",
   glassTextColor: "#ffffff",
   glassTextAlign: "center",
-  glassTextOffsetY: -250,
-  glassTextLetterSpacing: 0,
+  glassTextOffsetX: -43,
+  glassTextOffsetY: -254,
+  glassTextLetterSpacing: 26,
   glassTextMarquee: false,
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
@@ -175,16 +176,22 @@ export const defaultSettings = {
   gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
 
   // Pre-game state text
-  preGameTextRow1: "JAGAD",
-  preGameTextRow2: "",
-  preGameTextRow3: "",
+  preGameTextRow1: "",
+  preGameTextRow2: "JAGAD",
+  preGameTextRow3: "   4MARS",
   preGameTextRow4: "",
 
-  // Playing state text (timer goes in row4)
-  playingTextRow1: "JAGAD",
-  playingTextRow2: "THE CHASE IS ON",
-  playingTextRow3: "CATCH THEM ALL",
-  playingTextRow4: "", // Timer will be set dynamically
+  // Playing state text (supports ${score}, ${time}, ${caught})
+  playingTextRow1: "",
+  playingTextRow2: "TIME: ${time}",
+  playingTextRow3: "SCORE: ${score}",
+  playingTextRow4: "",
+
+  // Game Over state text (supports ${score}, ${time}, ${caught})
+  gameOverTextRow1: "GAME OVER",
+  gameOverTextRow2: "SCORE: ${score}",
+  gameOverTextRow3: "",
+  gameOverTextRow4: "",
 
   // State projection images
   preGameImage: "pre-game.png",
@@ -192,10 +199,10 @@ export const defaultSettings = {
   playingImage: "",
   gameOverImage: "",
   projectionOpacity: 1,
-  projectionScale: 1.0,
+  projectionScale: 0.28,
   projectionOffsetX: 0,
-  projectionOffsetY: 0.05,
-  projectionOffsetZ: 0,
+  projectionOffsetY: 0.3,
+  projectionOffsetZ: 1,
 
   // High Scores (array of {initials: "AAA", score: 0})
   highScores: [
