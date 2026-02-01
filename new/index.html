@@ -11,12 +11,21 @@
   <body>
     <canvas id="game-canvas"></canvas>
 
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./assets/js/lib/three/three.module.js",
+          "three/addons/": "./assets/js/lib/three/addons/"
+        }
+      }
+    </script>
+
     <script type="module">
       // Load lil-gui as a global for compatibility
       import("./assets/js/lib/lil-gui.esm.js").then(module => {
         window.lil = module;
         // Load main game after lil-gui is available
-        import("./assets/js/main.js?v=101");
+        import("./assets/js/main.js?v=107");
       });
     </script>
   </body>

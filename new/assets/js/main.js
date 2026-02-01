@@ -1,6 +1,5 @@
 // Jagad - Chase Game
 // Main entry point
-// Optimized version
 
 const DEBUG = false; // Set to true for console logging
 
@@ -10,8 +9,8 @@ import { EffectComposer } from "./lib/three/addons/postprocessing/EffectComposer
 import { RenderPass } from "./lib/three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
-import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
-import { FXAAShader } from "./lib/three/addons/shaders/FXAAShader.js";
+import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
+import { GodRaysPass } from "./lib/three/addons/postprocessing/GodRaysPass.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
@@ -19,7 +18,7 @@ import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
 
-(() => {
+(async () => {
   // Suppress repeated Three.js texture unit warnings
   const warnedMessages = new Set();
   const originalWarn = console.warn;
@@ -47,12 +46,17 @@ const GUI = window.lil.GUI;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
+  // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1;
+
+  // Post-processing (WebGL EffectComposer)
+  let composer = null;
 
   // Debug axis helper (corner inset)
   const axisScene = new THREE.Scene();
@@ -105,12 +109,6 @@ const GUI = window.lil.GUI;
   const chasers = [];
   let helicopter = null;
   let clouds = [];
-
-  let composer = null;
-  let renderPass = null;
-  let bloomPass = null;
-  let fxaaPass = null;
-  let outputPass = null;
 
   const settings = {
     gameStarted: false,
@@ -193,6 +191,46 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
+  // VOLUMETRIC FOG (3D Noise Texture)
+  // ============================================
+
+  function createNoiseTexture3D() {
+    const size = 64;
+    const data = new Uint8Array(size * size * size);
+
+    // Simple 3D noise approximation
+    let i = 0;
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          // Layered sine waves for pseudo-noise
+          const nx = x / size * 5;
+          const ny = y / size * 5;
+          const nz = z / size * 5;
+
+          let noise = Math.sin(nx * 4) * Math.cos(ny * 4) * Math.sin(nz * 4);
+          noise += Math.sin(nx * 8 + 1) * Math.cos(ny * 8 + 2) * Math.sin(nz * 8 + 3) * 0.5;
+          noise += Math.sin(nx * 16 + 4) * Math.cos(ny * 16 + 5) * Math.sin(nz * 16 + 6) * 0.25;
+
+          data[i] = Math.floor((noise + 1) * 0.5 * 255);
+          i++;
+        }
+      }
+    }
+
+    const texture = new THREE.Data3DTexture(data, size, size, size);
+    texture.format = THREE.RedFormat;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.wrapR = THREE.RepeatWrapping;
+    texture.needsUpdate = true;
+
+    return texture;
+  }
+
+  // ============================================
   // HELICOPTER
   // ============================================
 
@@ -243,10 +281,48 @@ const GUI = window.lil.GUI;
       light.target = lightTarget;
       mesh.add(light);
 
+      // Simple volumetric cone (WebGPU VolumeNodeMaterial disabled for now due to pipeline issues)
+      const coneHeight = settings.helicopterHeight;
+      const coneRadius = Math.tan(angleRad) * coneHeight;
+      const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 32, 1, true);
+
+      const colors = [];
+      const positions = coneGeo.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const y = positions.getY(i);
+        const t = (y + coneHeight / 2) / coneHeight;
+        const alpha = t * t;
+        colors.push(1, 1, 1, alpha);
+      }
+      coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+
+      const coneMat = new THREE.MeshBasicMaterial({
+        color: settings.helicopterLightColor,
+        transparent: true,
+        opacity: settings.helicopterVolumetricOpacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: true
+      });
+
+      const lightCone = new THREE.Mesh(coneGeo, coneMat);
+      lightCone.rotation.x = Math.PI;
+      lightCone.position.set(0, -coneHeight / 2, 0);
+      mesh.add(lightCone);
+
       mesh.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
+          // Make helicopter brighter with emissive
+          if (child.material) {
+            const mat = child.material;
+            if (mat.emissive) {
+              mat.emissive.set(0xffffff);
+              mat.emissiveIntensity = 0.3;
+            }
+          }
         }
       });
 
@@ -256,12 +332,13 @@ const GUI = window.lil.GUI;
         mesh,
         light,
         lightTarget,
+        lightCone,
+        coneMat,
         angle: 0,
         rotorAngle: 0,
-        // Random patrol waypoint system - start with current position as target
         targetX: startX,
         targetZ: startZ,
-        waypointTimer: 2, // Start moving after 2 seconds
+        waypointTimer: 2,
       };
 
       // Find rotor parts to animate
@@ -345,6 +422,13 @@ const GUI = window.lil.GUI;
       helicopter.light.intensity = settings.helicopterLightIntensity;
       helicopter.light.color.set(settings.helicopterLightColor);
       helicopter.light.angle = (settings.helicopterLightAngle * Math.PI) / 180;
+    }
+
+    // Update light cone appearance
+    if (helicopter.lightCone && helicopter.coneMat) {
+      helicopter.lightCone.visible = settings.helicopterVolumetric;
+      helicopter.coneMat.opacity = settings.helicopterVolumetricOpacity;
+      helicopter.coneMat.color.set(settings.helicopterLightColor);
     }
   }
 
@@ -1072,6 +1156,11 @@ const GUI = window.lil.GUI;
         }
       }
     }
+
+    // Update composer render pass camera
+    if (composer && composer.renderPass) {
+      composer.renderPass.camera = camera;
+    }
   }
 
   // ============================================
@@ -1098,12 +1187,14 @@ const GUI = window.lil.GUI;
       orthoCamera.updateProjectionMatrix();
     }
 
+    // Resize post-processing
     if (composer) {
       composer.setSize(width, height);
-      if (fxaaPass) {
-        const pixelRatio = renderer.getPixelRatio();
-        fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
-        fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+      if (composer.fxaaPass) {
+        composer.fxaaPass.material.uniforms['resolution'].value.set(1 / width, 1 / height);
+      }
+      if (composer.godRaysPass) {
+        composer.godRaysPass.setSize(width, height);
       }
     }
   }
@@ -1303,17 +1394,22 @@ const GUI = window.lil.GUI;
     const postFolder = guiLeft.addFolder("Post-Processing");
 
     const bloomFolder = postFolder.addFolder("Bloom (Glow)");
-    bloomFolder.add(settings, "bloomEnabled").name("Enable Bloom").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomThreshold", 0, 1, 0.01).name("Threshold").onChange((v) => {
-      if (bloomPass) bloomPass.threshold = v;
-    });
-    bloomFolder.add(settings, "bloomStrength", 0, 3, 0.1).name("Strength").onChange((v) => {
-      if (bloomPass) bloomPass.strength = v;
-    });
-    bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange((v) => {
-      if (bloomPass) bloomPass.radius = v;
-    });
+    bloomFolder.add(settings, "bloomEnabled").name("Enabled").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomThreshold", 0, 1, 0.01).name("Threshold").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomStrength", 0, 3, 0.1).name("Strength").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange(updatePostProcessing);
     bloomFolder.close();
+
+    const godRaysFolder = postFolder.addFolder("God Rays (Helicopter)");
+    godRaysFolder.add(settings, "godRaysEnabled").name("Enabled").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysExposure", 0, 1, 0.01).name("Exposure").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysDecay", 0.9, 1, 0.01).name("Decay").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysDensity", 0.1, 2, 0.1).name("Density").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysWeight", 0.1, 1, 0.05).name("Weight").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysSamples", 20, 100, 5).name("Samples").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysLightRadius", 0.01, 0.3, 0.01).name("Light Size").onChange(updatePostProcessing);
+    godRaysFolder.add(settings, "godRaysIntensity", 0.1, 3, 0.1).name("Intensity").onChange(updatePostProcessing);
+    godRaysFolder.close();
 
     postFolder.add(settings, "fxaaEnabled").name("FXAA Anti-Aliasing").onChange(updatePostProcessing);
     postFolder.close();
@@ -1547,61 +1643,92 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
-  // POST-PROCESSING
+  // POST-PROCESSING (WebGL EffectComposer)
   // ============================================
 
+  // Light position for god rays (updated each frame)
+  const godRaysLightPosition = new THREE.Vector3();
+
   function initPostProcessing() {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    composer = new EffectComposer(renderer);
 
-    const renderTarget = new THREE.WebGLRenderTarget(width, height, {
-      type: THREE.HalfFloatType,
-      samples: 4
-    });
-
-    composer = new EffectComposer(renderer, renderTarget);
-
-    renderPass = new RenderPass(scene, camera);
+    const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
-    const resolution = new THREE.Vector2(width, height);
-    bloomPass = new UnrealBloomPass(
-      resolution,
+    // Bloom pass
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
       settings.bloomStrength,
       settings.bloomRadius,
       settings.bloomThreshold
     );
+    bloomPass.enabled = settings.bloomEnabled;
+    composer.addPass(bloomPass);
 
-    fxaaPass = new ShaderPass(FXAAShader);
-    const pixelRatio = renderer.getPixelRatio();
-    fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
-    fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+    // God rays pass (volumetric light scattering from helicopter)
+    const godRaysPass = new GodRaysPass(godRaysLightPosition, camera);
+    godRaysPass.enabled = settings.godRaysEnabled;
+    godRaysPass.exposure = settings.godRaysExposure;
+    godRaysPass.decay = settings.godRaysDecay;
+    godRaysPass.density = settings.godRaysDensity;
+    godRaysPass.weight = settings.godRaysWeight;
+    godRaysPass.samples = settings.godRaysSamples;
+    godRaysPass.lightRadius = settings.godRaysLightRadius;
+    godRaysPass.lightIntensity = settings.godRaysIntensity;
+    godRaysPass.lightColor.set(settings.helicopterLightColor);
+    composer.addPass(godRaysPass);
 
-    outputPass = new OutputPass();
+    // Output pass for tone mapping
+    const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
-    updatePostProcessing();
+    // FXAA pass for anti-aliasing
+    const fxaaPass = new FXAAPass();
+    fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+    composer.addPass(fxaaPass);
+
+    // Store references for updates
+    composer.bloomPass = bloomPass;
+    composer.godRaysPass = godRaysPass;
+    composer.fxaaPass = fxaaPass;
+    composer.renderPass = renderPass;
   }
 
   function updatePostProcessing() {
     if (!composer) return;
 
-    while (composer.passes.length > 1) {
-      composer.passes.pop();
+    if (composer.bloomPass) {
+      composer.bloomPass.enabled = settings.bloomEnabled;
+      composer.bloomPass.threshold = settings.bloomThreshold;
+      composer.bloomPass.strength = settings.bloomStrength;
+      composer.bloomPass.radius = settings.bloomRadius;
     }
 
-    if (settings.bloomEnabled) {
-      bloomPass.threshold = settings.bloomThreshold;
-      bloomPass.strength = settings.bloomStrength;
-      bloomPass.radius = settings.bloomRadius;
-      composer.addPass(bloomPass);
+    if (composer.godRaysPass) {
+      composer.godRaysPass.enabled = settings.godRaysEnabled && settings.helicopterEnabled;
+      composer.godRaysPass.exposure = settings.godRaysExposure;
+      composer.godRaysPass.decay = settings.godRaysDecay;
+      composer.godRaysPass.density = settings.godRaysDensity;
+      composer.godRaysPass.weight = settings.godRaysWeight;
+      composer.godRaysPass.samples = settings.godRaysSamples;
+      composer.godRaysPass.lightRadius = settings.godRaysLightRadius;
+      composer.godRaysPass.lightIntensity = settings.godRaysIntensity;
+      composer.godRaysPass.lightColor.set(settings.helicopterLightColor);
+      composer.godRaysPass.camera = camera;
     }
 
-    if (settings.fxaaEnabled) {
-      composer.addPass(fxaaPass);
+    if (composer.fxaaPass) {
+      composer.fxaaPass.enabled = settings.fxaaEnabled;
     }
+  }
 
-    composer.addPass(outputPass);
+  function updateGodRaysLightPosition() {
+    if (!helicopter || !helicopter.mesh) return;
+
+    // Get the world position of the helicopter light (pointing down)
+    // The light cone points downward, so we want a point below the helicopter
+    const heliPos = helicopter.mesh.position;
+    godRaysLightPosition.set(heliPos.x, heliPos.y - settings.helicopterHeight * 0.5, heliPos.z);
   }
 
   // ============================================
@@ -2530,6 +2657,7 @@ const GUI = window.lil.GUI;
 
       // Update helicopter and clouds
       updateHelicopter(dt);
+      updateGodRaysLightPosition();
       updateClouds(dt);
 
       // Update glass canvas for video/marquee/shuffle animation
@@ -2538,8 +2666,8 @@ const GUI = window.lil.GUI;
       }
     }
 
-    if (composer && (settings.bloomEnabled || settings.fxaaEnabled)) {
-      if (renderPass) renderPass.camera = camera;
+    // Render with post-processing (EffectComposer)
+    if (composer) {
       composer.render();
     } else {
       renderer.render(scene, camera);
@@ -2679,13 +2807,8 @@ const GUI = window.lil.GUI;
         if (f.captured) continue;
         if (checkCollision(chaser.mesh, f.mesh, STATE.actorRadius || 2.5)) {
           f.captured = true;
-          // Hide and move far away to avoid draw call issues
           f.mesh.visible = false;
-          f.mesh.position.y = -1000;
-          if (f.light) {
-            f.light.visible = false;
-            f.light.intensity = 0;
-          }
+          if (f.light) f.light.visible = false;
           const wire = fugitiveWires[f.index];
           if (wire) {
             if (wire.billboard) wire.billboard.visible = false;
