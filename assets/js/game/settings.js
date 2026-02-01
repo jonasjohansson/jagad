@@ -115,10 +115,10 @@ export const defaultSettings = {
   glassTextAlign: "center",
   glassTextOffsetY: -250,
   glassTextLetterSpacing: 0,
-  glassTextMarquee: true,
+  glassTextMarquee: false,
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
-  glassTextShuffle: true,
+  glassTextShuffle: false,
   glassTextShuffleSpeed: 0.3,
   // Iframe Planes
   leftPanelEnabled: true,
@@ -170,6 +170,39 @@ export const defaultSettings = {
   cloudSpeedMin: 0.3,
   cloudSpeedMax: 0.8,
   cloudBlending: "Normal",
+
+  // Game States
+  gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
+
+  // Pre-game state text
+  preGameTextRow1: "JAGAD",
+  preGameTextRow2: "",
+  preGameTextRow3: "",
+  preGameTextRow4: "",
+
+  // Playing state text (timer goes in row4)
+  playingTextRow1: "JAGAD",
+  playingTextRow2: "THE CHASE IS ON",
+  playingTextRow3: "CATCH THEM ALL",
+  playingTextRow4: "", // Timer will be set dynamically
+
+  // State projection images
+  preGameImage: "pre-game.png",
+  startingImage: "",
+  playingImage: "",
+  gameOverImage: "",
+  projectionOpacity: 1,
+  projectionScale: 1.0,
+  projectionOffsetX: 0,
+  projectionOffsetY: 0.05,
+  projectionOffsetZ: 0,
+
+  // High Scores (array of {initials: "AAA", score: 0})
+  highScores: [
+    { initials: "AAA", score: 999 },
+    { initials: "BBB", score: 500 },
+    { initials: "CCC", score: 100 }
+  ],
 };
 
 export function loadSettings() {

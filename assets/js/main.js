@@ -96,6 +96,8 @@ const GUI = window.lil.GUI;
   // ============================================
 
   let buildingPlane = null;
+  let projectionPlane = null;
+  let projectionTextures = {};
   let leftPanel = null;
   let rightPanel = null;
   let leftPanelIframe = null;
@@ -151,6 +153,18 @@ const GUI = window.lil.GUI;
     showingScore: false,
     scoreDisplayTime: 0,
     activeChaserCount: 0, // Cached count to avoid filter() every frame
+    // Game states system
+    gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
+    countdownValue: 3,     // 3, 2, 1, 0 (GO)
+    countdownTimer: 0,     // Time accumulator for countdown
+    playerScore: 0,        // Current game score
+    fugitiveValue: 250,    // Points per fugitive (decreases over time)
+    // High score entry
+    enteringHighScore: false,
+    highScoreInitials: ["_", "_", "_"],
+    highScorePosition: 0,  // Which initial being edited (0-2)
+    highScoreCharIndex: 0, // Current character A-Z, 0-9
+    newHighScoreRank: -1,  // Position in high scores list (0, 1, or 2)
   };
 
   // Helper to get level center (avoids creating new Vector3)
@@ -724,8 +738,7 @@ const GUI = window.lil.GUI;
 
     // Preload fonts then update canvas
     preloadFonts().then(() => {
-      lastMarqueeTime = performance.now();
-      updateGlassCanvas(lastMarqueeTime);
+      updateGlassCanvas();
     });
   }
 
@@ -792,11 +805,12 @@ const GUI = window.lil.GUI;
       settings.glassTextRow3,
       settings.glassTextRow4,
     ];
-    const rows = rawRows
-      .map((row, i) => row && row.trim() !== "" ? getShuffledText(i, row, shuffleDt) : "")
-      .filter(row => row !== "");
+    // Keep all 4 rows (empty or not) for consistent positioning
+    const rows = rawRows.map((row, i) => row && row.trim() !== "" ? getShuffledText(i, row, shuffleDt) : "");
 
-    if (rows.length === 0) {
+    // Check if all rows are empty
+    const hasContent = rows.some(row => row !== "");
+    if (!hasContent) {
       ctx.restore();
       if (glassTexture) glassTexture.needsUpdate = true;
       return;
@@ -810,8 +824,8 @@ const GUI = window.lil.GUI;
     ctx.font = `bold ${fontSize}px "${fontFamily}", Arial, sans-serif`;
     ctx.textBaseline = "middle";
 
-    // Calculate total height of text block
-    const totalHeight = rows.length * lineHeight;
+    // Calculate total height assuming 4 rows (consistent positioning)
+    const totalHeight = 4 * lineHeight;
     const startY = (h - totalHeight) / 2 + lineHeight / 2 + (settings.glassTextOffsetY || 0);
     const letterSpacing = settings.glassTextLetterSpacing || 0;
 
@@ -877,8 +891,9 @@ const GUI = window.lil.GUI;
       }
 
       for (let i = 0; i < rows.length; i++) {
-        const y = startY + i * lineHeight;
         const text = rows[i];
+        if (!text) continue; // Skip empty rows
+        const y = startY + i * lineHeight;
         const textWidth = measureTextWithSpacing(text);
         // Apply row delay offset (each row starts further back)
         const rowOffset = marqueeOffset - (i * settings.glassTextRowDelay);
@@ -901,8 +916,10 @@ const GUI = window.lil.GUI;
       }
 
       for (let i = 0; i < rows.length; i++) {
+        const text = rows[i];
+        if (!text) continue; // Skip empty rows but keep position
         const y = startY + i * lineHeight;
-        drawTextWithSpacing(rows[i], xPos, y, settings.glassTextAlign);
+        drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
       }
     }
 
@@ -970,13 +987,55 @@ const GUI = window.lil.GUI;
     "arrowup", "arrowdown", "arrowleft", "arrowright",
     "w", "a", "s", "d", "t", "f", "g", "h", "i", "j", "k", "l"
   ];
+
+  // Character set for high score initials
+  const HIGH_SCORE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
+
   window.addEventListener("keydown", (e) => {
     const keyLower = e.key.toLowerCase();
+
+    // High score entry mode
+    if (STATE.enteringHighScore) {
+      e.preventDefault();
+      if (keyLower === "w" || keyLower === "arrowup") {
+        // Cycle character up
+        STATE.highScoreCharIndex = (STATE.highScoreCharIndex + 1) % HIGH_SCORE_CHARS.length;
+        STATE.highScoreInitials[STATE.highScorePosition] = HIGH_SCORE_CHARS[STATE.highScoreCharIndex];
+        updateHighScoreDisplay();
+      } else if (keyLower === "s" || keyLower === "arrowdown") {
+        // Cycle character down
+        STATE.highScoreCharIndex = (STATE.highScoreCharIndex - 1 + HIGH_SCORE_CHARS.length) % HIGH_SCORE_CHARS.length;
+        STATE.highScoreInitials[STATE.highScorePosition] = HIGH_SCORE_CHARS[STATE.highScoreCharIndex];
+        updateHighScoreDisplay();
+      } else if (keyLower === "d" || keyLower === "arrowright") {
+        // Move to next initial
+        if (STATE.highScorePosition < 2) {
+          STATE.highScorePosition++;
+          STATE.highScoreCharIndex = HIGH_SCORE_CHARS.indexOf(STATE.highScoreInitials[STATE.highScorePosition]);
+          if (STATE.highScoreCharIndex < 0) STATE.highScoreCharIndex = 0;
+          updateHighScoreDisplay();
+        }
+      } else if (keyLower === "a" || keyLower === "arrowleft") {
+        // Move to previous initial
+        if (STATE.highScorePosition > 0) {
+          STATE.highScorePosition--;
+          STATE.highScoreCharIndex = HIGH_SCORE_CHARS.indexOf(STATE.highScoreInitials[STATE.highScorePosition]);
+          if (STATE.highScoreCharIndex < 0) STATE.highScoreCharIndex = 0;
+          updateHighScoreDisplay();
+        }
+      } else if (keyLower === "enter" || keyLower === " ") {
+        // Confirm high score entry
+        confirmHighScoreEntry();
+      }
+      keys.add(keyLower);
+      return;
+    }
+
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
-      // Auto-start game when any chaser movement key is pressed
-      if (STATE.loaded && !settings.gameStarted && !STATE.gameOver) {
-        settings.gameStarted = true;
+      // In PRE_GAME state, any movement key starts the countdown
+      if (STATE.loaded && STATE.gameState === "PRE_GAME") {
+        setGameState("STARTING");
       }
     }
 
@@ -992,6 +1051,7 @@ const GUI = window.lil.GUI;
 
   function triggerCapture(fugitiveIndex, chaserIndex) {
     if (!STATE.loaded) return;
+    if (STATE.gameState !== "PLAYING") return; // Only allow captures during PLAYING state
     if (fugitiveIndex >= fugitives.length) return;
 
     const f = fugitives[fugitiveIndex];
@@ -1000,6 +1060,10 @@ const GUI = window.lil.GUI;
     // Mark as captured
     f.captured = true;
     STATE.capturedCount = (STATE.capturedCount || 0) + 1;
+
+    // Add score based on current fugitive value
+    const points = Math.max(0, Math.floor(STATE.fugitiveValue));
+    STATE.playerScore += points;
 
     // Get chaser color for the effect
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
@@ -1023,8 +1087,7 @@ const GUI = window.lil.GUI;
 
     // Check if all captured
     if (STATE.capturedCount >= fugitives.length && !STATE.gameOver) {
-      STATE.gameOver = true;
-      showGameScore();
+      setGameState("GAME_OVER");
     }
   }
 
@@ -1044,6 +1107,356 @@ const GUI = window.lil.GUI;
 
     const hasInput = dx !== 0 || dz !== 0;
     return { x: dx, z: dz, hasInput };
+  }
+
+  // ============================================
+  // GAME STATE MANAGEMENT
+  // ============================================
+
+  const HIGH_SCORES_KEY = "jagadHighScores";
+
+  function loadHighScores() {
+    try {
+      const saved = localStorage.getItem(HIGH_SCORES_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn("Failed to load high scores:", e);
+    }
+    return settings.highScores.slice(); // Return copy of defaults
+  }
+
+  function saveHighScores(scores) {
+    try {
+      localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(scores));
+      settings.highScores = scores;
+    } catch (e) {
+      console.error("Failed to save high scores:", e);
+    }
+  }
+
+  // Set all chasers to low or full opacity
+  function setChasersOpacity(opacity) {
+    const isLowOpacity = opacity < 1;
+    for (const c of chasers) {
+      if (c.isCarModel && c.mesh) {
+        c.mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            const mat = child.material;
+            mat.transparent = true;
+            mat.opacity = opacity;
+            mat.depthWrite = !isLowOpacity;
+            if (mat.emissive) {
+              mat.emissiveIntensity = isLowOpacity ? 0.05 : 0.3;
+            }
+            mat.needsUpdate = true;
+          }
+        });
+      } else if (c.material) {
+        c.material.transparent = true;
+        c.material.opacity = opacity;
+        c.material.depthWrite = !isLowOpacity;
+        if (c.material.emissive) {
+          c.material.emissiveIntensity = isLowOpacity ? 0.05 : 0.3;
+        }
+        c.material.needsUpdate = true;
+      }
+      if (c.light) {
+        c.light.intensity = isLowOpacity
+          ? settings.chaserLightIntensity * 0.1
+          : settings.chaserLightIntensity;
+      }
+    }
+  }
+
+  function setGameState(newState) {
+    const oldState = STATE.gameState;
+    STATE.gameState = newState;
+    settings.gameState = newState;
+
+    if (DEBUG) console.log(`Game state: ${oldState} -> ${newState}`);
+
+    switch (newState) {
+      case "PRE_GAME":
+        // Display pre-game text
+        settings.glassTextRow1 = settings.preGameTextRow1;
+        settings.glassTextRow2 = settings.preGameTextRow2;
+        settings.glassTextRow3 = settings.preGameTextRow3;
+        settings.glassTextRow4 = settings.preGameTextRow4;
+        settings.gameStarted = false;
+        STATE.gameOver = false;
+        setChasersOpacity(0.1);
+        break;
+
+      case "STARTING":
+        // Begin countdown
+        STATE.countdownValue = 3;
+        STATE.countdownTimer = 0;
+        settings.glassTextRow1 = "";
+        settings.glassTextRow2 = "3";
+        settings.glassTextRow3 = "";
+        settings.glassTextRow4 = "";
+        settings.gameStarted = true; // Mark as started but input blocked
+        setChasersOpacity(0.1);
+        break;
+
+      case "PLAYING":
+        // Set playing text and start timer
+        settings.glassTextRow1 = settings.playingTextRow1;
+        settings.glassTextRow2 = settings.playingTextRow2;
+        settings.glassTextRow3 = settings.playingTextRow3;
+        settings.glassTextRow4 = "";
+        STATE.gameTimerStarted = true;
+        STATE.gameTimerRemaining = 90;
+        STATE.fugitiveValue = 250; // Reset fugitive value
+        STATE.playerScore = 0;
+        STATE.capturedCount = 0;
+        // Chasers will get full opacity when activated individually
+        break;
+
+      case "GAME_OVER":
+        STATE.gameOver = true;
+        STATE.gameTimerStarted = false;
+        setChasersOpacity(0.1);
+        showGameScore();
+        break;
+    }
+
+    // Update the glass canvas to reflect text changes
+    if (typeof updateGlassCanvas === "function") {
+      updateGlassCanvas();
+    }
+
+    // Update projection image for this state
+    updateProjectionForState(newState);
+  }
+
+  // ============================================
+  // STATE PROJECTION IMAGES
+  // ============================================
+
+  function initProjectionPlane() {
+    if (projectionPlane) return; // Already initialized
+
+    // Create a large plane above the level for projection
+    const size = STATE.horizontalSize * 2 || 30;
+    const geometry = new THREE.PlaneGeometry(size, size);
+    const material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: settings.projectionOpacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending, // Additive for projection look
+    });
+
+    projectionPlane = new THREE.Mesh(geometry, material);
+    projectionPlane.rotation.x = -Math.PI / 2; // Horizontal plane
+    projectionPlane.position.set(
+      STATE.levelCenter.x + settings.projectionOffsetX,
+      STATE.levelCenter.y + settings.projectionOffsetY,
+      STATE.levelCenter.z + settings.projectionOffsetZ
+    );
+    projectionPlane.renderOrder = 10;
+    projectionPlane.visible = false;
+
+    scene.add(projectionPlane);
+    console.log("Projection plane initialized at:", projectionPlane.position);
+
+    // Preload textures for each state
+    preloadProjectionTextures();
+  }
+
+  function preloadProjectionTextures() {
+    const textureLoader = new THREE.TextureLoader();
+    const imagePath = "assets/images/";
+
+    const stateImages = {
+      PRE_GAME: settings.preGameImage,
+      STARTING: settings.startingImage,
+      PLAYING: settings.playingImage,
+      GAME_OVER: settings.gameOverImage,
+    };
+
+    for (const [state, imageName] of Object.entries(stateImages)) {
+      if (imageName && imageName.trim() !== "") {
+        console.log(`Loading projection image for ${state}:`, imagePath + imageName);
+        textureLoader.load(
+          imagePath + imageName,
+          (texture) => {
+            console.log(`Loaded projection texture for ${state}:`, texture);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            projectionTextures[state] = texture;
+            // If this is the current state, update the projection
+            if (STATE.gameState === state) {
+              updateProjectionForState(state);
+            }
+          },
+          undefined,
+          (err) => {
+            console.warn(`Failed to load projection image for ${state}:`, imageName, err);
+          }
+        );
+      }
+    }
+  }
+
+  function updateProjectionForState(state) {
+    if (!projectionPlane) {
+      console.log("updateProjectionForState: no projection plane yet");
+      return;
+    }
+
+    const stateImageSettings = {
+      PRE_GAME: settings.preGameImage,
+      STARTING: settings.startingImage,
+      PLAYING: settings.playingImage,
+      GAME_OVER: settings.gameOverImage,
+    };
+
+    const imageName = stateImageSettings[state];
+    console.log(`updateProjectionForState(${state}): image=${imageName}, texture=${!!projectionTextures[state]}`);
+
+    if (imageName && imageName.trim() !== "" && projectionTextures[state]) {
+      const texture = projectionTextures[state];
+      projectionPlane.material.map = texture;
+      projectionPlane.material.needsUpdate = true;
+      projectionPlane.visible = true;
+
+      // Adjust scale based on image aspect ratio
+      const img = texture.image;
+      if (img && img.width && img.height) {
+        const aspect = img.width / img.height;
+        projectionPlane.scale.set(
+          settings.projectionScale * aspect,
+          settings.projectionScale,
+          1
+        );
+        console.log(`Projection plane visible, aspect=${aspect.toFixed(2)}, position:`, projectionPlane.position);
+      } else {
+        projectionPlane.scale.setScalar(settings.projectionScale);
+      }
+    } else {
+      projectionPlane.visible = false;
+      console.log("Projection plane hidden - no image or texture");
+    }
+
+    // Update projection properties
+    projectionPlane.material.opacity = settings.projectionOpacity;
+    projectionPlane.position.x = STATE.levelCenter.x + settings.projectionOffsetX;
+    projectionPlane.position.y = STATE.levelCenter.y + settings.projectionOffsetY;
+    projectionPlane.position.z = STATE.levelCenter.z + settings.projectionOffsetZ;
+  }
+
+  function loadProjectionImage(state, imageName) {
+    if (!imageName || imageName.trim() === "") {
+      projectionTextures[state] = null;
+      if (STATE.gameState === state) {
+        updateProjectionForState(state);
+      }
+      return;
+    }
+
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.load(
+      "assets/images/" + imageName,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        projectionTextures[state] = texture;
+        if (STATE.gameState === state) {
+          updateProjectionForState(state);
+        }
+      },
+      undefined,
+      (err) => {
+        console.warn(`Failed to load projection image for ${state}:`, imageName);
+      }
+    );
+  }
+
+  function updateCountdown(dt) {
+    if (STATE.gameState !== "STARTING") return;
+
+    STATE.countdownTimer += dt;
+
+    if (STATE.countdownTimer >= 1.0) {
+      STATE.countdownTimer -= 1.0;
+      STATE.countdownValue--;
+
+      if (STATE.countdownValue > 0) {
+        // Show 3, 2, 1
+        settings.glassTextRow2 = String(STATE.countdownValue);
+      } else if (STATE.countdownValue === 0) {
+        // Show GO!
+        settings.glassTextRow2 = "GO!";
+      } else {
+        // Countdown finished, start playing
+        setGameState("PLAYING");
+      }
+    }
+  }
+
+  function checkHighScore(score) {
+    const highScores = loadHighScores();
+    for (let i = 0; i < highScores.length; i++) {
+      if (score > highScores[i].score) {
+        return i; // Return position (0, 1, or 2)
+      }
+    }
+    return -1; // Not a high score
+  }
+
+  function startHighScoreEntry(position) {
+    STATE.enteringHighScore = true;
+    STATE.highScorePosition = 0;
+    STATE.highScoreInitials = ["A", "_", "_"];
+    STATE.highScoreCharIndex = 0;
+    STATE.newHighScoreRank = position;
+    updateHighScoreDisplay();
+  }
+
+  function updateHighScoreDisplay() {
+    const initials = STATE.highScoreInitials.map((char, i) => {
+      if (i === STATE.highScorePosition) {
+        return `[${char}]`; // Highlight current position
+      }
+      return char;
+    }).join(" ");
+
+    settings.glassTextRow1 = "NEW HIGH SCORE!";
+    settings.glassTextRow2 = `SCORE: ${Math.min(999, STATE.playerScore)}`;
+    settings.glassTextRow3 = `ENTER NAME: ${initials}`;
+    settings.glassTextRow4 = "W/S:CHANGE A/D:MOVE ENTER:OK";
+  }
+
+  function confirmHighScoreEntry() {
+    const initials = STATE.highScoreInitials.join("");
+    const score = STATE.playerScore;
+    const position = STATE.newHighScoreRank;
+
+    // Insert new score and remove lowest
+    const highScores = loadHighScores();
+    highScores.splice(position, 0, { initials, score });
+    highScores.length = 3; // Keep only top 3
+
+    saveHighScores(highScores);
+
+    STATE.enteringHighScore = false;
+
+    // Show final high scores display
+    displayHighScores();
+  }
+
+  function displayHighScores() {
+    const highScores = loadHighScores();
+    settings.glassTextRow1 = "HIGH SCORES";
+    settings.glassTextRow2 = `1. ${highScores[0].initials} ${highScores[0].score}`;
+    settings.glassTextRow3 = `2. ${highScores[1].initials} ${highScores[1].score}`;
+    settings.glassTextRow4 = `3. ${highScores[2].initials} ${highScores[2].score}`;
+
+    // Start reset timer
+    STATE.showingScore = true;
+    STATE.scoreDisplayTime = 5;
   }
 
   // ============================================
@@ -1240,6 +1653,123 @@ const GUI = window.lil.GUI;
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
     gameFolder.close();
 
+    // ==================== STATES ====================
+    const statesFolder = guiLeft.addFolder("📺 States");
+
+    // Current state display (read-only)
+    const stateDisplay = { current: STATE.gameState };
+    const stateController = statesFolder.add(stateDisplay, "current", ["PRE_GAME", "STARTING", "PLAYING", "GAME_OVER"]).name("Current State").listen();
+    stateController.domElement.style.pointerEvents = "none"; // Make read-only
+
+    // Pre-game settings (text + image)
+    const preGameFolder = statesFolder.addFolder("Pre-Game");
+    const updatePreGameText = () => {
+      if (STATE.gameState === "PRE_GAME") {
+        settings.glassTextRow1 = settings.preGameTextRow1;
+        settings.glassTextRow2 = settings.preGameTextRow2;
+        settings.glassTextRow3 = settings.preGameTextRow3;
+        settings.glassTextRow4 = settings.preGameTextRow4;
+        updateGlassCanvas();
+      }
+    };
+    preGameFolder.add(settings, "preGameTextRow1").name("Text Row 1").onChange(updatePreGameText);
+    preGameFolder.add(settings, "preGameTextRow2").name("Text Row 2").onChange(updatePreGameText);
+    preGameFolder.add(settings, "preGameTextRow3").name("Text Row 3").onChange(updatePreGameText);
+    preGameFolder.add(settings, "preGameTextRow4").name("Text Row 4").onChange(updatePreGameText);
+    preGameFolder.add(settings, "preGameImage").name("Image").onChange((v) => {
+      loadProjectionImage("PRE_GAME", v);
+    });
+    preGameFolder.close();
+
+    // Starting settings (image only - countdown text is automatic)
+    const startingFolder = statesFolder.addFolder("Starting");
+    startingFolder.add(settings, "startingImage").name("Image").onChange((v) => {
+      loadProjectionImage("STARTING", v);
+    });
+    startingFolder.close();
+
+    // Playing settings (text + image)
+    const playingFolder = statesFolder.addFolder("Playing");
+    const updatePlayingText = () => {
+      if (STATE.gameState === "PLAYING") {
+        settings.glassTextRow1 = settings.playingTextRow1;
+        settings.glassTextRow2 = settings.playingTextRow2;
+        settings.glassTextRow3 = settings.playingTextRow3;
+        updateGlassCanvas();
+      }
+    };
+    playingFolder.add(settings, "playingTextRow1").name("Text Row 1").onChange(updatePlayingText);
+    playingFolder.add(settings, "playingTextRow2").name("Text Row 2").onChange(updatePlayingText);
+    playingFolder.add(settings, "playingTextRow3").name("Text Row 3").onChange(updatePlayingText);
+    playingFolder.add(settings, "playingImage").name("Image").onChange((v) => {
+      loadProjectionImage("PLAYING", v);
+    });
+    playingFolder.close();
+
+    // Game Over settings (image only - text is dynamic)
+    const gameOverFolder = statesFolder.addFolder("Game Over");
+    gameOverFolder.add(settings, "gameOverImage").name("Image").onChange((v) => {
+      loadProjectionImage("GAME_OVER", v);
+    });
+    gameOverFolder.close();
+
+    // High scores display
+    const highScoresFolder = statesFolder.addFolder("High Scores");
+    const highScores = loadHighScores();
+    const highScoreDisplay = {
+      score1: `#1: ${highScores[0].initials} - ${highScores[0].score}`,
+      score2: `#2: ${highScores[1].initials} - ${highScores[1].score}`,
+      score3: `#3: ${highScores[2].initials} - ${highScores[2].score}`,
+    };
+    highScoresFolder.add(highScoreDisplay, "score1").name("").listen();
+    highScoresFolder.add(highScoreDisplay, "score2").name("").listen();
+    highScoresFolder.add(highScoreDisplay, "score3").name("").listen();
+    highScoresFolder.add({ reset: function() {
+      if (confirm("Reset high scores to defaults?")) {
+        saveHighScores([
+          { initials: "AAA", score: 999 },
+          { initials: "BBB", score: 500 },
+          { initials: "CCC", score: 100 }
+        ]);
+        const hs = loadHighScores();
+        highScoreDisplay.score1 = `#1: ${hs[0].initials} - ${hs[0].score}`;
+        highScoreDisplay.score2 = `#2: ${hs[1].initials} - ${hs[1].score}`;
+        highScoreDisplay.score3 = `#3: ${hs[2].initials} - ${hs[2].score}`;
+      }
+    }}, "reset").name("Reset Scores");
+    highScoresFolder.close();
+
+    statesFolder.close();
+
+    // Update state display in animation loop
+    const updateStateDisplay = () => {
+      stateDisplay.current = STATE.gameState;
+      const hs = loadHighScores();
+      highScoreDisplay.score1 = `#1: ${hs[0].initials} - ${hs[0].score}`;
+      highScoreDisplay.score2 = `#2: ${hs[1].initials} - ${hs[1].score}`;
+      highScoreDisplay.score3 = `#3: ${hs[2].initials} - ${hs[2].score}`;
+    };
+    setInterval(updateStateDisplay, 500);
+
+    // ==================== PROJECTION ====================
+    const projectionFolder = guiLeft.addFolder("🎥 Projection");
+    projectionFolder.add(settings, "projectionOpacity", 0, 1, 0.05).name("Opacity").onChange(() => {
+      updateProjectionForState(STATE.gameState);
+    });
+    projectionFolder.add(settings, "projectionScale", 0.1, 5, 0.01).name("Scale").onChange(() => {
+      updateProjectionForState(STATE.gameState);
+    });
+    projectionFolder.add(settings, "projectionOffsetX", -10, 10, 0.1).name("Offset X").onChange(() => {
+      updateProjectionForState(STATE.gameState);
+    });
+    projectionFolder.add(settings, "projectionOffsetY", -1, 1, 0.01).name("Offset Y").onChange(() => {
+      updateProjectionForState(STATE.gameState);
+    });
+    projectionFolder.add(settings, "projectionOffsetZ", -10, 10, 0.1).name("Offset Z").onChange(() => {
+      updateProjectionForState(STATE.gameState);
+    });
+    projectionFolder.close();
+
     // ==================== ACTORS ====================
     const actorsFolder = guiLeft.addFolder("👥 Actors");
 
@@ -1274,51 +1804,20 @@ const GUI = window.lil.GUI;
 
     actorsFolder.close();
 
+    // ==================== TEXT ====================
+    const textFolder = guiLeft.addFolder("📝 Text");
+    textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
+    textFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextOffsetY", -500, 500, 10).name("Offset Y").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
+    textFolder.close();
+
     // ==================== ADDONS ====================
     const addonsFolder = guiLeft.addFolder("🧩 Addons");
-
-    // Text Overlay
-    const textFolder = addonsFolder.addFolder("Text");
-    textFolder.add(settings, "glassEnabled").name("Enabled").onChange((v) => {
-      for (const mesh of glassMeshes) {
-        mesh.visible = v;
-      }
-    });
-    textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange((v) => {
-      updateGlassCanvas();
-    });
-
-    const textRowsFolder = textFolder.addFolder("Text Rows");
-    textRowsFolder.add(settings, "glassTextRow1").name("Row 1").onChange(() => updateGlassCanvas());
-    textRowsFolder.add(settings, "glassTextRow2").name("Row 2").onChange(() => updateGlassCanvas());
-    textRowsFolder.add(settings, "glassTextRow3").name("Row 3").onChange(() => updateGlassCanvas());
-    textRowsFolder.add(settings, "glassTextRow4").name("Row 4").onChange(() => updateGlassCanvas());
-    textRowsFolder.close();
-
-    const textStyleFolder = textFolder.addFolder("Text Style");
-    textStyleFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
-    textStyleFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
-    textStyleFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
-    textStyleFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
-    textStyleFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
-    textStyleFolder.add(settings, "glassTextOffsetY", -500, 500, 10).name("Offset Y").onChange(() => updateGlassCanvas());
-    textStyleFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
-    textStyleFolder.close();
-
-    const marqueeFolder = textFolder.addFolder("Marquee Animation");
-    marqueeFolder.add(settings, "glassTextMarquee").name("Enable Marquee").onChange((v) => {
-      if (v) {
-        marqueeOffset = 0;
-        lastMarqueeTime = performance.now();
-      }
-      updateGlassCanvas();
-    });
-    marqueeFolder.add(settings, "glassTextMarqueeSpeed", 0, 500, 5).name("Speed (px/s)");
-    marqueeFolder.add(settings, "glassTextRowDelay", 0, 500, 10).name("Row Delay (px)");
-    marqueeFolder.add(settings, "glassTextShuffle").name("Text Shuffle Effect");
-    marqueeFolder.add(settings, "glassTextShuffleSpeed", 0.2, 3, 0.1).name("Shuffle Speed");
-    marqueeFolder.close();
-    textFolder.close();
 
     // Window Overlay (video background)
     const windowOverlayFolder = addonsFolder.addFolder("Window Overlay");
@@ -1387,10 +1886,8 @@ const GUI = window.lil.GUI;
     });
     buildingPlaneFolderGUI.close();
 
-    addonsFolder.close();
-
-    // ==================== PANELS ====================
-    const panelsFolder = guiLeft.addFolder("📺 Panels");
+    // Panels
+    const panelsFolder = addonsFolder.addFolder("Panels");
 
     // Left Panel (iframe) - 4 independent corners for skewing
     const leftPanelFolder = panelsFolder.addFolder("Left Panel");
@@ -1431,6 +1928,8 @@ const GUI = window.lil.GUI;
     rightPanelFolder.close();
 
     panelsFolder.close();
+
+    addonsFolder.close();
 
     // ==================== SCENE ====================
     const sceneFolder = guiLeft.addFolder("🌆 Scene");
@@ -1475,20 +1974,16 @@ const GUI = window.lil.GUI;
 
     sceneFolder.close();
 
-    // ==================== ENVIRONMENT ====================
-    const envFolder = guiLeft.addFolder("🌤️ Environment");
+    // ==================== VFX ====================
+    const vfxFolder = guiLeft.addFolder("✨ VFX");
 
-    const atmosphereFolder = envFolder.addFolder("Atmosphere");
+    // Environment
+    const atmosphereFolder = vfxFolder.addFolder("Environment");
     atmosphereFolder.add(settings, "fogEnabled").name("Fog").onChange(updatePostProcessing);
     atmosphereFolder.addColor(settings, "fogColor").name("Fog Color").onChange(updatePostProcessing);
     atmosphereFolder.add(settings, "fogNear", 1, 50, 1).name("Fog Near").onChange(updatePostProcessing);
     atmosphereFolder.add(settings, "fogFar", 10, 100, 1).name("Fog Far").onChange(updatePostProcessing);
     atmosphereFolder.close();
-
-    envFolder.close();
-
-    // ==================== VFX ====================
-    const vfxFolder = guiLeft.addFolder("✨ VFX");
 
     const bloomFolder = vfxFolder.addFolder("Bloom");
     bloomFolder.add(settings, "bloomEnabled").name("Enabled").onChange(updatePostProcessing);
@@ -2471,24 +2966,47 @@ const GUI = window.lil.GUI;
 
   function updateTimerDisplay() {
     if (STATE.showingScore) return;
+    if (STATE.gameState !== "PLAYING") return;
 
     if (STATE.gameTimerStarted && !STATE.gameOver) {
-      settings.glassTextRow4 = `TIME ${formatTimer(STATE.gameTimerRemaining)}`;
+      const score = Math.min(999, STATE.playerScore);
+      settings.glassTextRow4 = `TIME ${formatTimer(STATE.gameTimerRemaining)}  SCORE ${score}`;
     }
   }
 
   function showGameScore() {
-    STATE.showingScore = true;
-    STATE.scoreDisplayTime = 5; // Show score for 5 seconds
-
     const caught = STATE.capturedCount || 0;
     const total = fugitives.length;
-    const timeUsed = 90 - Math.max(0, STATE.gameTimerRemaining);
+    const score = Math.min(999, STATE.playerScore); // Cap display at 999
 
-    settings.glassTextRow1 = "GAME OVER";
-    settings.glassTextRow2 = `CAUGHT ${caught} OF ${total}`;
-    settings.glassTextRow3 = `TIME ${formatTimer(timeUsed)}`;
+    // Determine end condition text
+    let endText = "GAME OVER";
+    if (caught >= total) {
+      endText = "ALL CAUGHT!";
+    } else if (STATE.gameTimerRemaining <= 0) {
+      endText = "TIME'S UP!";
+    }
+
+    settings.glassTextRow1 = endText;
+    settings.glassTextRow2 = `SCORE: ${score}`;
+    settings.glassTextRow3 = `CAUGHT ${caught} OF ${total}`;
     settings.glassTextRow4 = "";
+
+    // Check for high score
+    const highScorePosition = checkHighScore(STATE.playerScore);
+    if (highScorePosition >= 0) {
+      // Player made the high score list - start entry mode
+      settings.glassTextRow4 = "NEW HIGH SCORE!";
+      setTimeout(() => {
+        if (STATE.gameState === "GAME_OVER") {
+          startHighScoreEntry(highScorePosition);
+        }
+      }, 1500);
+    } else {
+      // No high score - just display and reset
+      STATE.showingScore = true;
+      STATE.scoreDisplayTime = 5;
+    }
   }
 
   function resetGame() {
@@ -2500,6 +3018,11 @@ const GUI = window.lil.GUI;
     STATE.scoreDisplayTime = 0;
     STATE.capturedCount = 0;
     STATE.activeChaserCount = 0;
+    STATE.playerScore = 0;
+    STATE.fugitiveValue = 250;
+    STATE.enteringHighScore = false;
+    STATE.countdownValue = 3;
+    STATE.countdownTimer = 0;
     settings.gameStarted = false;
 
     // Clear any active capture effects
@@ -2517,12 +3040,6 @@ const GUI = window.lil.GUI;
       effect.flashMat.dispose();
     }
     captureEffects.length = 0;
-
-    // Reset text rows
-    settings.glassTextRow1 = defaultSettings.glassTextRow1;
-    settings.glassTextRow2 = defaultSettings.glassTextRow2;
-    settings.glassTextRow3 = defaultSettings.glassTextRow3;
-    settings.glassTextRow4 = defaultSettings.glassTextRow4;
 
     // Reset fugitives
     for (const f of fugitives) {
@@ -2555,22 +3072,10 @@ const GUI = window.lil.GUI;
       // Re-initialize position
       initActorOnPath(c);
 
-      // Set to passive appearance (10% opacity when not in-play)
-      if (c.isCarModel) {
-        c.mesh.traverse((child) => {
-          if (child.isMesh && child.material) {
-            child.material.opacity = 0.1;
-            child.material.transparent = true;
-          }
-        });
-      } else if (c.material) {
-        c.material.opacity = 0.1;
-        c.material.transparent = true;
-      }
-      if (c.light) {
-        c.light.intensity = settings.chaserLightIntensity * 0.1;
-      }
     }
+
+    // Set back to PRE_GAME state (this will also set chaser opacity to 0.1)
+    setGameState("PRE_GAME");
   }
 
   // ============================================
@@ -3145,25 +3650,34 @@ const GUI = window.lil.GUI;
     const dt = STATE.lastTime ? Math.min(t - STATE.lastTime, 0.05) : 0;
     STATE.lastTime = t;
 
-    if (STATE.loaded && settings.gameStarted && !STATE.gameOver) {
+    // Handle countdown during STARTING state
+    if (STATE.loaded && STATE.gameState === "STARTING") {
+      updateCountdown(dt);
+    }
+
+    // Handle gameplay during PLAYING state
+    if (STATE.loaded && STATE.gameState === "PLAYING" && !STATE.gameOver) {
       // Update game timer
       if (STATE.gameTimerStarted && STATE.gameTimerRemaining > 0) {
         STATE.gameTimerRemaining -= dt;
+
+        // Decrease fugitive value over time (250 points over ~100 seconds = 2.5/sec)
+        STATE.fugitiveValue = Math.max(0, STATE.fugitiveValue - 2.5 * dt);
+
         updateTimerDisplay();
 
         // Time's up!
         if (STATE.gameTimerRemaining <= 0) {
           STATE.gameTimerRemaining = 0;
-          STATE.gameOver = true;
-          showGameScore();
+          setGameState("GAME_OVER");
         }
       }
 
       updateGame(dt);
     }
 
-    // Handle score display countdown and reset
-    if (STATE.showingScore) {
+    // Handle score display countdown and reset (only if not entering high score)
+    if (STATE.showingScore && !STATE.enteringHighScore) {
       STATE.scoreDisplayTime -= dt;
       if (STATE.scoreDisplayTime <= 0) {
         resetGame();
@@ -3256,12 +3770,6 @@ const GUI = window.lil.GUI;
         chaser.active = true;
         STATE.activeChaserCount++;
 
-        // Start game timer when first chaser activates
-        if (!STATE.gameTimerStarted) {
-          STATE.gameTimerStarted = true;
-          STATE.gameTimerRemaining = 90;
-        }
-
         // Initialize on path when first activated
         if (!chaser.currentEdge) {
           initActorOnPath(chaser);
@@ -3271,13 +3779,17 @@ const GUI = window.lil.GUI;
         if (chaser.isCarModel) {
           chaser.mesh.traverse((child) => {
             if (child.isMesh && child.material) {
+              child.material.transparent = true;
               child.material.opacity = 1.0;
-              child.material.transparent = false;
+              child.material.depthWrite = true;
+              child.material.needsUpdate = true;
             }
           });
         } else if (chaser.material) {
-          chaser.material.opacity = 1.0;
           chaser.material.transparent = false;
+          chaser.material.opacity = 1.0;
+          chaser.material.depthWrite = true;
+          chaser.material.needsUpdate = true;
         }
         if (chaser.light) {
           chaser.light.intensity = settings.chaserLightIntensity;
@@ -3346,6 +3858,10 @@ const GUI = window.lil.GUI;
           f.captured = true;
           STATE.capturedCount = (STATE.capturedCount || 0) + 1;
 
+          // Add score based on current fugitive value
+          const points = Math.max(0, Math.floor(STATE.fugitiveValue));
+          STATE.playerScore += points;
+
           // Get chaser color for the effect
           const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
           const chaserColor = chaserColors[i] || "#ffffff";
@@ -3371,8 +3887,7 @@ const GUI = window.lil.GUI;
     }
 
     if (STATE.capturedCount >= fugitives.length && !STATE.gameOver) {
-      STATE.gameOver = true;
-      showGameScore();
+      setGameState("GAME_OVER");
     }
   }
 
@@ -4146,9 +4661,10 @@ const GUI = window.lil.GUI;
               child.material = new THREE.MeshStandardMaterial({
                 color: color,
                 emissive: color,
-                emissiveIntensity: 0.3,
+                emissiveIntensity: 0.05,
                 transparent: true,
-                opacity: 0.5,
+                opacity: 0.1,
+                depthWrite: false,
               });
             }
           });
@@ -4159,9 +4675,10 @@ const GUI = window.lil.GUI;
           const material = new THREE.MeshStandardMaterial({
             color: color,
             emissive: color,
-            emissiveIntensity: 0.3,
+            emissiveIntensity: 0.05,
             transparent: true,
             opacity: 0.1,
+            depthWrite: false,
           });
           mesh = new THREE.Mesh(chaserGeo, material);
           mesh.castShadow = true;
@@ -4214,7 +4731,8 @@ const GUI = window.lil.GUI;
         chasers.push(chaserObj);
       }
 
-      // Don't initialize chasers on path yet - wait until they're activated
+      // Set initial low opacity for all chasers (PRE_GAME state)
+      setChasersOpacity(0.1);
     });
 
     STATE.findNearestRoadPoint = findNearestRoadPoint;
@@ -4239,9 +4757,28 @@ const GUI = window.lil.GUI;
     if (DEBUG) console.log("Path graph ready");
     setupGLBPartsGUI();
 
-    // Apply initial settings after GUI is set up
+    // Ensure glass text is always enabled and static (no marquee)
+    settings.glassEnabled = true;
+    settings.glassTextMarquee = false;
+    settings.glassTextShuffle = false;
+    for (const mesh of glassMeshes) {
+      mesh.visible = true;
+    }
 
-    statusEl.textContent = "Ready! Click 'Start Game' in the GUI.";
+    // Initialize projection plane
+    initProjectionPlane();
+
+    // Initialize game state to PRE_GAME
+    setGameState("PRE_GAME");
+
+    // Ensure text renders after fonts are loaded (slight delay for safety)
+    setTimeout(() => {
+      if (STATE.gameState === "PRE_GAME") {
+        setGameState("PRE_GAME"); // Re-apply to ensure text is visible
+      }
+    }, 100);
+
+    statusEl.textContent = "Ready! Press any movement key to start.";
   }).catch((err) => {
     console.error("Error loading GLB files", err);
     statusEl.textContent = "Failed to load GLB files (see console).";
