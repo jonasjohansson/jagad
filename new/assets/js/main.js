@@ -1242,9 +1242,6 @@ const GUI = window.lil.GUI;
     fugitiveFolder.addColor(settings, "fugitiveColor").name("Light Color").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Light Intensity").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
-    fugitiveFolder.add(settings, "motionTrailsEnabled").name("Motion Trails");
-    fugitiveFolder.add(settings, "motionTrailsLength", 5, 50, 1).name("Trail Length");
-    fugitiveFolder.add(settings, "motionTrailsOpacity", 0.1, 1, 0.05).name("Trail Opacity");
     fugitiveFolder.close();
 
     const chaserFolder = actorsFolder.addFolder("Chasers");
@@ -1660,7 +1657,6 @@ const GUI = window.lil.GUI;
 
   let dustParticles = null;
   let cloudShadowPlane = null;
-  let motionTrails = [];
 
   function initDustParticles() {
     if (dustParticles) {
@@ -1800,105 +1796,6 @@ const GUI = window.lil.GUI;
     cloudShadowPlane.material.map.offset.y += speed * dt * 0.05;
   }
 
-  // Motion trails for fugitives - creates glowing trail behind them
-  function updateMotionTrails(dt) {
-    if (!settings.motionTrailsEnabled || !fugitives || fugitives.length === 0) {
-      // Hide existing trail meshes
-      for (const trail of motionTrails) {
-        if (trail.line) trail.line.visible = false;
-      }
-      return;
-    }
-
-    const maxLen = settings.motionTrailsLength;
-
-    for (let i = 0; i < fugitives.length; i++) {
-      const fugitive = fugitives[i];
-      if (!fugitive.mesh || !fugitive.mesh.visible) continue;
-
-      // Find or create trail for this fugitive
-      let trail = motionTrails.find(t => t.fugitiveIndex === i);
-      if (!trail) {
-        // Create a line with enough vertices for the trail
-        const positions = new Float32Array(maxLen * 3);
-        const colors = new Float32Array(maxLen * 3);
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-        const material = new THREE.LineBasicMaterial({
-          vertexColors: true,
-          transparent: true,
-          opacity: settings.motionTrailsOpacity,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          linewidth: 2
-        });
-
-        const line = new THREE.Line(geometry, material);
-        scene.add(line);
-
-        trail = {
-          fugitiveIndex: i,
-          points: [],
-          line: line
-        };
-        motionTrails.push(trail);
-      }
-
-      trail.line.visible = true;
-      trail.line.material.opacity = settings.motionTrailsOpacity;
-
-      // Get current position
-      const pos = fugitive.mesh.position.clone();
-      pos.y += 0.2;
-
-      // Only add point if moved enough (avoids bunching when stationary)
-      const lastPoint = trail.points[0];
-      if (!lastPoint || pos.distanceTo(lastPoint) > 0.05) {
-        trail.points.unshift(pos);
-      }
-
-      // Limit trail length
-      while (trail.points.length > maxLen) {
-        trail.points.pop();
-      }
-
-      // Update line geometry
-      const positions = trail.line.geometry.attributes.position.array;
-      const colors = trail.line.geometry.attributes.color.array;
-      const trailColor = new THREE.Color(settings.fugitiveColor);
-
-      for (let j = 0; j < maxLen; j++) {
-        if (j < trail.points.length) {
-          const p = trail.points[j];
-          positions[j * 3] = p.x;
-          positions[j * 3 + 1] = p.y;
-          positions[j * 3 + 2] = p.z;
-
-          // Fade color along trail
-          const fade = 1 - j / trail.points.length;
-          colors[j * 3] = trailColor.r * fade;
-          colors[j * 3 + 1] = trailColor.g * fade;
-          colors[j * 3 + 2] = trailColor.b * fade;
-        } else {
-          // Hide unused vertices by placing at last known position
-          const lastP = trail.points[trail.points.length - 1] || pos;
-          positions[j * 3] = lastP.x;
-          positions[j * 3 + 1] = lastP.y;
-          positions[j * 3 + 2] = lastP.z;
-          colors[j * 3] = 0;
-          colors[j * 3 + 1] = 0;
-          colors[j * 3 + 2] = 0;
-        }
-      }
-
-      trail.line.geometry.attributes.position.needsUpdate = true;
-      trail.line.geometry.attributes.color.needsUpdate = true;
-      trail.line.geometry.setDrawRange(0, trail.points.length);
-    }
-  }
-
   function initAtmosphere() {
     initDustParticles();
     initCloudShadows();
@@ -1912,7 +1809,6 @@ const GUI = window.lil.GUI;
   function updateAtmosphere(dt) {
     updateDustParticles(dt);
     updateCloudShadows(dt);
-    updateMotionTrails(dt);
 
     // Update cyberpunk shader time
     if (composer && composer.cyberpunkPass) {
@@ -3252,7 +3148,9 @@ const GUI = window.lil.GUI;
 
       if (!chaser.active) continue;
 
-      chaser.speed = settings.chaserSpeed + chaserSpeedBonus;
+      // Triple speed when holding space
+      const spaceBoost = keys.has(" ") ? 3 : 1;
+      chaser.speed = (settings.chaserSpeed + chaserSpeedBonus) * spaceBoost;
 
       // Handle input for path-based movement
       if (inputDir.hasInput && chaser.currentEdge) {
