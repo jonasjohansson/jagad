@@ -1242,6 +1242,9 @@ const GUI = window.lil.GUI;
     fugitiveFolder.addColor(settings, "fugitiveColor").name("Light Color").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Light Intensity").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
+    fugitiveFolder.add(settings, "motionTrailsEnabled").name("Motion Trails");
+    fugitiveFolder.add(settings, "motionTrailsLength", 5, 50, 1).name("Trail Length");
+    fugitiveFolder.add(settings, "motionTrailsOpacity", 0.1, 1, 0.05).name("Trail Opacity");
     fugitiveFolder.close();
 
     const chaserFolder = actorsFolder.addFolder("Chasers");
@@ -1251,9 +1254,6 @@ const GUI = window.lil.GUI;
     chaserFolder.addColor(settings, "chaser4Color").name("Chaser 4 Color").onChange(updateChaserLights);
     chaserFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Light Intensity").onChange(updateChaserLights);
     chaserFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Height Offset");
-    chaserFolder.add(settings, "motionTrailsEnabled").name("Motion Trails");
-    chaserFolder.add(settings, "motionTrailsLength", 3, 20, 1).name("Trail Length");
-    chaserFolder.add(settings, "motionTrailsOpacity", 0.1, 1, 0.05).name("Trail Opacity");
     chaserFolder.close();
 
     const wireFolder = actorsFolder.addFolder("Face Billboards");
@@ -1405,7 +1405,8 @@ const GUI = window.lil.GUI;
     cameraFolder.add(settings, "perspFov", 20, 120, 1).name("Persp FOV").onChange((v) => {
       if (perspCamera) { perspCamera.fov = v; perspCamera.updateProjectionMatrix(); }
     });
-    cameraFolder.add(settings, "perspPosY", 0, 500, 0.01).name("Persp Height").onChange(updatePerspCameraPos);
+    cameraFolder.add(settings, "perspPosY", 0, 500, 0.1).name("Persp Height").onChange(updatePerspCameraPos);
+    cameraFolder.add(settings, "perspPosZ", -50, 50, 0.1).name("Persp Distance").onChange(updatePerspCameraPos);
     cameraFolder.close();
 
     const lightsFolder = sceneFolder.addFolder("Lighting");
@@ -1799,78 +1800,102 @@ const GUI = window.lil.GUI;
     cloudShadowPlane.material.map.offset.y += speed * dt * 0.05;
   }
 
-  // Motion trails for actors - creates glowing ribbon trails
+  // Motion trails for fugitives - creates glowing trail behind them
   function updateMotionTrails(dt) {
-    if (!settings.motionTrailsEnabled || !chasers || chasers.length === 0) {
-      // Clean up existing trails
+    if (!settings.motionTrailsEnabled || !fugitives || fugitives.length === 0) {
+      // Hide existing trail meshes
       for (const trail of motionTrails) {
-        if (trail.meshes) {
-          for (const m of trail.meshes) {
-            scene.remove(m);
-            m.geometry.dispose();
-            m.material.dispose();
-          }
-        }
+        if (trail.line) trail.line.visible = false;
       }
-      motionTrails = [];
       return;
     }
 
-    // Add trail points for active chasers
-    for (let i = 0; i < chasers.length; i++) {
-      const chaser = chasers[i];
-      if (!chaser.active || !chaser.mesh) continue;
+    const maxLen = settings.motionTrailsLength;
 
-      // Find or create trail for this chaser
-      let trail = motionTrails.find(t => t.chaserIndex === i);
+    for (let i = 0; i < fugitives.length; i++) {
+      const fugitive = fugitives[i];
+      if (!fugitive.mesh || !fugitive.mesh.visible) continue;
+
+      // Find or create trail for this fugitive
+      let trail = motionTrails.find(t => t.fugitiveIndex === i);
       if (!trail) {
-        const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+        // Create a line with enough vertices for the trail
+        const positions = new Float32Array(maxLen * 3);
+        const colors = new Float32Array(maxLen * 3);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: settings.motionTrailsOpacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          linewidth: 2
+        });
+
+        const line = new THREE.Line(geometry, material);
+        scene.add(line);
+
         trail = {
-          chaserIndex: i,
-          color: new THREE.Color(chaserColors[i]),
+          fugitiveIndex: i,
           points: [],
-          meshes: []
+          line: line
         };
         motionTrails.push(trail);
       }
 
-      // Add current position
-      const pos = chaser.mesh.position.clone();
-      pos.y += 0.3;
-      trail.points.unshift(pos);
+      trail.line.visible = true;
+      trail.line.material.opacity = settings.motionTrailsOpacity;
+
+      // Get current position
+      const pos = fugitive.mesh.position.clone();
+      pos.y += 0.2;
+
+      // Only add point if moved enough (avoids bunching when stationary)
+      const lastPoint = trail.points[0];
+      if (!lastPoint || pos.distanceTo(lastPoint) > 0.05) {
+        trail.points.unshift(pos);
+      }
 
       // Limit trail length
-      const maxLen = settings.motionTrailsLength;
       while (trail.points.length > maxLen) {
         trail.points.pop();
       }
 
-      // Remove old meshes
-      for (const m of trail.meshes) {
-        scene.remove(m);
-        m.geometry.dispose();
-        m.material.dispose();
-      }
-      trail.meshes = [];
+      // Update line geometry
+      const positions = trail.line.geometry.attributes.position.array;
+      const colors = trail.line.geometry.attributes.color.array;
+      const trailColor = new THREE.Color(settings.fugitiveColor);
 
-      // Create spheres along the trail for visibility
-      for (let j = 0; j < trail.points.length; j++) {
-        const opacity = settings.motionTrailsOpacity * (1 - j / maxLen);
-        const scale = 0.15 * (1 - j / maxLen * 0.5);
+      for (let j = 0; j < maxLen; j++) {
+        if (j < trail.points.length) {
+          const p = trail.points[j];
+          positions[j * 3] = p.x;
+          positions[j * 3 + 1] = p.y;
+          positions[j * 3 + 2] = p.z;
 
-        const geo = new THREE.SphereGeometry(scale, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({
-          color: trail.color,
-          transparent: true,
-          opacity: opacity,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false
-        });
-        const sphere = new THREE.Mesh(geo, mat);
-        sphere.position.copy(trail.points[j]);
-        scene.add(sphere);
-        trail.meshes.push(sphere);
+          // Fade color along trail
+          const fade = 1 - j / trail.points.length;
+          colors[j * 3] = trailColor.r * fade;
+          colors[j * 3 + 1] = trailColor.g * fade;
+          colors[j * 3 + 2] = trailColor.b * fade;
+        } else {
+          // Hide unused vertices by placing at last known position
+          const lastP = trail.points[trail.points.length - 1] || pos;
+          positions[j * 3] = lastP.x;
+          positions[j * 3 + 1] = lastP.y;
+          positions[j * 3 + 2] = lastP.z;
+          colors[j * 3] = 0;
+          colors[j * 3 + 1] = 0;
+          colors[j * 3 + 2] = 0;
+        }
       }
+
+      trail.line.geometry.attributes.position.needsUpdate = true;
+      trail.line.geometry.attributes.color.needsUpdate = true;
+      trail.line.geometry.setDrawRange(0, trail.points.length);
     }
   }
 
@@ -2339,20 +2364,22 @@ const GUI = window.lil.GUI;
       }
       this.line.geometry.attributes.position.needsUpdate = true;
 
-      // Billboard position: start at actor, offset toward center (clamped by maxDist)
-      let billboardX = actorPos.x;
-      let billboardZ = actorPos.z;
-
-      // Calculate offset toward center
+      // Billboard position: pull toward center based on centerPull setting
       const toCenterX = center.x - actorPos.x;
       const toCenterZ = center.z - actorPos.z;
-      const toCenterDist = Math.sqrt(toCenterX * toCenterX + toCenterZ * toCenterZ);
+      let billboardX = actorPos.x + toCenterX * centerPull;
+      let billboardZ = actorPos.z + toCenterZ * centerPull;
 
-      if (toCenterDist > 0.01 && maxDist > 0) {
-        // Offset toward center, limited by maxDist
-        const pullStrength = Math.min(maxDist, toCenterDist * centerPull);
-        billboardX = actorPos.x + (toCenterX / toCenterDist) * pullStrength;
-        billboardZ = actorPos.z + (toCenterZ / toCenterDist) * pullStrength;
+      // Optionally limit distance from actor if maxDist > 0
+      if (maxDist > 0) {
+        const dx = billboardX - actorPos.x;
+        const dz = billboardZ - actorPos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > maxDist) {
+          const scale = maxDist / dist;
+          billboardX = actorPos.x + dx * scale;
+          billboardZ = actorPos.z + dz * scale;
+        }
       }
 
       this.billboard.position.set(billboardX, actorPos.y + totalHeight, billboardZ);

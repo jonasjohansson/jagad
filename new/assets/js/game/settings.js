@@ -51,7 +51,7 @@ export const defaultSettings = {
   wireIterations: 3,
   wireCubeSize: 2,
   billboardBrightness: 0.6,
-  billboardCenterPull: 0.7,
+  billboardCenterPull: 0.01,
   billboardMaxDistance: 0,
   showNavmesh: false,
   buildingEnabled: true,
