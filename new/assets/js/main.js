@@ -1648,154 +1648,10 @@ const GUI = window.lil.GUI;
   };
 
   // ============================================
-  // ATMOSPHERE SYSTEMS (Dust, Cloud Shadows)
+  // ATMOSPHERE SYSTEMS
   // ============================================
 
-  let dustParticles = null;
-  let cloudShadowPlane = null;
-
-  function initDustParticles() {
-    if (dustParticles) {
-      scene.remove(dustParticles);
-      dustParticles.geometry.dispose();
-      dustParticles.material.dispose();
-    }
-
-    const count = settings.dustCount;
-    const positions = new Float32Array(count * 3);
-    const velocities = [];
-    const bounds = STATE.horizontalSize || 20;
-
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * bounds;
-      positions[i * 3 + 1] = Math.random() * 8 + 0.5;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * bounds;
-      velocities.push({
-        x: (Math.random() - 0.5) * 0.2,
-        y: (Math.random() - 0.5) * 0.1,
-        z: (Math.random() - 0.5) * 0.2
-      });
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-    const material = new THREE.PointsMaterial({
-      size: 0.05,
-      color: 0xffffff,
-      transparent: true,
-      opacity: settings.dustOpacity,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-
-    dustParticles = new THREE.Points(geometry, material);
-    dustParticles.userData.velocities = velocities;
-    dustParticles.visible = settings.dustEnabled;
-    scene.add(dustParticles);
-  }
-
-  function updateDustParticles(dt) {
-    if (!dustParticles || !settings.dustEnabled) {
-      if (dustParticles) dustParticles.visible = false;
-      return;
-    }
-    dustParticles.visible = true;
-    dustParticles.material.opacity = settings.dustOpacity;
-
-    const positions = dustParticles.geometry.attributes.position.array;
-    const velocities = dustParticles.userData.velocities;
-    const bounds = (STATE.horizontalSize || 20) / 2;
-    const time = performance.now() * 0.001;
-
-    for (let i = 0; i < velocities.length; i++) {
-      const vel = velocities[i];
-      // Add subtle wind movement
-      positions[i * 3] += (vel.x + Math.sin(time + i) * 0.05) * dt;
-      positions[i * 3 + 1] += vel.y * dt;
-      positions[i * 3 + 2] += (vel.z + Math.cos(time + i * 0.7) * 0.05) * dt;
-
-      // Wrap around bounds
-      if (positions[i * 3] > bounds) positions[i * 3] = -bounds;
-      if (positions[i * 3] < -bounds) positions[i * 3] = bounds;
-      if (positions[i * 3 + 1] > 10) positions[i * 3 + 1] = 0.5;
-      if (positions[i * 3 + 1] < 0.5) positions[i * 3 + 1] = 10;
-      if (positions[i * 3 + 2] > bounds) positions[i * 3 + 2] = -bounds;
-      if (positions[i * 3 + 2] < -bounds) positions[i * 3 + 2] = bounds;
-    }
-    dustParticles.geometry.attributes.position.needsUpdate = true;
-  }
-
-  function initCloudShadows() {
-    if (cloudShadowPlane) {
-      scene.remove(cloudShadowPlane);
-      cloudShadowPlane.geometry.dispose();
-      cloudShadowPlane.material.dispose();
-    }
-
-    // Create a large plane with animated noise for cloud shadows
-    const size = 100;
-    const geometry = new THREE.PlaneGeometry(size, size);
-
-    // Create a canvas-based cloud texture
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-
-    // Generate perlin-like noise pattern
-    const imageData = ctx.createImageData(512, 512);
-    for (let y = 0; y < 512; y++) {
-      for (let x = 0; x < 512; x++) {
-        const i = (y * 512 + x) * 4;
-        // Simple noise approximation
-        const noise = Math.sin(x * 0.02) * Math.cos(y * 0.02) * 0.5 +
-                     Math.sin(x * 0.05 + y * 0.03) * 0.3 +
-                     Math.sin(x * 0.01 - y * 0.02) * 0.2;
-        const value = Math.floor((noise + 1) * 0.5 * 255);
-        imageData.data[i] = 0;
-        imageData.data[i + 1] = 0;
-        imageData.data[i + 2] = 0;
-        imageData.data[i + 3] = value;
-      }
-    }
-    ctx.putImageData(imageData, 0, 0);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(2, 2);
-
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: settings.cloudShadowsOpacity,
-      blending: THREE.MultiplyBlending,
-      depthWrite: false
-    });
-
-    cloudShadowPlane = new THREE.Mesh(geometry, material);
-    cloudShadowPlane.rotation.x = -Math.PI / 2;
-    cloudShadowPlane.position.y = 0.02;
-    cloudShadowPlane.visible = settings.cloudShadowsEnabled;
-    scene.add(cloudShadowPlane);
-  }
-
-  function updateCloudShadows(dt) {
-    if (!cloudShadowPlane) return;
-    cloudShadowPlane.visible = settings.cloudShadowsEnabled;
-    if (!settings.cloudShadowsEnabled) return;
-
-    cloudShadowPlane.material.opacity = settings.cloudShadowsOpacity;
-    const speed = settings.cloudShadowsSpeed;
-    cloudShadowPlane.material.map.offset.x += speed * dt * 0.1;
-    cloudShadowPlane.material.map.offset.y += speed * dt * 0.05;
-  }
-
   function initAtmosphere() {
-    initDustParticles();
-    initCloudShadows();
-
     // Initialize fog
     if (settings.fogEnabled) {
       scene.fog = new THREE.Fog(settings.fogColor, settings.fogNear, settings.fogFar);
@@ -1803,9 +1659,6 @@ const GUI = window.lil.GUI;
   }
 
   function updateAtmosphere(dt) {
-    updateDustParticles(dt);
-    updateCloudShadows(dt);
-
     // Update cyberpunk shader time
     if (composer && composer.cyberpunkPass) {
       composer.cyberpunkPass.uniforms['time'].value = performance.now() * 0.001;
