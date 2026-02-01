@@ -1435,10 +1435,6 @@ const GUI = window.lil.GUI;
     atmosphereFolder.addColor(settings, "fogColor").name("Fog Color").onChange(updatePostProcessing);
     atmosphereFolder.add(settings, "fogNear", 1, 50, 1).name("Fog Near").onChange(updatePostProcessing);
     atmosphereFolder.add(settings, "fogFar", 10, 100, 1).name("Fog Far").onChange(updatePostProcessing);
-    atmosphereFolder.add(settings, "dustEnabled").name("Dust Particles");
-    atmosphereFolder.add(settings, "dustOpacity", 0, 1, 0.05).name("Dust Opacity");
-    atmosphereFolder.add(settings, "cloudShadowsEnabled").name("Cloud Shadows");
-    atmosphereFolder.add(settings, "cloudShadowsOpacity", 0, 0.6, 0.05).name("Shadow Opacity");
     atmosphereFolder.close();
 
     envFolder.close();
