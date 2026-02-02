@@ -114,6 +114,7 @@ export const defaultSettings = {
   glassTextLineHeight: 2.1,
   glassTextFont: "BankGothic",
   glassTextColor: "#ffffff",
+  glassTextBrightness: 2,
   glassTextAlign: "center",
   glassTextOffsetX: -47,
   glassTextOffsetY: -254.1,
@@ -164,6 +165,8 @@ export const defaultSettings = {
   helicopterConeHeight: 30,
   helicopterConeTopRadius: 0.1,
   helicopterConeBottomRadius: 5,
+  helicopterSearchlightSway: 1.5,
+  helicopterSearchlightSpeed: 0.7,
   // Helicopter boundary limits
   helicopterBoundsMinX: -4.5,
   helicopterBoundsMaxX: 4.5,

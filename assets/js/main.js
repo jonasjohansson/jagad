@@ -273,9 +273,9 @@ const GUI = window.lil.GUI;
       const bottomRadius = settings.helicopterConeBottomRadius;
       const coneOffsetY = settings.helicopterConeOffsetY;
 
-      // Create a group to hold multiple cone layers
+      // Create a group to hold multiple cone layers - pivot point at top
       const lightCone = new THREE.Group();
-      lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
+      lightCone.position.set(0, -coneOffsetY, 0);
 
       // Create multiple layers for fuzzy effect
       const layerCount = 5;
@@ -329,6 +329,7 @@ const GUI = window.lil.GUI;
         });
 
         const layerMesh = new THREE.Mesh(coneGeo, coneMat);
+        layerMesh.position.y = -coneHeight / 2; // Offset down so pivot is at top
         layerMesh.castShadow = false;
         layerMesh.receiveShadow = false;
         lightCone.add(layerMesh);
@@ -460,9 +461,28 @@ const GUI = window.lil.GUI;
       helicopter.light.angle = (settings.helicopterLightAngle * Math.PI) / 180;
     }
 
-    // Update light cone appearance
+    // Animate searchlight sway
+    const swayAmount = settings.helicopterSearchlightSway || 0;
+    const swaySpeed = settings.helicopterSearchlightSpeed || 0.5;
+    const swayX = Math.sin(time * swaySpeed) * swayAmount;
+    const swayZ = Math.cos(time * swaySpeed * 1.3) * swayAmount * 0.7;
+
+    // Move the spotlight target
+    if (helicopter.lightTarget) {
+      helicopter.lightTarget.position.set(swayX, -10, swayZ);
+    }
+
+    // Update light cone appearance and rotation to follow searchlight
     if (helicopter.lightCone) {
       helicopter.lightCone.visible = settings.helicopterVolumetric;
+
+      // Point cone toward the light target direction
+      // The cone points down by default (-Y), we need to rotate it to match the light direction
+      const targetDir = new THREE.Vector3(swayX, -10, swayZ).normalize();
+      const defaultDir = new THREE.Vector3(0, -1, 0);
+      const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultDir, targetDir);
+      helicopter.lightCone.quaternion.copy(quaternion);
+
       // Update all layers
       if (helicopter.lightCone.userData.layers) {
         helicopter.lightCone.userData.layers.forEach((layer, i) => {
@@ -498,9 +518,9 @@ const GUI = window.lil.GUI;
     const bottomRadius = settings.helicopterConeBottomRadius;
     const coneOffsetY = settings.helicopterConeOffsetY;
 
-    // Create new group
+    // Create new group - pivot point at top
     const lightCone = new THREE.Group();
-    lightCone.position.set(0, -coneOffsetY - coneHeight / 2, 0);
+    lightCone.position.set(0, -coneOffsetY, 0);
 
     const layerCount = 5;
     const coneLayers = [];
@@ -545,6 +565,7 @@ const GUI = window.lil.GUI;
       });
 
       const layerMesh = new THREE.Mesh(coneGeo, coneMat);
+      layerMesh.position.y = -coneHeight / 2; // Offset down so pivot is at top
       layerMesh.castShadow = false;
       layerMesh.receiveShadow = false;
       lightCone.add(layerMesh);
@@ -590,6 +611,7 @@ const GUI = window.lil.GUI;
   // ============================================
 
   let glassMeshes = [];
+  let glassMaterials = [];
   let glassCanvas = null;
   let glassContext = null;
   let glassTexture = null;
@@ -763,6 +785,10 @@ const GUI = window.lil.GUI;
     ctx.translate(0, h);
     ctx.scale(1, -1);
 
+    // Compensation factor for text brightness (darken background so material brightness only boosts text)
+    const textBrightness = settings.glassTextBrightness || 1;
+    const bgCompensation = textBrightness > 1 ? 1 - (1 / textBrightness) : 0;
+
     // Draw video background if available and enabled, otherwise solid color
     if (settings.glassVideoEnabled && glassVideo && glassVideoReady && glassVideo.readyState >= 2) {
       // Draw video frame scaled to fill canvas
@@ -793,10 +819,22 @@ const GUI = window.lil.GUI;
       // Darkening overlay for text readability
       ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity * 0.5})`;
       ctx.fillRect(0, 0, w, h);
+
+      // Compensate for text brightness boost (darken background)
+      if (bgCompensation > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${bgCompensation})`;
+        ctx.fillRect(0, 0, w, h);
+      }
     } else {
       // Fallback solid background
       ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity})`;
       ctx.fillRect(0, 0, w, h);
+
+      // Compensate for text brightness boost (darken background)
+      if (bgCompensation > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${bgCompensation})`;
+        ctx.fillRect(0, 0, w, h);
+      }
     }
 
     // Calculate dt for shuffle effect
@@ -1010,19 +1048,33 @@ const GUI = window.lil.GUI;
     glassMeshes = meshes;
     initGlassCanvas();
 
+    glassMaterials = [];
+    const brightness = settings.glassTextBrightness || 1;
     for (const mesh of glassMeshes) {
-      // Replace the material with one that uses our canvas texture
+      // Use BasicMaterial with toneMapped:false to allow brightness > 1
       const glassMaterial = new THREE.MeshBasicMaterial({
         map: glassTexture,
+        color: new THREE.Color(brightness, brightness, brightness),
         transparent: true,
         opacity: 1.0,
         side: THREE.DoubleSide,
         depthWrite: false,
+        toneMapped: false,
       });
 
       mesh.material = glassMaterial;
       mesh.renderOrder = 999; // Render on top
+      glassMaterials.push(glassMaterial);
     }
+  }
+
+  function updateGlassBrightness() {
+    const brightness = settings.glassTextBrightness || 1;
+    for (const mat of glassMaterials) {
+      mat.color.setRGB(brightness, brightness, brightness);
+    }
+    // Re-render canvas to compensate background
+    updateGlassCanvas();
   }
 
   // ============================================
@@ -2050,6 +2102,7 @@ const GUI = window.lil.GUI;
     textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
     textFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextBrightness", 1, 10, 0.5).name("Brightness").onChange(() => updateGlassBrightness());
     textFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextOffsetX", -500, 500, 0.1).name("Offset X").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextOffsetY", -500, 500, 0.1).name("Offset Y").onChange(() => updateGlassCanvas());
@@ -2087,6 +2140,8 @@ const GUI = window.lil.GUI;
     helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Spotlight Intensity");
     helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
     helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
+    helicopterFolder.add(settings, "helicopterSearchlightSway", 0, 5, 0.1).name("Searchlight Sway");
+    helicopterFolder.add(settings, "helicopterSearchlightSpeed", 0.1, 2, 0.1).name("Sway Speed");
     helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
     helicopterFolder.add(settings, "helicopterVolumetricOpacity", 0, 1, 0.01).name("Cone Opacity").onChange((v) => {
       if (helicopter && helicopter.lightCone && helicopter.lightCone.userData.layers) {
