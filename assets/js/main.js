@@ -1781,10 +1781,10 @@ const GUI = window.lil.GUI;
 
     // ==================== GAME ====================
     const gameFolder = guiLeft.addFolder("🎮 Game");
-    gameFolder.add(settings, "fugitiveSpeed", 0.1, 15, 0.1).name("Fugitive Speed").onChange((v) => {
+    gameFolder.add(settings, "fugitiveSpeed", 0.1, 4, 0.1).name("Fugitive Speed").onChange((v) => {
       for (const f of fugitives) f.speed = v;
     });
-    gameFolder.add(settings, "chaserSpeed", 0.1, 15, 0.1).name("Chaser Speed").onChange((v) => {
+    gameFolder.add(settings, "chaserSpeed", 0.1, 4, 0.1).name("Chaser Speed").onChange((v) => {
       for (const c of chasers) c.speed = v;
     });
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
