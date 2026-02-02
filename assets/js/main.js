@@ -1741,6 +1741,27 @@ const GUI = window.lil.GUI;
     // Settings controls at the top
     guiLeft.add(settings, "saveSettings").name("💾 Save Settings");
     guiLeft.add(settings, "clearSettings").name("🗑️ Clear Settings");
+    guiLeft.add({ clearCache: async function() {
+      if (confirm("Clear all browser cache and reload?")) {
+        try {
+          // Clear Cache Storage
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+          }
+          // Unregister service workers
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(reg => reg.unregister()));
+          }
+          // Force reload bypassing cache
+          window.location.reload(true);
+        } catch (e) {
+          console.error("Failed to clear cache:", e);
+          window.location.reload(true);
+        }
+      }
+    }}, "clearCache").name("🔄 Clear Cache");
     guiLeft.add({ showInfo: function() {
       alert(
         "JAGAD - The Chase Game\n\n" +
