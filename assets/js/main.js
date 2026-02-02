@@ -3388,9 +3388,7 @@ const GUI = window.lil.GUI;
       time: 0,
       duration: 4.0,
       pulseSpeed: 12,
-      pulseWidth: 2.5,
-      rippleCount: 3,
-      rippleSpacing: 4
+      pulseWidth: 1.2
     });
   }
 
@@ -3417,32 +3415,22 @@ const GUI = window.lil.GUI;
         continue;
       }
 
-      // Animate grid pulse traveling along roads - multiple concentric ripples
-      const baseRadius = effect.time * effect.pulseSpeed;
-      // Fade out in the last 40% of duration
-      const fadeOut = t > 0.6 ? (t - 0.6) / 0.4 : 0;
+      // Animate grid pulse traveling along roads - single smooth wave
+      const pulseRadius = effect.time * effect.pulseSpeed;
+      // Fade out in the last 30% of duration
+      const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
 
       for (const gl of effect.gridLines) {
-        let totalIntensity = 0;
+        const distFromPulse = Math.abs(gl.distance - pulseRadius);
 
-        // Calculate intensity from multiple ripple waves
-        for (let r = 0; r < effect.rippleCount; r++) {
-          const rippleRadius = baseRadius - r * effect.rippleSpacing;
-          if (rippleRadius < 0) continue;
-
-          const distFromRipple = Math.abs(gl.distance - rippleRadius);
-          if (distFromRipple < effect.pulseWidth) {
-            // Smooth Gaussian-like falloff
-            const normalizedDist = distFromRipple / effect.pulseWidth;
-            const gaussian = Math.exp(-normalizedDist * normalizedDist * 3);
-            // Each successive ripple is dimmer
-            const rippleFade = 1 - (r / effect.rippleCount) * 0.6;
-            totalIntensity += gaussian * rippleFade;
-          }
+        if (distFromPulse < effect.pulseWidth) {
+          // Smooth Gaussian falloff for clean wave appearance
+          const normalizedDist = distFromPulse / effect.pulseWidth;
+          const intensity = Math.exp(-normalizedDist * normalizedDist * 4);
+          gl.material.opacity = intensity * (1 - fadeOut);
+        } else {
+          gl.material.opacity = 0;
         }
-
-        // Clamp and apply fade
-        gl.material.opacity = Math.min(1, totalIntensity) * (1 - fadeOut);
       }
 
       // Animate particles with physics
