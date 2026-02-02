@@ -2009,6 +2009,14 @@ const GUI = window.lil.GUI;
         }
       }
     });
+    billboardFolder.add(settings, "billboardContrast", 0.5, 3, 0.1).name("Contrast").onChange((v) => {
+      for (const wire of fugitiveWires) {
+        if (wire.billboard && wire.billboard.material && wire.billboard.material.userData) {
+          wire.billboard.material.userData.contrast = v;
+          wire.billboard.material.needsUpdate = true;
+        }
+      }
+    });
     billboardFolder.add(settings, "billboardCenterPull", 0, 1, 0.05).name("Center Pull");
     billboardFolder.close();
 
@@ -2978,6 +2986,35 @@ const GUI = window.lil.GUI;
         roughness: 1.0,
         metalness: 0.0
       });
+
+      // Add contrast adjustment via shader modification
+      billboardMat.userData.contrast = settings.billboardContrast;
+      billboardMat.onBeforeCompile = (shader) => {
+        shader.uniforms.contrast = { value: settings.billboardContrast };
+        billboardMat.userData.shader = shader;
+
+        // Inject contrast uniform
+        shader.fragmentShader = shader.fragmentShader.replace(
+          'void main() {',
+          'uniform float contrast;\nvoid main() {'
+        );
+
+        // Apply contrast to the final color
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <dithering_fragment>',
+          `gl_FragColor.rgb = (gl_FragColor.rgb - 0.5) * contrast + 0.5;
+          #include <dithering_fragment>`
+        );
+      };
+
+      // Update contrast uniform when material needs update
+      const originalOnBeforeRender = billboardMat.onBeforeRender;
+      billboardMat.onBeforeRender = function() {
+        if (this.userData.shader) {
+          this.userData.shader.uniforms.contrast.value = settings.billboardContrast;
+        }
+        if (originalOnBeforeRender) originalOnBeforeRender.apply(this, arguments);
+      };
       this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
       this.billboard.rotation.x = -Math.PI / 2;
       this.billboard.castShadow = false;
