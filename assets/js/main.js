@@ -1886,6 +1886,21 @@ const GUI = window.lil.GUI;
     fugitiveFolder.addColor(settings, "fugitiveColor").name("Light Color").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Light Intensity").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
+
+    const billboardFolder = fugitiveFolder.addFolder("Face Billboards");
+    billboardFolder.add(settings, "wireEnabled").name("Enabled");
+    billboardFolder.add(settings, "wireHeight", 0.1, 5, 0.1).name("Wire Height");
+    billboardFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
+    billboardFolder.add(settings, "billboardBrightness", 0, 1, 0.05).name("Brightness").onChange((v) => {
+      for (const wire of fugitiveWires) {
+        if (wire.billboard && wire.billboard.material) {
+          wire.billboard.material.color.setRGB(v, v, v);
+        }
+      }
+    });
+    billboardFolder.add(settings, "billboardCenterPull", 0, 1, 0.05).name("Center Pull");
+    billboardFolder.close();
+
     fugitiveFolder.close();
 
     const chaserFolder = actorsFolder.addFolder("Chasers");
@@ -1896,20 +1911,6 @@ const GUI = window.lil.GUI;
     chaserFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Light Intensity").onChange(updateChaserLights);
     chaserFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Height Offset");
     chaserFolder.close();
-
-    const wireFolder = actorsFolder.addFolder("Face Billboards");
-    wireFolder.add(settings, "wireEnabled").name("Enabled");
-    wireFolder.add(settings, "wireHeight", 0.1, 5, 0.1).name("Wire Height");
-    wireFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
-    wireFolder.add(settings, "billboardBrightness", 0, 1, 0.05).name("Brightness").onChange((v) => {
-      for (const wire of fugitiveWires) {
-        if (wire.billboard && wire.billboard.material) {
-          wire.billboard.material.color.setRGB(v, v, v);
-        }
-      }
-    });
-    wireFolder.add(settings, "billboardCenterPull", 0, 1, 0.05).name("Center Pull");
-    wireFolder.close();
 
     actorsFolder.close();
 
