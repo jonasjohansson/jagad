@@ -804,6 +804,15 @@ const GUI = window.lil.GUI;
       ? (timestamp - lastMarqueeTime) / 1000
       : 0.016;
 
+    // Skip text rendering if disabled
+    if (!settings.glassTextEnabled) {
+      ctx.restore();
+      if (glassTexture) {
+        glassTexture.needsUpdate = true;
+      }
+      return;
+    }
+
     // Get text rows with shuffle effect applied
     const rawRows = [
       settings.glassTextRow1,
@@ -2035,6 +2044,7 @@ const GUI = window.lil.GUI;
 
     // ==================== TEXT ====================
     const textFolder = guiLeft.addFolder("📝 Text");
+    textFolder.add(settings, "glassTextEnabled").name("Show Text").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());

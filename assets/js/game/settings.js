@@ -105,6 +105,7 @@ export const defaultSettings = {
   glassVideoOpacity: 0.25,
   glassVideoBrightness: 1.0,
   // Glass text builder
+  glassTextEnabled: true,
   glassTextRow1: "JAGAD",
   glassTextRow2: "THE CHASE IS ON",
   glassTextRow3: "CATCH THEM ALL",
