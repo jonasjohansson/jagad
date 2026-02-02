@@ -162,6 +162,12 @@ export const defaultSettings = {
   helicopterConeHeight: 30,
   helicopterConeTopRadius: 0.1,
   helicopterConeBottomRadius: 5,
+  // Helicopter boundary limits
+  helicopterBoundsMinX: -4.5,
+  helicopterBoundsMaxX: 4.5,
+  helicopterBoundsMinZ: -1.2,
+  helicopterBoundsMaxZ: 2.8,
+  helicopterShowBounds: false,
   // Clouds
   cloudsEnabled: true,
   cloudCount: 3,

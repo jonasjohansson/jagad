@@ -81,6 +81,7 @@ const GUI = window.lil.GUI;
   const fugitives = [];
   const chasers = [];
   let helicopter = null;
+  let helicopterBoundsHelper = null;
 
   const settings = {
     gameStarted: false,
@@ -412,6 +413,10 @@ const GUI = window.lil.GUI;
     helicopter.mesh.position.x += (targetX - helicopter.mesh.position.x) * lerpSpeed;
     helicopter.mesh.position.z += (targetZ - helicopter.mesh.position.z) * lerpSpeed;
 
+    // Clamp to boundary limits
+    helicopter.mesh.position.x = Math.max(settings.helicopterBoundsMinX, Math.min(settings.helicopterBoundsMaxX, helicopter.mesh.position.x));
+    helicopter.mesh.position.z = Math.max(settings.helicopterBoundsMinZ, Math.min(settings.helicopterBoundsMaxZ, helicopter.mesh.position.z));
+
     // Gentle height bobbing
     helicopter.mesh.position.y = settings.helicopterHeight + Math.sin(time * 0.8) * 0.15;
 
@@ -465,6 +470,11 @@ const GUI = window.lil.GUI;
           layer.material.color.set(settings.helicopterLightColor);
         });
       }
+    }
+
+    // Update boundary helper visibility
+    if (helicopterBoundsHelper) {
+      helicopterBoundsHelper.visible = settings.helicopterShowBounds;
     }
   }
 
@@ -544,6 +554,35 @@ const GUI = window.lil.GUI;
     lightCone.userData.layers = coneLayers;
     helicopter.lightCone = lightCone;
     helicopter.mesh.add(lightCone);
+  }
+
+  function updateHelicopterBoundsHelper() {
+    // Remove old helper
+    if (helicopterBoundsHelper) {
+      scene.remove(helicopterBoundsHelper);
+      helicopterBoundsHelper.geometry.dispose();
+      helicopterBoundsHelper.material.dispose();
+      helicopterBoundsHelper = null;
+    }
+
+    // Create new bounds visualization as a wireframe box
+    const minX = settings.helicopterBoundsMinX;
+    const maxX = settings.helicopterBoundsMaxX;
+    const minZ = settings.helicopterBoundsMinZ;
+    const maxZ = settings.helicopterBoundsMaxZ;
+    const height = settings.helicopterHeight;
+
+    const width = maxX - minX;
+    const depth = maxZ - minZ;
+    const boxHeight = 4;
+
+    const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
+    const edges = new THREE.EdgesGeometry(geometry);
+    const material = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+    helicopterBoundsHelper = new THREE.LineSegments(edges, material);
+    helicopterBoundsHelper.position.set((minX + maxX) / 2, height, (minZ + maxZ) / 2);
+    helicopterBoundsHelper.visible = settings.helicopterShowBounds;
+    scene.add(helicopterBoundsHelper);
   }
 
   // ============================================
@@ -2041,6 +2080,17 @@ const GUI = window.lil.GUI;
     helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(rebuildHelicopterCone);
     helicopterFolder.add(settings, "helicopterConeTopRadius", 0, 2, 0.05).name("Cone Top Radius").onChange(rebuildHelicopterCone);
     helicopterFolder.add(settings, "helicopterConeBottomRadius", 0.5, 10, 0.5).name("Cone Bottom Radius").onChange(rebuildHelicopterCone);
+    // Boundary limits
+    const boundsFolder = helicopterFolder.addFolder("Bounds");
+    boundsFolder.add(settings, "helicopterBoundsMinX", -15, 15, 0.1).name("Min X").onChange(updateHelicopterBoundsHelper);
+    boundsFolder.add(settings, "helicopterBoundsMaxX", -15, 15, 0.1).name("Max X").onChange(updateHelicopterBoundsHelper);
+    boundsFolder.add(settings, "helicopterBoundsMinZ", -15, 15, 0.1).name("Min Z").onChange(updateHelicopterBoundsHelper);
+    boundsFolder.add(settings, "helicopterBoundsMaxZ", -15, 15, 0.1).name("Max Z").onChange(updateHelicopterBoundsHelper);
+    boundsFolder.add(settings, "helicopterShowBounds").name("Show Bounds").onChange((v) => {
+      if (!helicopterBoundsHelper) updateHelicopterBoundsHelper();
+      if (helicopterBoundsHelper) helicopterBoundsHelper.visible = v;
+    });
+    boundsFolder.close();
     helicopterFolder.close();
 
     // Building Plane
@@ -4925,6 +4975,7 @@ const GUI = window.lil.GUI;
     initAtmosphere();
     initAudio();
     loadHelicopter();
+    updateHelicopterBoundsHelper();
     initIframePanels();
 
     // Load path graph from GLB and initialize actors
