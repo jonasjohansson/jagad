@@ -174,6 +174,11 @@ export const defaultSettings = {
   cloudSpeedMax: 0.8,
   cloudBlending: "Normal",
 
+  // Mobile
+  mobileEnabled: false,
+  mobileOrthoZoom: 0.6,
+  mobileOrthoOffsetZ: 0.6,
+
   // Game States
   gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
 

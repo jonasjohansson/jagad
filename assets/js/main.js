@@ -58,39 +58,6 @@ const GUI = window.lil.GUI;
   // Post-processing (WebGL EffectComposer)
   let composer = null;
 
-  // Debug axis helper (corner inset)
-  const axisScene = new THREE.Scene();
-  const axisCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-  axisCamera.position.set(0, 2, 3);
-  axisCamera.lookAt(0, 0, 0);
-  const axisHelper = new THREE.AxesHelper(1.5);
-  axisScene.add(axisHelper);
-  // Add labels
-  const axisLabels = new THREE.Group();
-  const createLabel = (text, color, pos) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = color;
-    ctx.font = "bold 48px Arial";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 32, 32);
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(material);
-    sprite.position.copy(pos);
-    sprite.scale.set(0.5, 0.5, 1);
-    return sprite;
-  };
-  axisLabels.add(createLabel("X", "#ff0000", new THREE.Vector3(2, 0, 0)));
-  axisLabels.add(createLabel("Y", "#00ff00", new THREE.Vector3(0, 2, 0)));
-  axisLabels.add(createLabel("Z", "#0000ff", new THREE.Vector3(0, 0, 2)));
-  axisScene.add(axisLabels);
-  let showAxisHelper = true;
-
-
   // ============================================
   // STATE
   // ============================================
@@ -1667,6 +1634,50 @@ const GUI = window.lil.GUI;
   }
 
   // ============================================
+  // MOBILE MODE
+  // ============================================
+
+  const portraitOverlay = document.getElementById("portrait-overlay");
+
+  function applyMobileMode(enabled) {
+    if (enabled) {
+      // Switch to orthographic camera
+      settings.cameraType = "orthographic";
+      switchCamera("orthographic");
+
+      // Apply mobile ortho zoom
+      if (orthoCamera) {
+        const aspect = window.innerWidth / window.innerHeight;
+        const orthoSize = STATE.horizontalSize * 0.6 * settings.mobileOrthoZoom;
+        orthoCamera.left = -orthoSize * aspect;
+        orthoCamera.right = orthoSize * aspect;
+        orthoCamera.top = orthoSize;
+        orthoCamera.bottom = -orthoSize;
+        orthoCamera.position.z = STATE.levelCenter.z + settings.mobileOrthoOffsetZ;
+        orthoCamera.lookAt(new THREE.Vector3(STATE.levelCenter.x, STATE.levelCenter.y, STATE.levelCenter.z + settings.mobileOrthoOffsetZ));
+        orthoCamera.updateProjectionMatrix();
+      }
+
+      // Disable building plane
+      settings.buildingEnabled = false;
+      if (buildingPlane) buildingPlane.visible = false;
+
+      // Check portrait mode
+      checkPortraitMode();
+    } else {
+      // Hide portrait overlay when mobile mode is disabled
+      if (portraitOverlay) portraitOverlay.style.display = "none";
+    }
+  }
+
+  function checkPortraitMode() {
+    if (!settings.mobileEnabled || !portraitOverlay) return;
+
+    const isPortrait = window.innerHeight > window.innerWidth;
+    portraitOverlay.style.display = isPortrait ? "flex" : "none";
+  }
+
+  // ============================================
   // RESIZE
   // ============================================
 
@@ -1681,12 +1692,21 @@ const GUI = window.lil.GUI;
     }
 
     if (orthoCamera) {
-      const frustumSize = STATE.horizontalSize * 1.5;
       const aspect = width / height;
-      orthoCamera.left = frustumSize * aspect / -2;
-      orthoCamera.right = frustumSize * aspect / 2;
-      orthoCamera.top = frustumSize / 2;
-      orthoCamera.bottom = frustumSize / -2;
+      if (settings.mobileEnabled) {
+        // Use mobile ortho zoom
+        const orthoSize = STATE.horizontalSize * 0.6 * settings.mobileOrthoZoom;
+        orthoCamera.left = -orthoSize * aspect;
+        orthoCamera.right = orthoSize * aspect;
+        orthoCamera.top = orthoSize;
+        orthoCamera.bottom = -orthoSize;
+      } else {
+        const frustumSize = STATE.horizontalSize * 1.5;
+        orthoCamera.left = frustumSize * aspect / -2;
+        orthoCamera.right = frustumSize * aspect / 2;
+        orthoCamera.top = frustumSize / 2;
+        orthoCamera.bottom = frustumSize / -2;
+      }
       orthoCamera.updateProjectionMatrix();
     }
 
@@ -1698,8 +1718,14 @@ const GUI = window.lil.GUI;
       }
     }
 
+    // Check portrait mode for mobile
+    checkPortraitMode();
   }
   window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", () => {
+    // Small delay to let orientation settle
+    setTimeout(checkPortraitMode, 100);
+  });
 
   // ============================================
   // GUI
@@ -1742,6 +1768,30 @@ const GUI = window.lil.GUI;
     });
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
     gameFolder.close();
+
+    // ==================== MOBILE ====================
+    const mobileFolder = guiLeft.addFolder("📱 Mobile");
+    mobileFolder.add(settings, "mobileEnabled").name("Enable Mobile Mode").onChange((v) => {
+      applyMobileMode(v);
+    });
+    mobileFolder.add(settings, "mobileOrthoZoom", 0.5, 5, 0.1).name("Ortho Zoom").onChange((v) => {
+      if (settings.mobileEnabled && orthoCamera) {
+        const aspect = window.innerWidth / window.innerHeight;
+        const orthoSize = STATE.horizontalSize * 0.6 * v;
+        orthoCamera.left = -orthoSize * aspect;
+        orthoCamera.right = orthoSize * aspect;
+        orthoCamera.top = orthoSize;
+        orthoCamera.bottom = -orthoSize;
+        orthoCamera.updateProjectionMatrix();
+      }
+    });
+    mobileFolder.add(settings, "mobileOrthoOffsetZ", -10, 10, 0.1).name("View Z Offset").onChange((v) => {
+      if (settings.mobileEnabled && orthoCamera) {
+        orthoCamera.position.z = STATE.levelCenter.z + v;
+        orthoCamera.lookAt(new THREE.Vector3(STATE.levelCenter.x, STATE.levelCenter.y, STATE.levelCenter.z + v));
+      }
+    });
+    mobileFolder.close();
 
     // ==================== STATES ====================
     const statesFolder = guiLeft.addFolder("📺 States");
@@ -3819,20 +3869,6 @@ const GUI = window.lil.GUI;
     } else {
       renderer.render(scene, camera);
     }
-
-    // Render axis helper in corner
-    if (showAxisHelper) {
-      const size = 120;
-      const margin = 10;
-      renderer.setViewport(window.innerWidth - size - margin, margin, size, size);
-      renderer.setScissor(window.innerWidth - size - margin, margin, size, size);
-      renderer.setScissorTest(true);
-      renderer.setClearColor(0x222222, 0.8);
-      renderer.clear();
-      renderer.render(axisScene, axisCamera);
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
-    }
   }
 
   function updateGame(dt) {
@@ -4869,6 +4905,11 @@ const GUI = window.lil.GUI;
 
     // Initialize game state to PRE_GAME
     setGameState("PRE_GAME");
+
+    // Apply mobile mode if it was saved as enabled
+    if (settings.mobileEnabled) {
+      applyMobileMode(true);
+    }
 
     // Ensure text renders after fonts are loaded (slight delay for safety)
     setTimeout(() => {

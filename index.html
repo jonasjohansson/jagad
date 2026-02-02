@@ -3,13 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <title>Jagad</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="screen-orientation" content="landscape" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="stylesheet" href="assets/css/style.css" />
     <link rel="stylesheet" href="assets/fonts/stylesheet.css" />
     <link rel="icon" href="data:," />
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
+    <div id="portrait-overlay">
+      <div class="rotate-text">Please rotate your device to landscape mode</div>
+    </div>
 
     <script type="importmap">
       {
