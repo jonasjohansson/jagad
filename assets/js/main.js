@@ -2005,6 +2005,7 @@ const GUI = window.lil.GUI;
       for (const wire of fugitiveWires) {
         if (wire.billboard && wire.billboard.material) {
           wire.billboard.material.color.setRGB(v, v, v);
+          wire.billboard.material.emissiveIntensity = v;
         }
       }
     });
@@ -2968,6 +2969,8 @@ const GUI = window.lil.GUI;
       const brightness = settings.billboardBrightness;
       const billboardMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(brightness, brightness, brightness),
+        emissive: new THREE.Color(1, 1, 1),
+        emissiveIntensity: brightness,
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
