@@ -3254,7 +3254,7 @@ const GUI = window.lil.GUI;
     // Create grid pulse - glowing tubes along each edge that light up based on distance
     const gridLines = [];
     if (STATE.pathGraph && STATE.pathGraph.edges) {
-      const tubeRadius = 0.08;
+      const tubeRadius = 0.05;
       for (const edge of STATE.pathGraph.edges) {
         // Calculate edge length and direction
         const dx = edge.x2 - edge.x1;
@@ -3365,9 +3365,11 @@ const GUI = window.lil.GUI;
       originX,
       originZ,
       time: 0,
-      duration: 5.0,
-      pulseSpeed: 15,
-      pulseWidth: 5
+      duration: 4.0,
+      pulseSpeed: 12,
+      pulseWidth: 2.5,
+      rippleCount: 3,
+      rippleSpacing: 4
     });
   }
 
@@ -3394,20 +3396,32 @@ const GUI = window.lil.GUI;
         continue;
       }
 
-      // Animate grid pulse traveling along roads
-      const pulseRadius = effect.time * effect.pulseSpeed;
-      // Fade out only in the last 30% of duration
-      const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
+      // Animate grid pulse traveling along roads - multiple concentric ripples
+      const baseRadius = effect.time * effect.pulseSpeed;
+      // Fade out in the last 40% of duration
+      const fadeOut = t > 0.6 ? (t - 0.6) / 0.4 : 0;
+
       for (const gl of effect.gridLines) {
-        const distFromPulse = Math.abs(gl.distance - pulseRadius);
-        if (distFromPulse < effect.pulseWidth) {
-          // Inside pulse wave - light up bright
-          const intensity = 1 - (distFromPulse / effect.pulseWidth);
-          const smoothIntensity = intensity * intensity; // Sharper falloff
-          gl.material.opacity = smoothIntensity * (1 - fadeOut);
-        } else {
-          gl.material.opacity = 0;
+        let totalIntensity = 0;
+
+        // Calculate intensity from multiple ripple waves
+        for (let r = 0; r < effect.rippleCount; r++) {
+          const rippleRadius = baseRadius - r * effect.rippleSpacing;
+          if (rippleRadius < 0) continue;
+
+          const distFromRipple = Math.abs(gl.distance - rippleRadius);
+          if (distFromRipple < effect.pulseWidth) {
+            // Smooth Gaussian-like falloff
+            const normalizedDist = distFromRipple / effect.pulseWidth;
+            const gaussian = Math.exp(-normalizedDist * normalizedDist * 3);
+            // Each successive ripple is dimmer
+            const rippleFade = 1 - (r / effect.rippleCount) * 0.6;
+            totalIntensity += gaussian * rippleFade;
+          }
         }
+
+        // Clamp and apply fade
+        gl.material.opacity = Math.min(1, totalIntensity) * (1 - fadeOut);
       }
 
       // Animate particles with physics
