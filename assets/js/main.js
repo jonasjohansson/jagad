@@ -2572,7 +2572,7 @@ const GUI = window.lil.GUI;
 
         // Draw text content centered
         ctx.fillStyle = window.getComputedStyle(doc.body).color || '#fff';
-        ctx.font = 'bold 48px Arial';
+        ctx.font = 'bold 48px "BankGothic", "BankGothic Md BT", "Bank Gothic", Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const text = doc.body.innerText || '';
