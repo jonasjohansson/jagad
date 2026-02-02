@@ -29,10 +29,10 @@ export const PATHS = {
 
 // Face texture pairs for each fugitive [primary, alternate]
 export const FACE_TEXTURES = [
-  ["F1-Jaget_Lineup_Master_FACE_Samir_V01.png", "F1-Jaget_Lineup_Master_FACE_Viktor_V01.png"],
-  ["F2-Jaget_Lineup_Master_FACE_Maria_V02.png", "F2-Jaget_Lineup_Master_FACE_Sara_V03.png"],
-  ["F3-Jaget_Lineup_Master_FACE_Glenn_V01.png", "F3-Jaget_Lineup_Master_FACE_Hasse_V01.png"],
-  ["F4-Jaget_Lineup_Master_FACE_Anja_V02.png", "F4-Jaget_Lineup_Master_FACE_Filippa_V02.png"],
+  ["F1-Samir.png", "F1-Viktor.png"],
+  ["F2-Maria.png", "F2-Sara.png"],
+  ["F3-Glenn.png", "F3-Hasse.png"],
+  ["F4-Anja.png", "F4-Filippa.png"],
 ];
 
 // Keyboard controls for each chaser
