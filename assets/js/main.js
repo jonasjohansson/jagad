@@ -3199,7 +3199,12 @@ const GUI = window.lil.GUI;
         f.light.intensity = settings.fugitiveLightIntensity;
       }
 
-      // Re-initialize on path (this also resets position)
+      // Reset to spawn position
+      f.mesh.position.x = f.spawnX;
+      f.mesh.position.z = f.spawnZ;
+      STATE.projectYOnRoad(f.mesh.position);
+
+      // Re-initialize on path
       initActorOnPath(f);
 
       // Re-show billboard and wire
@@ -3218,9 +3223,14 @@ const GUI = window.lil.GUI;
       c.queuedDirZ = 0;
       c.currentEdge = null;
 
-      // Re-initialize position
-      initActorOnPath(c);
+      // Reset to spawn position
+      c.mesh.position.x = c.spawnX;
+      c.mesh.position.z = c.spawnZ;
+      STATE.projectYOnRoad(c.mesh.position);
+      c.mesh.position.y += settings.chaserHeightOffset;
 
+      // Re-initialize on path
+      initActorOnPath(c);
     }
 
     // Set back to PRE_GAME state (this will also set chaser opacity to 0.1)
@@ -4737,6 +4747,8 @@ const GUI = window.lil.GUI;
         index: i,
         lastIntersectionX: roadPoint.x,
         lastIntersectionZ: roadPoint.z,
+        spawnX: roadPoint.x,
+        spawnZ: roadPoint.z,
       });
 
       const wire = new ActorWire(fugitives[fugitives.length - 1], actorSize, fugitiveColor, false, i);
@@ -4861,6 +4873,8 @@ const GUI = window.lil.GUI;
           active: false,
           isMoving: false,
           isCarModel: !!carModel,
+          spawnX: roadPoint.x,
+          spawnZ: roadPoint.z,
         };
         scene.add(mesh);
         chasers.push(chaserObj);
