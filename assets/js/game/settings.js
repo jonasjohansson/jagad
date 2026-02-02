@@ -176,7 +176,7 @@ export const defaultSettings = {
 
   // Mobile
   mobileEnabled: false,
-  mobileOrthoZoom: 0.6,
+  mobileOrthoZoom: 0.5,
   mobileOrthoOffsetZ: 0.6,
 
   // Game States
