@@ -1795,7 +1795,7 @@ const GUI = window.lil.GUI;
     mobileFolder.add(settings, "mobileEnabled").name("Enable Mobile Mode").onChange((v) => {
       applyMobileMode(v);
     });
-    mobileFolder.add(settings, "mobileOrthoZoom", 0.5, 5, 0.1).name("Ortho Zoom").onChange((v) => {
+    mobileFolder.add(settings, "mobileOrthoZoom", 0.1, 1, 0.1).name("Ortho Zoom").onChange((v) => {
       if (settings.mobileEnabled && orthoCamera) {
         const aspect = window.innerWidth / window.innerHeight;
         const orthoSize = STATE.horizontalSize * 0.6 * v;
