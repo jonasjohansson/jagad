@@ -2192,7 +2192,7 @@ const GUI = window.lil.GUI;
     // Pulse Wave (capture effect)
     const pulseWaveFolder = addonsFolder.addFolder("Pulse Wave");
     if (settings.pulseWaveEnabled === undefined) settings.pulseWaveEnabled = true;
-    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 8;
+    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 5;
     if (settings.pulseWaveWidth === undefined) settings.pulseWaveWidth = 1.5;
     if (settings.pulseWaveDuration === undefined) settings.pulseWaveDuration = 5.0;
     if (settings.pulseWaveIntensity === undefined) settings.pulseWaveIntensity = 0.8;
@@ -2315,7 +2315,7 @@ const GUI = window.lil.GUI;
     lightsFolder.add(settings, "ambientIntensity", 0, 10, 0.1).name("Ambient").onChange((v) => {
       ambientLight.intensity = v;
     });
-    lightsFolder.add(settings, "directIntensity", 0, 10, 0.1).name("Directional").onChange((v) => {
+    lightsFolder.add(settings, "directIntensity", 0, 50, 0.1).name("Directional").onChange((v) => {
       directionalLight.intensity = v;
     });
     lightsFolder.add(settings, "directPosX", -20, 20, 0.5).name("Dir Pos X").onChange((v) => {
@@ -3619,7 +3619,7 @@ const GUI = window.lil.GUI;
       originZ,
       time: 0,
       duration: settings.pulseWaveDuration || 5.0,
-      pulseSpeed: settings.pulseWaveSpeed || 8,
+      pulseSpeed: settings.pulseWaveSpeed || 5,
       pulseWidth: settings.pulseWaveWidth || 1.5,
       intensity: settings.pulseWaveIntensity || 0.8,
       easing: settings.pulseWaveEasing || "easeOut"

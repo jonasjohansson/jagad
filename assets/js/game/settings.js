@@ -34,7 +34,7 @@ export const defaultSettings = {
   // Lighting
   toneMapping: "Neutral",
   exposure: 0.5,
-  environmentIntensity: 1.0,
+  environmentIntensity: 10,
   punctualLights: true,
   ambientIntensity: 2.0,
   ambientColor: "#ffffff",
@@ -50,7 +50,7 @@ export const defaultSettings = {
   wireFriction: 0.92,
   wireIterations: 3,
   wireCubeSize: 2,
-  billboardBrightness: 0.2,
+  billboardBrightness: 0.15,
   billboardContrast: 1.8,
   billboardCenterPull: 0.01,
   billboardMaxDistance: 0,
@@ -102,8 +102,8 @@ export const defaultSettings = {
   glassEnabled: true,
   glassOpacity: 0.8,
   glassMaterialOpacity: 0.5,
-  glassVideoEnabled: false,
-  glassVideoOpacity: 0.25,
+  glassVideoEnabled: true,
+  glassVideoOpacity: 0.4,
   glassVideoBrightness: 1.0,
   // Glass text builder
   glassTextEnabled: true,
@@ -189,7 +189,7 @@ export const defaultSettings = {
 
   // Pulse Wave (capture effect)
   pulseWaveEnabled: true,
-  pulseWaveSpeed: 8,
+  pulseWaveSpeed: 5,
   pulseWaveWidth: 1.5,
   pulseWaveDuration: 5.0,
   pulseWaveIntensity: 0.8,
