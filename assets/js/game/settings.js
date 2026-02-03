@@ -99,11 +99,12 @@ export const defaultSettings = {
   motionTrailsLength: 5,
   motionTrailsOpacity: 0.3,
   motionTrailsSize: 0.15,
+  windowEmissiveIntensity: 0.5,
   glassEnabled: true,
   glassOpacity: 0.8,
   glassMaterialOpacity: 0.5,
   glassVideoEnabled: true,
-  glassVideoOpacity: 0.4,
+  glassVideoOpacity: 0.2,
   glassVideoBrightness: 1.0,
   // Glass text builder
   glassTextEnabled: true,
@@ -189,7 +190,7 @@ export const defaultSettings = {
 
   // Pulse Wave (capture effect)
   pulseWaveEnabled: true,
-  pulseWaveSpeed: 5,
+  pulseWaveSpeed: 3.5,
   pulseWaveWidth: 1.5,
   pulseWaveDuration: 5.0,
   pulseWaveIntensity: 0.8,
@@ -235,11 +236,11 @@ export const defaultSettings = {
   startingImage: "",
   playingImage: "",
   gameOverImage: "",
-  projectionOpacity: 0,
-  projectionScale: 0.28,
+  projectionOpacity: 0.55,
+  projectionScale: 0.25,
   projectionOffsetX: 0,
-  projectionOffsetY: 0.3,
-  projectionOffsetZ: 1,
+  projectionOffsetY: 0.02,
+  projectionOffsetZ: 0.3,
 
   // High Scores (array of {initials: "AAA", score: 0})
   highScores: [

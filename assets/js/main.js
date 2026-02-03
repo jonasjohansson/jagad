@@ -2192,7 +2192,7 @@ const GUI = window.lil.GUI;
     // Pulse Wave (capture effect)
     const pulseWaveFolder = addonsFolder.addFolder("Pulse Wave");
     if (settings.pulseWaveEnabled === undefined) settings.pulseWaveEnabled = true;
-    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 5;
+    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 3.5;
     if (settings.pulseWaveWidth === undefined) settings.pulseWaveWidth = 1.5;
     if (settings.pulseWaveDuration === undefined) settings.pulseWaveDuration = 5.0;
     if (settings.pulseWaveIntensity === undefined) settings.pulseWaveIntensity = 0.8;
@@ -2327,8 +2327,18 @@ const GUI = window.lil.GUI;
     lightsFolder.add(settings, "directPosZ", -20, 20, 0.5).name("Dir Pos Z").onChange((v) => {
       directionalLight.position.z = v;
     });
-    lightsFolder.add(settings, "environmentIntensity", 0, 10, 0.1).name("Environment").onChange((v) => {
+    lightsFolder.add(settings, "environmentIntensity", 0, 50, 0.1).name("Environment").onChange((v) => {
       scene.environmentIntensity = v;
+    });
+    if (settings.windowEmissiveIntensity === undefined) settings.windowEmissiveIntensity = 0.5;
+    lightsFolder.add(settings, "windowEmissiveIntensity", 0, 5, 0.1).name("Window Emissive").onChange((v) => {
+      if (STATE.windowMeshes) {
+        for (const mesh of STATE.windowMeshes) {
+          if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+            mesh.material.emissiveIntensity = v;
+          }
+        }
+      }
     });
     lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
       for (const f of fugitives) { if (f.light) f.light.visible = v; }
@@ -3471,11 +3481,12 @@ const GUI = window.lil.GUI;
       c.queuedDirZ = 0;
       c.currentEdge = null;
 
-      // Reset to spawn position
+      // Reset to spawn position and rotation
       c.mesh.position.x = c.spawnX;
       c.mesh.position.z = c.spawnZ;
       STATE.projectYOnRoad(c.mesh.position);
       c.mesh.position.y += settings.chaserHeightOffset;
+      c.mesh.rotation.y = c.spawnRotationY || 0;
 
       // Re-initialize on path
       initActorOnPath(c);
@@ -3619,7 +3630,7 @@ const GUI = window.lil.GUI;
       originZ,
       time: 0,
       duration: settings.pulseWaveDuration || 5.0,
-      pulseSpeed: settings.pulseWaveSpeed || 5,
+      pulseSpeed: settings.pulseWaveSpeed || 3.5,
       pulseWidth: settings.pulseWaveWidth || 1.5,
       intensity: settings.pulseWaveIntensity || 0.8,
       easing: settings.pulseWaveEasing || "easeOut"
@@ -4336,18 +4347,33 @@ const GUI = window.lil.GUI;
     const gltf = levelGltf;
     const root = gltf.scene;
 
+    // Store window meshes for emissive control
+    const windowMeshes = [];
+
     root.traverse((obj) => {
       if (obj.isMesh) {
         const nameUpper = (obj.name || "").toUpperCase();
         // Glass meshes don't cast shadows so helicopter light shines through
         const isGlass = nameUpper.includes("GLASS");
+        const isWindow = nameUpper.includes("WINDOW");
         obj.castShadow = !isGlass;
         obj.receiveShadow = true;
+
+        // Boost emissive on window meshes
+        if (isWindow && obj.material) {
+          windowMeshes.push(obj);
+          const mat = obj.material;
+          if (mat.emissive) {
+            mat.emissiveIntensity = settings.windowEmissiveIntensity || 0.5;
+          }
+        }
       }
       if (obj.isCamera) {
         glbCameras.push({ name: obj.name || `GLB Camera ${glbCameras.length + 1}`, camera: obj });
       }
     });
+
+    STATE.windowMeshes = windowMeshes;
 
     const levelContainer = new THREE.Group();
     levelContainer.add(root);
@@ -5165,6 +5191,7 @@ const GUI = window.lil.GUI;
           isCarModel: !!carModel,
           spawnX: roadPoint.x,
           spawnZ: roadPoint.z,
+          spawnRotationY: mesh.rotation.y,
         };
         scene.add(mesh);
         chasers.push(chaserObj);
