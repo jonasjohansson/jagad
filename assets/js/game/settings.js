@@ -50,8 +50,8 @@ export const defaultSettings = {
   wireFriction: 0.92,
   wireIterations: 3,
   wireCubeSize: 2,
-  billboardBrightness: 0.4,
-  billboardContrast: 2,
+  billboardBrightness: 0.2,
+  billboardContrast: 1.8,
   billboardCenterPull: 0.01,
   billboardMaxDistance: 0,
   showNavmesh: false,
@@ -189,11 +189,12 @@ export const defaultSettings = {
 
   // Pulse Wave (capture effect)
   pulseWaveEnabled: true,
-  pulseWaveSpeed: 6,
-  pulseWaveWidth: 2.5,
+  pulseWaveSpeed: 8,
+  pulseWaveWidth: 1.5,
   pulseWaveDuration: 5.0,
-  pulseWaveIntensity: 1.0,
-  pulseWaveTubeHeight: 0.15,
+  pulseWaveIntensity: 0.8,
+  pulseWaveTubeHeight: 0.12,
+  pulseWaveEasing: "easeOut",
   pulseWaveParticles: true,
   pulseWaveFlash: true,
 

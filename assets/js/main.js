@@ -2098,14 +2098,6 @@ const GUI = window.lil.GUI;
     chaserFolder.addColor(settings, "chaser3Color").name("Chaser 3 Color").onChange(updateChaserLights);
     chaserFolder.addColor(settings, "chaser4Color").name("Chaser 4 Color").onChange(updateChaserLights);
     chaserFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Height Offset");
-    const chaserLightFolder = chaserFolder.addFolder("Headlights");
-    chaserLightFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Intensity").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightDistance", 1, 100, 1).name("Distance").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightAngle", 1, 90, 1).name("Angle (deg)").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightHeight", -1, 1, 0.01).name("Height").onChange(updateChaserLights);
-    chaserLightFolder.add(settings, "chaserLightOffset", -1, 1, 0.01).name("Offset").onChange(updateChaserLights);
-    chaserLightFolder.close();
     chaserFolder.close();
 
     actorsFolder.close();
@@ -2131,6 +2123,16 @@ const GUI = window.lil.GUI;
 
     // ==================== ADDONS ====================
     const addonsFolder = guiLeft.addFolder("🧩 Addons");
+
+    // Headlights (chaser spotlights)
+    const headlightsFolder = addonsFolder.addFolder("Headlights");
+    headlightsFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Intensity").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightDistance", 1, 100, 1).name("Distance").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightAngle", 1, 90, 1).name("Angle (deg)").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightHeight", -1, 1, 0.01).name("Height").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightOffset", -1, 1, 0.01).name("Offset").onChange(updateChaserLights);
+    headlightsFolder.close();
 
     // Glass Overlay (video background)
     const windowOverlayFolder = addonsFolder.addFolder("Glass Overlay");
@@ -2190,11 +2192,12 @@ const GUI = window.lil.GUI;
     // Pulse Wave (capture effect)
     const pulseWaveFolder = addonsFolder.addFolder("Pulse Wave");
     if (settings.pulseWaveEnabled === undefined) settings.pulseWaveEnabled = true;
-    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 6;
-    if (settings.pulseWaveWidth === undefined) settings.pulseWaveWidth = 2.5;
+    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 8;
+    if (settings.pulseWaveWidth === undefined) settings.pulseWaveWidth = 1.5;
     if (settings.pulseWaveDuration === undefined) settings.pulseWaveDuration = 5.0;
-    if (settings.pulseWaveIntensity === undefined) settings.pulseWaveIntensity = 1.0;
-    if (settings.pulseWaveTubeHeight === undefined) settings.pulseWaveTubeHeight = 0.15;
+    if (settings.pulseWaveIntensity === undefined) settings.pulseWaveIntensity = 0.8;
+    if (settings.pulseWaveTubeHeight === undefined) settings.pulseWaveTubeHeight = 0.12;
+    if (settings.pulseWaveEasing === undefined) settings.pulseWaveEasing = "easeOut";
     if (settings.pulseWaveParticles === undefined) settings.pulseWaveParticles = true;
     if (settings.pulseWaveFlash === undefined) settings.pulseWaveFlash = true;
     pulseWaveFolder.add(settings, "pulseWaveEnabled").name("Enabled");
@@ -2203,6 +2206,7 @@ const GUI = window.lil.GUI;
     pulseWaveFolder.add(settings, "pulseWaveDuration", 1, 10, 0.5).name("Duration");
     pulseWaveFolder.add(settings, "pulseWaveIntensity", 0.1, 2, 0.1).name("Intensity");
     pulseWaveFolder.add(settings, "pulseWaveTubeHeight", 0.05, 0.5, 0.01).name("Tube Height");
+    pulseWaveFolder.add(settings, "pulseWaveEasing", ["linear", "easeOut", "easeIn", "easeInOut"]).name("Easing");
     pulseWaveFolder.add(settings, "pulseWaveParticles").name("Particles");
     pulseWaveFolder.add(settings, "pulseWaveFlash").name("Flash");
     pulseWaveFolder.close();
@@ -2308,10 +2312,10 @@ const GUI = window.lil.GUI;
     lightsFolder.add(settings, "exposure", 0, 3, 0.01).name("Exposure").onChange((v) => {
       renderer.toneMappingExposure = v;
     });
-    lightsFolder.add(settings, "ambientIntensity", 0, 5, 0.1).name("Ambient").onChange((v) => {
+    lightsFolder.add(settings, "ambientIntensity", 0, 10, 0.1).name("Ambient").onChange((v) => {
       ambientLight.intensity = v;
     });
-    lightsFolder.add(settings, "directIntensity", 0, 5, 0.1).name("Directional").onChange((v) => {
+    lightsFolder.add(settings, "directIntensity", 0, 10, 0.1).name("Directional").onChange((v) => {
       directionalLight.intensity = v;
     });
     lightsFolder.add(settings, "directPosX", -20, 20, 0.5).name("Dir Pos X").onChange((v) => {
@@ -2323,7 +2327,7 @@ const GUI = window.lil.GUI;
     lightsFolder.add(settings, "directPosZ", -20, 20, 0.5).name("Dir Pos Z").onChange((v) => {
       directionalLight.position.z = v;
     });
-    lightsFolder.add(settings, "environmentIntensity", 0, 3, 0.1).name("Environment").onChange((v) => {
+    lightsFolder.add(settings, "environmentIntensity", 0, 10, 0.1).name("Environment").onChange((v) => {
       scene.environmentIntensity = v;
     });
     lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
@@ -3513,7 +3517,8 @@ const GUI = window.lil.GUI;
           transparent: true,
           opacity: 0,
           blending: THREE.AdditiveBlending,
-          depthWrite: false
+          depthWrite: false,
+          depthTest: false
         });
 
         const tube = new THREE.Mesh(tubeGeo, tubeMat);
@@ -3614,10 +3619,26 @@ const GUI = window.lil.GUI;
       originZ,
       time: 0,
       duration: settings.pulseWaveDuration || 5.0,
-      pulseSpeed: settings.pulseWaveSpeed || 6,
-      pulseWidth: settings.pulseWaveWidth || 2.5,
-      intensity: settings.pulseWaveIntensity || 1.0
+      pulseSpeed: settings.pulseWaveSpeed || 8,
+      pulseWidth: settings.pulseWaveWidth || 1.5,
+      intensity: settings.pulseWaveIntensity || 0.8,
+      easing: settings.pulseWaveEasing || "easeOut"
     });
+  }
+
+  // Easing functions for pulse wave
+  function applyEasing(t, easing) {
+    switch (easing) {
+      case "easeOut":
+        return 1 - Math.pow(1 - t, 3); // Cubic ease out - starts fast, slows down
+      case "easeIn":
+        return Math.pow(t, 3); // Cubic ease in - starts slow, speeds up
+      case "easeInOut":
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      case "linear":
+      default:
+        return t;
+    }
   }
 
   function updateCaptureEffects(dt) {
@@ -3645,8 +3666,12 @@ const GUI = window.lil.GUI;
         continue;
       }
 
-      // Animate grid pulse traveling along roads - single smooth wave
-      const pulseRadius = effect.time * effect.pulseSpeed;
+      // Apply easing to the animation progress
+      const easedT = applyEasing(t, effect.easing);
+      // Calculate max radius based on speed and duration
+      const maxRadius = effect.pulseSpeed * effect.duration;
+      const pulseRadius = easedT * maxRadius;
+
       // Fade out in the last 30% of duration
       const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
 
@@ -3654,10 +3679,14 @@ const GUI = window.lil.GUI;
         const distFromPulse = Math.abs(gl.distance - pulseRadius);
 
         if (distFromPulse < effect.pulseWidth) {
-          // Smooth Gaussian falloff for clean wave appearance
-          const normalizedDist = distFromPulse / effect.pulseWidth;
-          const waveIntensity = Math.exp(-normalizedDist * normalizedDist * 3);
-          gl.material.opacity = waveIntensity * effect.intensity * (1 - fadeOut);
+          // Use flat opacity within wave to avoid overlap artifacts
+          // Smooth edges only at the very front and back of the wave
+          const edgeFalloff = Math.min(
+            distFromPulse / (effect.pulseWidth * 0.3),
+            (effect.pulseWidth - distFromPulse) / (effect.pulseWidth * 0.3),
+            1
+          );
+          gl.material.opacity = Math.min(1, edgeFalloff) * effect.intensity * (1 - fadeOut);
         } else {
           gl.material.opacity = 0;
         }
