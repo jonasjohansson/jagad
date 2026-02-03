@@ -249,7 +249,7 @@ const GUI = window.lil.GUI;
       const light = new THREE.SpotLight(
         settings.helicopterLightColor,
         settings.helicopterLightIntensity,
-        50,
+        settings.helicopterLightDistance || 50,
         angleRad,
         0.5,
         1
@@ -459,6 +459,7 @@ const GUI = window.lil.GUI;
       helicopter.light.intensity = settings.helicopterLightIntensity;
       helicopter.light.color.set(settings.helicopterLightColor);
       helicopter.light.angle = (settings.helicopterLightAngle * Math.PI) / 180;
+      helicopter.light.distance = settings.helicopterLightDistance || 50;
     }
 
     // Animate searchlight sway
@@ -1056,15 +1057,23 @@ const GUI = window.lil.GUI;
         map: glassTexture,
         color: new THREE.Color(brightness, brightness, brightness),
         transparent: true,
-        opacity: 1.0,
+        opacity: settings.glassMaterialOpacity ?? 1.0,
         side: THREE.DoubleSide,
         depthWrite: false,
         toneMapped: false,
       });
 
       mesh.material = glassMaterial;
+      mesh.castShadow = false; // Don't block light (helicopter spotlight shines through)
       mesh.renderOrder = 999; // Render on top
       glassMaterials.push(glassMaterial);
+    }
+  }
+
+  function updateGlassMaterialOpacity() {
+    const opacity = settings.glassMaterialOpacity ?? 1.0;
+    for (const mat of glassMaterials) {
+      mat.opacity = opacity;
     }
   }
 
@@ -2088,8 +2097,15 @@ const GUI = window.lil.GUI;
     chaserFolder.addColor(settings, "chaser2Color").name("Chaser 2 Color").onChange(updateChaserLights);
     chaserFolder.addColor(settings, "chaser3Color").name("Chaser 3 Color").onChange(updateChaserLights);
     chaserFolder.addColor(settings, "chaser4Color").name("Chaser 4 Color").onChange(updateChaserLights);
-    chaserFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Light Intensity").onChange(updateChaserLights);
     chaserFolder.add(settings, "chaserHeightOffset", -0.5, 0.5, 0.01).name("Height Offset");
+    const chaserLightFolder = chaserFolder.addFolder("Headlights");
+    chaserLightFolder.add(settings, "chaserLightIntensity", 0, 500, 1).name("Intensity").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightDistance", 1, 100, 1).name("Distance").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightAngle", 1, 90, 1).name("Angle (deg)").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightHeight", -1, 1, 0.01).name("Height").onChange(updateChaserLights);
+    chaserLightFolder.add(settings, "chaserLightOffset", -1, 1, 0.01).name("Offset").onChange(updateChaserLights);
+    chaserLightFolder.close();
     chaserFolder.close();
 
     actorsFolder.close();
@@ -2098,6 +2114,8 @@ const GUI = window.lil.GUI;
     const textFolder = guiLeft.addFolder("📝 Text");
     textFolder.add(settings, "glassTextEnabled").name("Show Text").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
+    if (settings.glassMaterialOpacity === undefined) settings.glassMaterialOpacity = 1.0;
+    textFolder.add(settings, "glassMaterialOpacity", 0, 1, 0.05).name("Glass Opacity").onChange(() => updateGlassMaterialOpacity());
     textFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
@@ -2114,8 +2132,8 @@ const GUI = window.lil.GUI;
     // ==================== ADDONS ====================
     const addonsFolder = guiLeft.addFolder("🧩 Addons");
 
-    // Window Overlay (video background)
-    const windowOverlayFolder = addonsFolder.addFolder("Window Overlay");
+    // Glass Overlay (video background)
+    const windowOverlayFolder = addonsFolder.addFolder("Glass Overlay");
     windowOverlayFolder.add(settings, "glassVideoEnabled").name("Enabled").onChange((v) => {
       if (glassVideo) {
         if (v) {
@@ -2140,6 +2158,8 @@ const GUI = window.lil.GUI;
     helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Spotlight Intensity");
     helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
     helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
+    if (settings.helicopterLightDistance === undefined) settings.helicopterLightDistance = 50;
+    helicopterFolder.add(settings, "helicopterLightDistance", 10, 200, 5).name("Spotlight Distance");
     helicopterFolder.add(settings, "helicopterSearchlightSway", 0, 5, 0.1).name("Searchlight Sway");
     helicopterFolder.add(settings, "helicopterSearchlightSpeed", 0.1, 2, 0.1).name("Sway Speed");
     helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
@@ -2166,6 +2186,26 @@ const GUI = window.lil.GUI;
     });
     boundsFolder.close();
     helicopterFolder.close();
+
+    // Pulse Wave (capture effect)
+    const pulseWaveFolder = addonsFolder.addFolder("Pulse Wave");
+    if (settings.pulseWaveEnabled === undefined) settings.pulseWaveEnabled = true;
+    if (settings.pulseWaveSpeed === undefined) settings.pulseWaveSpeed = 6;
+    if (settings.pulseWaveWidth === undefined) settings.pulseWaveWidth = 2.5;
+    if (settings.pulseWaveDuration === undefined) settings.pulseWaveDuration = 5.0;
+    if (settings.pulseWaveIntensity === undefined) settings.pulseWaveIntensity = 1.0;
+    if (settings.pulseWaveTubeHeight === undefined) settings.pulseWaveTubeHeight = 0.15;
+    if (settings.pulseWaveParticles === undefined) settings.pulseWaveParticles = true;
+    if (settings.pulseWaveFlash === undefined) settings.pulseWaveFlash = true;
+    pulseWaveFolder.add(settings, "pulseWaveEnabled").name("Enabled");
+    pulseWaveFolder.add(settings, "pulseWaveSpeed", 1, 20, 0.5).name("Speed");
+    pulseWaveFolder.add(settings, "pulseWaveWidth", 0.5, 5, 0.1).name("Wave Width");
+    pulseWaveFolder.add(settings, "pulseWaveDuration", 1, 10, 0.5).name("Duration");
+    pulseWaveFolder.add(settings, "pulseWaveIntensity", 0.1, 2, 0.1).name("Intensity");
+    pulseWaveFolder.add(settings, "pulseWaveTubeHeight", 0.05, 0.5, 0.01).name("Tube Height");
+    pulseWaveFolder.add(settings, "pulseWaveParticles").name("Particles");
+    pulseWaveFolder.add(settings, "pulseWaveFlash").name("Flash");
+    pulseWaveFolder.close();
 
     // Building Plane
     const buildingPlaneFolderGUI = addonsFolder.addFolder("Building Plane");
@@ -2274,6 +2314,18 @@ const GUI = window.lil.GUI;
     lightsFolder.add(settings, "directIntensity", 0, 5, 0.1).name("Directional").onChange((v) => {
       directionalLight.intensity = v;
     });
+    lightsFolder.add(settings, "directPosX", -20, 20, 0.5).name("Dir Pos X").onChange((v) => {
+      directionalLight.position.x = v;
+    });
+    lightsFolder.add(settings, "directPosY", 0, 30, 0.5).name("Dir Pos Y").onChange((v) => {
+      directionalLight.position.y = v;
+    });
+    lightsFolder.add(settings, "directPosZ", -20, 20, 0.5).name("Dir Pos Z").onChange((v) => {
+      directionalLight.position.z = v;
+    });
+    lightsFolder.add(settings, "environmentIntensity", 0, 3, 0.1).name("Environment").onChange((v) => {
+      scene.environmentIntensity = v;
+    });
     lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
       for (const f of fugitives) { if (f.light) f.light.visible = v; }
       for (const c of chasers) { if (c.light) c.light.visible = v; }
@@ -2301,6 +2353,7 @@ const GUI = window.lil.GUI;
     bloomFolder.close();
 
     const gradeFolder = vfxFolder.addFolder("Color Grading");
+    gradeFolder.add(settings, "colorGradingEnabled").name("Enabled").onChange(updatePostProcessing);
     gradeFolder.add(settings, "vignetteEnabled").name("Vignette").onChange(updatePostProcessing);
     gradeFolder.add(settings, "vignetteIntensity", 0, 1, 0.05).name("Vignette Amount").onChange(updatePostProcessing);
     gradeFolder.add(settings, "colorGradingSaturation", 0.5, 2, 0.05).name("Saturation").onChange(updatePostProcessing);
@@ -2367,16 +2420,18 @@ const GUI = window.lil.GUI;
     // Add GLB Parts folder to main GUI
     const glbPartsFolder = STATE.mainGUI.addFolder("GLB");
 
+    // Create Nav subfolder for navigation-related parts
+    const navFolder = glbPartsFolder.addFolder("Nav");
+
     // Parts that should have 0 opacity by default
     const hiddenByDefault = ["building-building", "pavement-paths"];
 
-    glbParts.forEach((data, name) => {
-      // Check if this part should be hidden by default
+    // Helper to add part controls to a folder
+    function addPartControls(parentFolder, data, name) {
       const nameLower = name.toLowerCase();
       const shouldHide = hiddenByDefault.some(h => nameLower.includes(h.toLowerCase()));
       const defaultOpacity = shouldHide ? 0 : data.originalOpacity;
 
-      // Apply default opacity to mesh
       if (shouldHide) {
         data.mesh.material.transparent = true;
         data.mesh.material.opacity = 0;
@@ -2389,10 +2444,9 @@ const GUI = window.lil.GUI;
         visible: true
       };
 
-      const folder = glbPartsFolder.addFolder(name);
+      const folder = parentFolder.addFolder(name);
       const mat = data.mesh.material;
 
-      // Basic properties
       folder.addColor(partSettings, "color").name("Color").onChange((v) => {
         if (data.mesh.material) {
           data.mesh.material.color.set(v);
@@ -2413,7 +2467,6 @@ const GUI = window.lil.GUI;
         data.mesh.visible = v;
       });
 
-      // Material properties (simplified)
       if (mat) {
         if (mat.roughness !== undefined) {
           folder.add(mat, "roughness", 0, 1, 0.01).name("Roughness");
@@ -2427,8 +2480,19 @@ const GUI = window.lil.GUI;
       }
 
       folder.close();
+    }
+
+    glbParts.forEach((data, name) => {
+      const nameLower = name.toLowerCase();
+      // Put Nav items in their own subfolder
+      if (nameLower.startsWith("nav")) {
+        addPartControls(navFolder, data, name);
+      } else {
+        addPartControls(glbPartsFolder, data, name);
+      }
     });
 
+    navFolder.close();
     glbPartsFolder.close();
   }
 
@@ -2830,11 +2894,11 @@ const GUI = window.lil.GUI;
 
     if (composer.cyberpunkPass) {
       composer.cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
-      composer.cyberpunkPass.uniforms['chromaticAberration'].value = settings.chromaticAberration;
+      composer.cyberpunkPass.uniforms['chromaticAberration'].value = settings.colorGradingEnabled ? settings.chromaticAberration : 0;
       composer.cyberpunkPass.uniforms['tintColor'].value.set(settings.colorGradingTint);
       composer.cyberpunkPass.uniforms['tintIntensity'].value = settings.colorGradingEnabled ? settings.colorGradingIntensity : 0;
-      composer.cyberpunkPass.uniforms['saturation'].value = settings.colorGradingSaturation;
-      composer.cyberpunkPass.uniforms['contrast'].value = settings.colorGradingContrast;
+      composer.cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
+      composer.cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
     }
 
     if (composer.fxaaPass) {
@@ -2885,6 +2949,7 @@ const GUI = window.lil.GUI;
         c.light.distance = settings.chaserLightDistance;
         c.light.angle = (settings.chaserLightAngle * Math.PI) / 180; // Convert degrees to radians
         c.light.penumbra = settings.chaserLightPenumbra;
+        c.light.shadow.camera.far = settings.chaserLightDistance || 50;
         // Account for mesh scale when setting light position
         const meshScale = c.mesh.scale.y || 1;
         c.light.position.y = settings.chaserLightHeight / meshScale;
@@ -3423,6 +3488,8 @@ const GUI = window.lil.GUI;
   const captureEffects = [];
 
   function createCaptureEffect(position, chaserColor, billboard) {
+    if (!settings.pulseWaveEnabled) return;
+
     const color = new THREE.Color(chaserColor);
     const originX = position.x;
     const originZ = position.z;
@@ -3430,7 +3497,8 @@ const GUI = window.lil.GUI;
     // Create grid pulse - glowing tubes along each edge that light up based on distance
     const gridLines = [];
     if (STATE.pathGraph && STATE.pathGraph.edges) {
-      const tubeRadius = 0.05;
+      const tubeHeight = settings.pulseWaveTubeHeight || 0.15;
+      const tubeWidth = tubeHeight * 0.7;
       for (const edge of STATE.pathGraph.edges) {
         // Calculate edge length and direction
         const dx = edge.x2 - edge.x1;
@@ -3438,8 +3506,8 @@ const GUI = window.lil.GUI;
         const length = Math.sqrt(dx * dx + dz * dz);
         const angle = Math.atan2(dx, dz);
 
-        // Create a box geometry stretched along the edge
-        const tubeGeo = new THREE.BoxGeometry(tubeRadius * 2, tubeRadius, length);
+        // Create a box geometry stretched along the edge - taller for more weight
+        const tubeGeo = new THREE.BoxGeometry(tubeWidth * 2, tubeHeight, length);
         const tubeMat = new THREE.MeshBasicMaterial({
           color: color,
           transparent: true,
@@ -3452,7 +3520,7 @@ const GUI = window.lil.GUI;
         // Position at center of edge
         const centerX = (edge.x1 + edge.x2) / 2;
         const centerZ = (edge.z1 + edge.z2) / 2;
-        tube.position.set(centerX, 0.1, centerZ);
+        tube.position.set(centerX, tubeHeight / 2, centerZ);
         tube.rotation.y = angle;
         scene.add(tube);
 
@@ -3464,7 +3532,7 @@ const GUI = window.lil.GUI;
     }
 
     // Create intense particle burst from billboard position
-    const particleCount = 120;
+    const particleCount = settings.pulseWaveParticles ? 120 : 0;
     const particlePositions = new Float32Array(particleCount * 3);
     const particleVelocities = [];
     const particleColors = new Float32Array(particleCount * 3);
@@ -3518,17 +3586,21 @@ const GUI = window.lil.GUI;
     scene.add(particles);
 
     // Create a flash at the capture point
-    const flashGeo = new THREE.SphereGeometry(0.5, 16, 16);
-    const flashMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 1.0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-    const flash = new THREE.Mesh(flashGeo, flashMat);
-    flash.position.copy(billboardPos);
-    scene.add(flash);
+    let flash = null;
+    let flashMat = null;
+    if (settings.pulseWaveFlash !== false) {
+      const flashGeo = new THREE.SphereGeometry(0.5, 16, 16);
+      flashMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      flash = new THREE.Mesh(flashGeo, flashMat);
+      flash.position.copy(billboardPos);
+      scene.add(flash);
+    }
 
     captureEffects.push({
       gridLines,
@@ -3541,9 +3613,10 @@ const GUI = window.lil.GUI;
       originX,
       originZ,
       time: 0,
-      duration: 4.0,
-      pulseSpeed: 12,
-      pulseWidth: 1.2
+      duration: settings.pulseWaveDuration || 5.0,
+      pulseSpeed: settings.pulseWaveSpeed || 6,
+      pulseWidth: settings.pulseWaveWidth || 2.5,
+      intensity: settings.pulseWaveIntensity || 1.0
     });
   }
 
@@ -3563,9 +3636,11 @@ const GUI = window.lil.GUI;
         scene.remove(effect.particles);
         effect.particles.geometry.dispose();
         effect.particleMat.dispose();
-        scene.remove(effect.flash);
-        effect.flash.geometry.dispose();
-        effect.flashMat.dispose();
+        if (effect.flash) {
+          scene.remove(effect.flash);
+          effect.flash.geometry.dispose();
+          effect.flashMat.dispose();
+        }
         captureEffects.splice(i, 1);
         continue;
       }
@@ -3581,8 +3656,8 @@ const GUI = window.lil.GUI;
         if (distFromPulse < effect.pulseWidth) {
           // Smooth Gaussian falloff for clean wave appearance
           const normalizedDist = distFromPulse / effect.pulseWidth;
-          const intensity = Math.exp(-normalizedDist * normalizedDist * 4);
-          gl.material.opacity = intensity * (1 - fadeOut);
+          const waveIntensity = Math.exp(-normalizedDist * normalizedDist * 3);
+          gl.material.opacity = waveIntensity * effect.intensity * (1 - fadeOut);
         } else {
           gl.material.opacity = 0;
         }
@@ -3607,9 +3682,11 @@ const GUI = window.lil.GUI;
       effect.particleMat.size = 0.25 * (1 - t * 0.3);
 
       // Animate flash - quick bright flash that fades
-      const flashT = Math.min(1, effect.time * 5);
-      effect.flashMat.opacity = Math.max(0, 1 - flashT);
-      effect.flash.scale.setScalar(1 + flashT * 2);
+      if (effect.flash) {
+        const flashT = Math.min(1, effect.time * 5);
+        effect.flashMat.opacity = Math.max(0, 1 - flashT);
+        effect.flash.scale.setScalar(1 + flashT * 2);
+      }
     }
   }
 
@@ -4232,7 +4309,10 @@ const GUI = window.lil.GUI;
 
     root.traverse((obj) => {
       if (obj.isMesh) {
-        obj.castShadow = true;
+        const nameUpper = (obj.name || "").toUpperCase();
+        // Glass meshes don't cast shadows so helicopter light shines through
+        const isGlass = nameUpper.includes("GLASS");
+        obj.castShadow = !isGlass;
         obj.receiveShadow = true;
       }
       if (obj.isCamera) {
@@ -5023,7 +5103,7 @@ const GUI = window.lil.GUI;
         light.shadow.mapSize.width = 512;
         light.shadow.mapSize.height = 512;
         light.shadow.camera.near = 0.1;
-        light.shadow.camera.far = 50;
+        light.shadow.camera.far = settings.chaserLightDistance || 50;
         light.shadow.bias = -0.001;
 
         // Create target for spotlight - point forward from the car (negative Z due to car flip)
