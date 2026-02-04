@@ -45,7 +45,7 @@ export const defaultSettings = {
   directPosZ: 5,
   wireEnabled: true,
   wireSegments: 12,
-  wireHeight: 0.3,
+  wireHeight: 3,
   wireGravity: 0.15,
   wireFriction: 0.92,
   wireIterations: 3,
@@ -112,7 +112,7 @@ export const defaultSettings = {
   glassPosY: 0,
   glassPosZ: 0,
   glassRotX: 0,
-  glassVideoEnabled: true,
+  glassVideoEnabled: false,
   glassVideoOpacity: 0.2,
   glassVideoBrightness: 1.0,
   // Glass text builder
@@ -137,6 +137,8 @@ export const defaultSettings = {
   glassTextRowDelay: 200,
   glassTextShuffle: true,
   glassTextShuffleSpeed: 0.3,
+  glassTextShuffleChars: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  glassTextShuffleCharDelay: 50,
   // Iframe Planes
   leftPanelEnabled: true,
   // 4 independent corners (counter-clockwise from top-left)

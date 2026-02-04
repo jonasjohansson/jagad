@@ -707,7 +707,6 @@ const GUI = window.lil.GUI;
   let glassVideoReady = false;
 
   // Text shuffle effect - only shuffles characters that change
-  const SHUFFLE_CHARS = "0123456789";
   const textShuffleState = {
     rows: [{}, {}, {}, {}], // State for each row
     lastTexts: ["", "", "", ""], // Track previous text to detect changes
@@ -731,13 +730,17 @@ const GUI = window.lil.GUI;
       }
     }
 
-    // Fast delays - only for changed characters
+    // Calculate delays with staggered character reveal
     const speedFactor = Math.max(0.1, settings.glassTextShuffleSpeed);
-    const baseDelay = 30 / speedFactor; // Much faster
-    const shuffleIterations = 3; // Only 3 shuffle cycles
+    const baseDelay = 30 / speedFactor;
+    const shuffleIterations = 3;
+    const charDelay = settings.glassTextShuffleCharDelay || 0;
+
     for (let i = 0; i < targetText.length; i++) {
       if (state.changedIndices.includes(i)) {
-        state.charDelays.push(baseDelay * shuffleIterations);
+        // Add staggered delay: each character waits for previous ones
+        const staggerDelay = i * charDelay;
+        state.charDelays.push(baseDelay * shuffleIterations + staggerDelay);
       } else {
         state.charDelays.push(0); // Unchanged chars lock immediately
       }
@@ -759,10 +762,11 @@ const GUI = window.lil.GUI;
       } else if (state.changedIndices.includes(i)) {
         // Only shuffle changed characters, but skip spaces and numbers
         const char = state.target[i];
+        const shuffleChars = settings.glassTextShuffleChars || "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         if (char === " " || (char >= "0" && char <= "9")) {
           result += char;
         } else {
-          result += SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
+          result += shuffleChars[Math.floor(Math.random() * shuffleChars.length)];
         }
       } else {
         // Unchanged character - show target immediately
@@ -2283,6 +2287,10 @@ const GUI = window.lil.GUI;
     textFolder.add(settings, "glassTextLetterSpacing", -20, 50, 1).name("Letter Spacing").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextMonospace").name("Monospace").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextCharWidth", 20, 200, 1).name("Char Width").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextShuffle").name("Shuffle Effect");
+    textFolder.add(settings, "glassTextShuffleSpeed", 0.1, 2, 0.1).name("Shuffle Speed");
+    textFolder.add(settings, "glassTextShuffleChars").name("Shuffle Chars");
+    textFolder.add(settings, "glassTextShuffleCharDelay", 0, 200, 5).name("Char Delay (ms)");
     textFolder.close();
 
     // ==================== ADDONS ====================
