@@ -778,8 +778,8 @@ const GUI = window.lil.GUI;
   }
 
   function getShuffledText(rowIndex, targetText, dt) {
-    // Skip shuffle if disabled
-    if (!settings.glassTextShuffle) {
+    // Skip shuffle if disabled or during high score entry
+    if (!settings.glassTextShuffle || STATE.enteringHighScore) {
       textShuffleState.lastTexts[rowIndex] = targetText;
       return targetText;
     }
@@ -1530,13 +1530,14 @@ const GUI = window.lil.GUI;
 
   function replaceTemplateVars(text) {
     if (!text) return "";
-    // Flash unset initials (underscores) when entering high score
+    // Flash current position when entering high score
     let initials;
     if (STATE.highScoreInitials) {
       const blink = Math.floor(Date.now() / 400) % 2 === 0; // Toggle every 400ms
-      initials = STATE.highScoreInitials.map(c => {
-        if (c === "_" && STATE.enteringHighScore) {
-          return blink ? "_" : " ";
+      initials = STATE.highScoreInitials.map((c, i) => {
+        if (STATE.enteringHighScore && i === STATE.highScorePosition) {
+          // Blink the current position being edited
+          return blink ? c : "_";
         }
         return c;
       }).join("");
@@ -4420,8 +4421,8 @@ const GUI = window.lil.GUI;
       updateCaptureEffects(dt);
       updateAtmosphere(dt);
 
-      // Update glass canvas for video/marquee/shuffle animation
-      if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive())) {
+      // Update glass canvas for video/marquee/shuffle animation/high score entry
+      if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive() || STATE.enteringHighScore)) {
         updateGlassCanvas(timestamp);
       }
     }

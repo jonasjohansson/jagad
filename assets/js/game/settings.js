@@ -136,30 +136,30 @@ export const defaultSettings = {
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
   glassTextShuffle: true,
-  glassTextShuffleSpeed: 0.3,
-  glassTextShuffleChars: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-  glassTextShuffleCharDelay: 50,
+  glassTextShuffleSpeed: 2.0,
+  glassTextShuffleChars: "!@#$%^&*()[]{}|<>?/\\~`+=_-",
+  glassTextShuffleCharDelay: 30,
   // Iframe Planes
   leftPanelEnabled: true,
   // 4 independent corners (counter-clockwise from top-left)
-  leftPanelC1X: -5.11,
-  leftPanelC1Z: 3.7,
+  leftPanelC1X: -5.24,
+  leftPanelC1Z: 3.43,
   leftPanelC2X: -1.15,
-  leftPanelC2Z: 3.66,
+  leftPanelC2Z: 3.38,
   leftPanelC3X: -1.16,
-  leftPanelC3Z: 4.55,
-  leftPanelC4X: -5.13,
-  leftPanelC4Z: 4.57,
+  leftPanelC3Z: 4.34,
+  leftPanelC4X: -5.25,
+  leftPanelC4Z: 4.36,
   rightPanelEnabled: true,
   // 4 independent corners (counter-clockwise from top-left)
-  rightPanelC1X: 0.25,
-  rightPanelC1Z: 3.66,
-  rightPanelC2X: 5.09,
-  rightPanelC2Z: 3.7,
-  rightPanelC3X: 5.13,
-  rightPanelC3Z: 4.49,
-  rightPanelC4X: 0.26,
-  rightPanelC4Z: 4.5,
+  rightPanelC1X: 0.24,
+  rightPanelC1Z: 3.4,
+  rightPanelC2X: 5.21,
+  rightPanelC2Z: 3.42,
+  rightPanelC3X: 5.21,
+  rightPanelC3Z: 4.29,
+  rightPanelC4X: 0.24,
+  rightPanelC4Z: 4.28,
   // Audio
   audioVolume: 0.5,
   audioTrack: "triumph-hill",
@@ -218,7 +218,7 @@ export const defaultSettings = {
 
   // Game States
   gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
-  countdownDuration: 10, // Seconds for countdown before game starts
+  countdownDuration: 3, // Seconds for countdown before game starts
 
   // Pre-game state text
   preGameTextRow1: "",
