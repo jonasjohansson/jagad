@@ -1138,8 +1138,11 @@ const GUI = window.lil.GUI;
     glassMaterials = [];
     const brightness = settings.glassTextBrightness || 1;
     for (const mesh of glassMeshes) {
-      // Store original Y position for offset calculations
+      // Store original positions and rotation for offset calculations
+      mesh.userData.originalX = mesh.position.x;
       mesh.userData.originalY = mesh.position.y;
+      mesh.userData.originalZ = mesh.position.z;
+      mesh.userData.originalRotX = mesh.rotation.x;
 
       // Use BasicMaterial with toneMapped:false to allow brightness > 1
       const glassMaterial = new THREE.MeshBasicMaterial({
@@ -1158,14 +1161,24 @@ const GUI = window.lil.GUI;
       glassMaterials.push(glassMaterial);
     }
 
-    // Apply initial Y offset
-    updateGlassPosY();
+    // Apply initial position offsets
+    updateGlassPosition();
   }
 
-  function updateGlassPosY() {
+  function updateGlassPosition() {
     for (const mesh of glassMeshes) {
+      if (mesh.userData.originalX !== undefined) {
+        mesh.position.x = mesh.userData.originalX + (settings.glassPosX || 0);
+      }
       if (mesh.userData.originalY !== undefined) {
         mesh.position.y = mesh.userData.originalY + (settings.glassPosY || 0);
+      }
+      if (mesh.userData.originalZ !== undefined) {
+        mesh.position.z = mesh.userData.originalZ + (settings.glassPosZ || 0);
+      }
+      // Apply rotation offset (in degrees, converted to radians)
+      if (mesh.userData.originalRotX !== undefined) {
+        mesh.rotation.x = mesh.userData.originalRotX + (settings.glassRotX || 0) * Math.PI / 180;
       }
     }
   }
@@ -2255,7 +2268,10 @@ const GUI = window.lil.GUI;
     textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
     if (settings.glassMaterialOpacity === undefined) settings.glassMaterialOpacity = 1.0;
     textFolder.add(settings, "glassMaterialOpacity", 0, 1, 0.05).name("Glass Opacity").onChange(() => updateGlassMaterialOpacity());
-    textFolder.add(settings, "glassPosY", -5, 5, 0.01).name("Glass 3D Y").onChange(() => updateGlassPosY());
+    textFolder.add(settings, "glassPosX", -10, 10, 0.01).name("Glass 3D X").onChange(() => updateGlassPosition());
+    textFolder.add(settings, "glassPosY", -10, 10, 0.01).name("Glass 3D Y").onChange(() => updateGlassPosition());
+    textFolder.add(settings, "glassPosZ", -10, 10, 0.01).name("Glass 3D Z").onChange(() => updateGlassPosition());
+    textFolder.add(settings, "glassRotX", -90, 90, 1).name("Glass Rot X").onChange(() => updateGlassPosition());
     textFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
@@ -3277,7 +3293,7 @@ const GUI = window.lil.GUI;
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
-        depthTest: false,
+        depthTest: true, // Enable depth test so billboards render behind helicopter
       });
 
       // Add contrast adjustment via shader modification
@@ -3311,7 +3327,7 @@ const GUI = window.lil.GUI;
       this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
       this.billboard.rotation.x = -Math.PI / 2;
       this.billboard.castShadow = false;
-      this.billboard.renderOrder = 1001; // Render on top of wire and glass
+      this.billboard.renderOrder = 100; // Render above wire but respect depth
       scene.add(this.billboard);
 
       // Add point light for billboard emission
