@@ -23,7 +23,6 @@ const GUI = window.lil.GUI;
 const loadingProgress = {
   total: 0,
   loaded: 0,
-  originalTitle: document.title,
   register(count = 1) {
     this.total += count;
     this.update();
@@ -35,10 +34,10 @@ const loadingProgress = {
   update() {
     if (this.total === 0) return;
     const percent = Math.round((this.loaded / this.total) * 100);
-    document.title = `Loading ${percent}%`;
+    document.title = `Jagad ${percent}%`;
   },
   finish() {
-    document.title = this.originalTitle;
+    document.title = "Jagad";
   }
 };
 
