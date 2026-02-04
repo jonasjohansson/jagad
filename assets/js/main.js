@@ -653,12 +653,109 @@ const GUI = window.lil.GUI;
       audioBoost = (bass * 0.6 + mid * 0.4) * settings.lampAudioSensitivity;
     }
 
-    const baseIntensity = settings.lampEmissiveIntensity || 2.0;
+    const globalMult = settings.globalEmissiveMultiplier || 1.0;
+    const baseIntensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
     const finalIntensity = baseIntensity + audioBoost;
 
     for (const mesh of STATE.lampMeshes) {
       if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
         mesh.material.emissiveIntensity = finalIntensity;
+      }
+    }
+  }
+
+  let carBeatTime = 0;
+
+  function updateCarsAudio() {
+    if (!chasers || chasers.length === 0) return;
+    if (!settings.carAudioReactive) return;
+
+    // BPM-based pulsing
+    const bpm = settings.carAudioBPM || 95;
+    const beatInterval = 60000 / bpm; // ms per beat
+    const now = performance.now();
+    const beatPhase = (now % beatInterval) / beatInterval; // 0 to 1
+
+    // Create a pulse that peaks at the beat and fades
+    // Using a sharp attack and smooth decay
+    const pulse = Math.pow(1 - beatPhase, 3); // Exponential decay from beat
+    const audioBoost = pulse * (settings.carAudioIntensity || 0.5);
+
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+
+    for (let i = 0; i < chasers.length; i++) {
+      const chaser = chasers[i];
+      if (chaser.isCarModel && chaser.mesh) {
+        const chaserColor = chaserColors[i] || "#ffffff";
+        chaser.mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            const mat = child.material;
+            // Set emissive color to chaser color
+            if (!mat.emissive) {
+              mat.emissive = new THREE.Color(chaserColor);
+            } else if (!child._emissiveSet) {
+              mat.emissive.set(chaserColor);
+              child._emissiveSet = true;
+            }
+            // Boost emissive based on BPM pulse
+            const baseEmissive = chaser.ready || chaser.active ? 0.3 : 0.05;
+            mat.emissiveIntensity = baseEmissive + audioBoost;
+          }
+        });
+      }
+    }
+  }
+
+  function updateAllEmissives() {
+    const globalMult = settings.globalEmissiveMultiplier || 1.0;
+
+    // Update windows
+    if (STATE.windowMeshes) {
+      const intensity = (settings.windowEmissiveIntensity || 2.0) * globalMult;
+      for (const mesh of STATE.windowMeshes) {
+        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+          mesh.material.emissiveIntensity = intensity;
+        }
+      }
+    }
+
+    // Update lamps
+    if (STATE.lampMeshes) {
+      const intensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
+      for (const mesh of STATE.lampMeshes) {
+        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+          mesh.material.emissiveIntensity = intensity;
+        }
+      }
+    }
+
+    // Update roads
+    if (STATE.roadMeshes) {
+      const intensity = (settings.roadEmissiveIntensity || 1.0) * globalMult;
+      for (const mesh of STATE.roadMeshes) {
+        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+          mesh.material.emissiveIntensity = intensity;
+        }
+      }
+    }
+
+    // Update paths
+    if (STATE.pathMeshes) {
+      const intensity = (settings.pathEmissiveIntensity || 1.0) * globalMult;
+      for (const mesh of STATE.pathMeshes) {
+        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+          mesh.material.emissiveIntensity = intensity;
+        }
+      }
+    }
+
+    // Update other emissive meshes
+    if (STATE.otherEmissiveMeshes) {
+      const intensity = (settings.otherEmissiveIntensity || 1.0) * globalMult;
+      for (const mesh of STATE.otherEmissiveMeshes) {
+        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+          mesh.material.emissiveIntensity = intensity;
+        }
       }
     }
   }
@@ -715,7 +812,12 @@ const GUI = window.lil.GUI;
     flickerChars: {}, // Cached random chars per row
   };
 
-  const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*!?";
+  const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  // Check if character is a letter (A-Z)
+  function isLetter(char) {
+    return char >= "A" && char <= "Z";
+  }
 
   function initShuffleRow(rowIndex, targetText, previousText) {
     const state = textShuffleState.rows[rowIndex];
@@ -723,20 +825,48 @@ const GUI = window.lil.GUI;
     state.chars = []; // Per-character state: { active, startTime }
 
     const now = performance.now();
-    const duration = settings.glassTextShuffleCharDelay || 200; // Duration each char scrambles
+    const duration = settings.glassTextShuffleCharDelay || 500; // Duration each char scrambles
     const stagger = 30; // Stagger start time between characters
 
     // Initialize per-character state
     for (let i = 0; i < targetText.length; i++) {
       const oldChar = (previousText || "")[i] || "";
       const newChar = targetText[i] || "";
-      const isChanged = oldChar !== newChar && newChar !== " " && !(newChar >= "0" && newChar <= "9");
+      // Only scramble letters that changed
+      const isChanged = oldChar !== newChar && isLetter(newChar);
 
       state.chars.push({
         active: isChanged,
         startTime: now + (i * stagger), // Stagger each character
         duration: duration,
       });
+    }
+  }
+
+  // Trigger random scramble on a letter in a row
+  function triggerRandomScramble(rowIndex) {
+    const state = textShuffleState.rows[rowIndex];
+    if (!state.target || !state.chars) return;
+
+    const now = performance.now();
+    const duration = settings.glassTextShuffleCharDelay || 500;
+
+    // Find available letter characters (not already scrambling)
+    const availableIndices = [];
+    for (let i = 0; i < state.target.length; i++) {
+      const char = state.target[i];
+      const charState = state.chars[i];
+      if (isLetter(char) && charState && !charState.active) {
+        availableIndices.push(i);
+      }
+    }
+
+    // Scramble one random available letter
+    if (availableIndices.length > 0) {
+      const randomIdx = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+      state.chars[randomIdx].active = true;
+      state.chars[randomIdx].startTime = now;
+      state.chars[randomIdx].duration = duration;
     }
   }
 
@@ -763,6 +893,14 @@ const GUI = window.lil.GUI;
     const flickerInterval = 150;
     if (now - textShuffleState.lastFlickerTime >= flickerInterval) {
       textShuffleState.lastFlickerTime = now;
+
+      // Randomly trigger scrambles on letters (5% chance per row per interval)
+      for (let r = 0; r < 4; r++) {
+        if (Math.random() < 0.05) {
+          triggerRandomScramble(r);
+        }
+      }
+
       // Generate new random chars for all rows
       for (let r = 0; r < 4; r++) {
         textShuffleState.flickerChars[r] = {};
@@ -777,13 +915,12 @@ const GUI = window.lil.GUI;
 
     // Build result string
     let result = "";
-    let allComplete = true;
 
     for (let i = 0; i < state.target.length; i++) {
       const char = state.target[i];
       const charState = state.chars[i];
 
-      if (!charState || !charState.active || char === " ") {
+      if (!charState || !charState.active) {
         result += char;
       } else {
         const elapsed = now - charState.startTime;
@@ -792,13 +929,11 @@ const GUI = window.lil.GUI;
           charState.active = false;
           result += char;
         } else if (elapsed < 0) {
-          // Not started yet (staggered) - show original or space
+          // Not started yet (staggered) - show space
           result += " ";
-          allComplete = false;
         } else {
           // Still scrambling - show cached random char
           result += textShuffleState.flickerChars[rowIndex]?.[i] || char;
-          allComplete = false;
         }
       }
     }
@@ -2559,20 +2694,34 @@ const GUI = window.lil.GUI;
     lightsFolder.add(settings, "environmentIntensity", 0, 50, 0.1).name("Environment").onChange((v) => {
       scene.environmentIntensity = v;
     });
-    if (settings.windowEmissiveIntensity === undefined) settings.windowEmissiveIntensity = 0.5;
-    lightsFolder.add(settings, "windowEmissiveIntensity", 0, 5, 0.1).name("Window Emissive").onChange((v) => {
-      if (STATE.windowMeshes) {
-        for (const mesh of STATE.windowMeshes) {
-          if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-            mesh.material.emissiveIntensity = v;
-          }
-        }
-      }
+    // Emissive controls subfolder
+    const emissiveFolder = lightsFolder.addFolder("Emissive");
+    if (settings.globalEmissiveMultiplier === undefined) settings.globalEmissiveMultiplier = 1.0;
+    emissiveFolder.add(settings, "globalEmissiveMultiplier", 0, 5, 0.1).name("Global Multiplier").onChange(() => {
+      updateAllEmissives();
     });
-    // Lamp controls
-    lightsFolder.add(settings, "lampEmissiveIntensity", 0, 10, 0.1).name("Lamp Emissive");
-    lightsFolder.add(settings, "lampAudioReactive").name("Lamp Audio Reactive");
-    lightsFolder.add(settings, "lampAudioSensitivity", 0, 10, 0.5).name("Lamp Audio Sens.");
+    emissiveFolder.add(settings, "windowEmissiveIntensity", 0, 50, 0.5).name("Windows").onChange(() => {
+      updateAllEmissives();
+    });
+    emissiveFolder.add(settings, "lampEmissiveIntensity", 0, 50, 0.5).name("Lamps").onChange(() => {
+      updateAllEmissives();
+    });
+    emissiveFolder.add(settings, "roadEmissiveIntensity", 0, 50, 0.5).name("Roads").onChange(() => {
+      updateAllEmissives();
+    });
+    emissiveFolder.add(settings, "pathEmissiveIntensity", 0, 50, 0.5).name("Paths").onChange(() => {
+      updateAllEmissives();
+    });
+    emissiveFolder.add(settings, "otherEmissiveIntensity", 0, 50, 0.5).name("Other").onChange(() => {
+      updateAllEmissives();
+    });
+    // Audio reactive controls
+    emissiveFolder.add(settings, "lampAudioReactive").name("Lamp Audio Reactive");
+    emissiveFolder.add(settings, "lampAudioSensitivity", 0, 10, 0.5).name("Lamp Audio Sens.");
+    emissiveFolder.add(settings, "carAudioReactive").name("Car BPM Pulse");
+    emissiveFolder.add(settings, "carAudioBPM", 60, 180, 1).name("Car BPM");
+    emissiveFolder.add(settings, "carAudioIntensity", 0, 10, 0.1).name("Car Pulse Intensity");
+    emissiveFolder.close();
     lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
       for (const f of fugitives) { if (f.light) f.light.visible = v; }
       for (const c of chasers) { if (c.light) c.light.visible = v; }
@@ -4457,9 +4606,10 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update helicopter, lamps, atmosphere and capture effects
+      // Update helicopter, lamps, cars audio, atmosphere and capture effects
       updateHelicopter(dt);
       updateLamps();
+      updateCarsAudio();
       updateCaptureEffects(dt);
       updateAtmosphere(dt);
 
@@ -4649,6 +4799,10 @@ const GUI = window.lil.GUI;
     const windowMeshes = [];
     const lampMeshes = [];
 
+    const roadMeshes = [];
+    const pathMeshes = [];
+    const otherEmissiveMeshes = [];
+
     root.traverse((obj) => {
       if (obj.isMesh) {
         const nameUpper = (obj.name || "").toUpperCase();
@@ -4656,26 +4810,43 @@ const GUI = window.lil.GUI;
         const isGlass = nameUpper.includes("GLASS");
         const isWindow = nameUpper.includes("WINDOW");
         const isLamp = nameUpper.includes("LAMP");
+        const isRoad = nameUpper.includes("ROAD");
+        const isPath = nameUpper.includes("PATH");
         obj.castShadow = !isGlass;
         obj.receiveShadow = true;
 
-        // Boost emissive on window meshes
+        const globalMult = settings.globalEmissiveMultiplier || 1.0;
+
+        // Categorize emissive meshes
         if (isWindow && obj.material) {
           windowMeshes.push(obj);
           const mat = obj.material;
           if (mat.emissive) {
-            mat.emissiveIntensity = settings.windowEmissiveIntensity || 0.5;
+            mat.emissiveIntensity = (settings.windowEmissiveIntensity || 2.0) * globalMult;
           }
-        }
-
-        // Store lamp meshes for audio-reactive lighting
-        if (isLamp && obj.material) {
+        } else if (isLamp && obj.material) {
           lampMeshes.push(obj);
           const mat = obj.material;
           if (mat.emissive) {
             mat.emissive.set(0xffffaa); // Warm light color
-            mat.emissiveIntensity = settings.lampEmissiveIntensity || 2.0;
+            mat.emissiveIntensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
           }
+        } else if (isRoad && obj.material) {
+          roadMeshes.push(obj);
+          const mat = obj.material;
+          if (mat.emissive) {
+            mat.emissiveIntensity = (settings.roadEmissiveIntensity || 1.0) * globalMult;
+          }
+        } else if (isPath && obj.material) {
+          pathMeshes.push(obj);
+          const mat = obj.material;
+          if (mat.emissive) {
+            mat.emissiveIntensity = (settings.pathEmissiveIntensity || 1.0) * globalMult;
+          }
+        } else if (obj.material && obj.material.emissive && obj.material.emissiveIntensity > 0) {
+          // Catch any other emissive meshes
+          otherEmissiveMeshes.push(obj);
+          obj.material.emissiveIntensity = (settings.otherEmissiveIntensity || 1.0) * globalMult;
         }
       }
       if (obj.isCamera) {
@@ -4685,6 +4856,11 @@ const GUI = window.lil.GUI;
 
     STATE.windowMeshes = windowMeshes;
     STATE.lampMeshes = lampMeshes;
+    STATE.roadMeshes = roadMeshes;
+    STATE.pathMeshes = pathMeshes;
+    STATE.otherEmissiveMeshes = otherEmissiveMeshes;
+
+    if (DEBUG) console.log("Emissive meshes found - Windows:", windowMeshes.length, "Lamps:", lampMeshes.length, "Roads:", roadMeshes.length, "Paths:", pathMeshes.length, "Other:", otherEmissiveMeshes.length);
 
     const levelContainer = new THREE.Group();
     levelContainer.add(root);
