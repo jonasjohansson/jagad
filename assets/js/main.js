@@ -2291,7 +2291,6 @@ const GUI = window.lil.GUI;
       for (const c of chasers) c.speed = v;
     });
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
-    gameFolder.close();
 
     // ==================== MOBILE ====================
     const mobileFolder = guiLeft.addFolder("📱 Mobile");
@@ -2317,8 +2316,8 @@ const GUI = window.lil.GUI;
     });
     mobileFolder.close();
 
-    // ==================== STATES ====================
-    const statesFolder = guiLeft.addFolder("📺 States");
+    // ==================== STATES (under Game) ====================
+    const statesFolder = gameFolder.addFolder("States");
 
     // Current state display (read-only)
     const stateDisplay = { current: STATE.gameState };
@@ -2424,6 +2423,7 @@ const GUI = window.lil.GUI;
     highScoresFolder.close();
 
     statesFolder.close();
+    gameFolder.close();
 
     // Update state display in animation loop
     const updateStateDisplay = () => {
