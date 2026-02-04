@@ -218,6 +218,7 @@ export const defaultSettings = {
 
   // Game States
   gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
+  countdownDuration: 10, // Seconds for countdown before game starts
 
   // Pre-game state text
   preGameTextRow1: "",

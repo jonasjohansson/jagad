@@ -1444,11 +1444,17 @@ const GUI = window.lil.GUI;
         settings.gameStarted = false;
         STATE.gameOver = false;
         setChasersOpacity(0.1);
+        // Hide fugitive billboards
+        for (const wire of fugitiveWires) {
+          if (!wire.isChaser) {
+            wire.hideWireAndBillboard();
+          }
+        }
         break;
 
       case "STARTING":
-        // Begin countdown (10 seconds for players to get ready)
-        STATE.countdownValue = 10;
+        // Begin countdown
+        STATE.countdownValue = settings.countdownDuration || 10;
         STATE.countdownTimer = 0;
         applyStartingText();
         settings.gameStarted = true; // Mark as started but input blocked
@@ -1464,6 +1470,12 @@ const GUI = window.lil.GUI;
         STATE.playerScore = 0;
         STATE.capturedCount = 0;
         // Chasers will get full opacity when activated individually
+        // Trigger fugitive billboard pop-in animation
+        for (const wire of fugitiveWires) {
+          if (!wire.isChaser) {
+            wire.startPopIn();
+          }
+        }
         break;
 
       case "GAME_OVER":
@@ -2093,6 +2105,7 @@ const GUI = window.lil.GUI;
     const stateDisplay = { current: STATE.gameState };
     const stateController = statesFolder.add(stateDisplay, "current", ["PRE_GAME", "STARTING", "PLAYING", "GAME_OVER"]).name("Current State").listen();
     stateController.domElement.style.pointerEvents = "none"; // Make read-only
+    statesFolder.add(settings, "countdownDuration", 1, 30, 1).name("Countdown (sec)");
 
     // Pre-game settings (text + image)
     const preGameFolder = statesFolder.addFolder("Pre-Game");
@@ -3250,6 +3263,13 @@ const GUI = window.lil.GUI;
       this.fadeDirection = 0;
       this.pendingTextureSwap = false;
 
+      // Pop-in animation state
+      this.isPopping = false;
+      this.popProgress = 0;
+      this.popDuration = 0.6; // seconds
+      this.popScale = 0;
+      this.showWireAndBillboard = false; // Only show when game is playing
+
       this.initWire();
     }
 
@@ -3435,13 +3455,44 @@ const GUI = window.lil.GUI;
       if (this.isChaser) {
         return this.actor.active;
       } else {
-        return !this.actor.captured;
+        // Fugitive billboards only show when game is playing and showWireAndBillboard is true
+        return !this.actor.captured && this.showWireAndBillboard;
       }
+    }
+
+    startPopIn() {
+      this.isPopping = true;
+      this.popProgress = 0;
+      this.popScale = 0;
+      this.showWireAndBillboard = true;
+    }
+
+    hideWireAndBillboard() {
+      this.showWireAndBillboard = false;
+      this.isPopping = false;
+      this.popScale = 0;
+      if (this.billboard) this.billboard.scale.setScalar(0);
+    }
+
+    // Elastic easing function (overshoot and settle)
+    elasticOut(t) {
+      const p = 0.3;
+      return Math.pow(2, -10 * t) * Math.sin((t - p / 4) * (2 * Math.PI) / p) + 1;
     }
 
     update(dt = 0.016) {
       // Update fade animation
       this.updateFade(dt);
+
+      // Update pop-in animation
+      if (this.isPopping) {
+        this.popProgress += dt / this.popDuration;
+        if (this.popProgress >= 1) {
+          this.popProgress = 1;
+          this.isPopping = false;
+        }
+        this.popScale = this.elasticOut(this.popProgress);
+      }
 
       if (!this.isVisible()) {
         if (this.line) this.line.visible = false;
@@ -3450,7 +3501,11 @@ const GUI = window.lil.GUI;
       }
 
       if (this.line) this.line.visible = true;
-      if (this.billboard) this.billboard.visible = true;
+      if (this.billboard) {
+        this.billboard.visible = true;
+        // Apply pop scale
+        this.billboard.scale.setScalar(this.popScale);
+      }
 
       const actorPos = this.actor.mesh.position;
       const totalHeight = settings.wireHeight * this.actorSize;
