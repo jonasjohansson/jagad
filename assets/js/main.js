@@ -19,6 +19,29 @@ import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
 
+// Loading progress tracker
+const loadingProgress = {
+  total: 0,
+  loaded: 0,
+  originalTitle: document.title,
+  register(count = 1) {
+    this.total += count;
+    this.update();
+  },
+  complete(count = 1) {
+    this.loaded += count;
+    this.update();
+  },
+  update() {
+    if (this.total === 0) return;
+    const percent = Math.round((this.loaded / this.total) * 100);
+    document.title = `Loading ${percent}%`;
+  },
+  finish() {
+    document.title = this.originalTitle;
+  }
+};
+
 (async () => {
   // Suppress repeated Three.js texture unit warnings
   const warnedMessages = new Set();
@@ -272,6 +295,7 @@ const GUI = window.lil.GUI;
 
     const loader = new GLTFLoader();
     loader.load(PATHS.models.helicopter, (gltf) => {
+      loadingProgress.complete();
       const mesh = gltf.scene;
 
       // Scale helicopter
@@ -4924,10 +4948,14 @@ const GUI = window.lil.GUI;
 
   const loader = new GLTFLoader();
 
+  // Register loading items: level, building texture, 4 cars, helicopter
+  loadingProgress.register(7);
+
   // Load level GLB - use ROADS mesh from within it for navmesh
   new Promise((resolve, reject) => {
     loader.load(PATHS.models.level, resolve, undefined, reject);
   }).then((levelGltf) => {
+    loadingProgress.complete();
     const gltf = levelGltf;
     const root = gltf.scene;
 
@@ -5634,12 +5662,14 @@ const GUI = window.lil.GUI;
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(PATHS.images.building,
       (texture) => {
+        loadingProgress.complete();
         buildingPlane.material.map = texture;
         buildingPlane.material.color.set(0xffffff);
         buildingPlane.material.needsUpdate = true;
       },
       undefined,
       (error) => {
+        loadingProgress.complete();
         console.error("Failed to load building.png:", error);
       }
     );
@@ -5704,11 +5734,13 @@ const GUI = window.lil.GUI;
       new Promise((resolve) => {
         loader.load(path,
           (gltf) => {
+            loadingProgress.complete();
             if (DEBUG) console.log("Loaded car:", path);
             resolve(gltf.scene);
           },
           undefined,
           (err) => {
+            loadingProgress.complete();
             console.error("Failed to load car:", path, err);
             resolve(null);
           }
@@ -5837,6 +5869,7 @@ const GUI = window.lil.GUI;
     STATE.actorRadius = actorSize * 0.5;
     STATE.roadsMeshes = roadsMeshes;
     STATE.loaded = true;
+    loadingProgress.finish();
 
     setupGUI();
     initPostProcessing();
