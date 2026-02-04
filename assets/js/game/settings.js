@@ -217,6 +217,7 @@ export const defaultSettings = {
   pulseWaveIntensity: 0.8,
   pulseWaveTubeHeight: 0.12,
   pulseWaveEasing: "easeOut",
+  pulseWaveGlow: 3.0,
   pulseWaveParticles: true,
   pulseWaveFlash: true,
 

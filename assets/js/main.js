@@ -1641,6 +1641,13 @@ const GUI = window.lil.GUI;
         settings.glassTextRow4 = settings.preGameTextRow4;
         settings.gameStarted = false;
         STATE.gameOver = false;
+        // Reset all chasers to visible but dimmed
+        for (const c of chasers) {
+          if (c.mesh) c.mesh.visible = true;
+          if (c.light) c.light.visible = true;
+          c.ready = false;
+          c.active = false;
+        }
         setChasersOpacity(0.1);
         // Hide fugitive billboards
         for (const wire of fugitiveWires) {
@@ -1667,7 +1674,13 @@ const GUI = window.lil.GUI;
         STATE.fugitiveValue = 250; // Reset fugitive value
         STATE.playerScore = 0;
         STATE.capturedCount = 0;
-        // Chasers will get full opacity when activated individually
+        // Hide non-ready chasers, they'll appear when activated
+        for (const c of chasers) {
+          if (!c.ready) {
+            if (c.mesh) c.mesh.visible = false;
+            if (c.light) c.light.visible = false;
+          }
+        }
         // Trigger fugitive billboard pop-in animation
         for (const wire of fugitiveWires) {
           if (!wire.isChaser) {
@@ -2577,6 +2590,7 @@ const GUI = window.lil.GUI;
     if (settings.pulseWaveIntensity === undefined) settings.pulseWaveIntensity = 0.8;
     if (settings.pulseWaveTubeHeight === undefined) settings.pulseWaveTubeHeight = 0.12;
     if (settings.pulseWaveEasing === undefined) settings.pulseWaveEasing = "easeOut";
+    if (settings.pulseWaveGlow === undefined) settings.pulseWaveGlow = 3.0;
     if (settings.pulseWaveParticles === undefined) settings.pulseWaveParticles = true;
     if (settings.pulseWaveFlash === undefined) settings.pulseWaveFlash = true;
     pulseWaveFolder.add(settings, "pulseWaveEnabled").name("Enabled");
@@ -2585,6 +2599,7 @@ const GUI = window.lil.GUI;
     pulseWaveFolder.add(settings, "pulseWaveDuration", 1, 10, 0.5).name("Duration");
     pulseWaveFolder.add(settings, "pulseWaveIntensity", 0.1, 2, 0.1).name("Intensity");
     pulseWaveFolder.add(settings, "pulseWaveTubeHeight", 0.05, 0.5, 0.01).name("Tube Height");
+    pulseWaveFolder.add(settings, "pulseWaveGlow", 1, 10, 0.5).name("Glow");
     pulseWaveFolder.add(settings, "pulseWaveEasing", ["linear", "easeOut", "easeIn", "easeInOut"]).name("Easing");
     pulseWaveFolder.add(settings, "pulseWaveParticles").name("Particles");
     pulseWaveFolder.add(settings, "pulseWaveFlash").name("Flash");
@@ -3895,13 +3910,20 @@ const GUI = window.lil.GUI;
         scene.remove(gl.line);
         gl.geometry.dispose();
         gl.material.dispose();
+        if (gl.glow) {
+          scene.remove(gl.glow);
+          gl.glowGeometry.dispose();
+          gl.glowMaterial.dispose();
+        }
       }
       scene.remove(effect.particles);
       effect.particles.geometry.dispose();
       effect.particleMat.dispose();
-      scene.remove(effect.flash);
-      effect.flash.geometry.dispose();
-      effect.flashMat.dispose();
+      if (effect.flash) {
+        scene.remove(effect.flash);
+        effect.flash.geometry.dispose();
+        effect.flashMat.dispose();
+      }
     }
     captureEffects.length = 0;
 
@@ -3976,7 +3998,9 @@ const GUI = window.lil.GUI;
     const gridLines = [];
     if (STATE.pathGraph && STATE.pathGraph.edges) {
       const tubeHeight = settings.pulseWaveTubeHeight || 0.15;
-      const tubeWidth = tubeHeight * 0.7;
+      const tubeRadius = tubeHeight * 0.4;
+      const glowScale = settings.pulseWaveGlow || 3.0; // How much larger the glow is
+
       for (const edge of STATE.pathGraph.edges) {
         // Calculate edge length and direction
         const dx = edge.x2 - edge.x1;
@@ -3984,29 +4008,55 @@ const GUI = window.lil.GUI;
         const length = Math.sqrt(dx * dx + dz * dz);
         const angle = Math.atan2(dx, dz);
 
-        // Create a box geometry stretched along the edge - taller for more weight
-        const tubeGeo = new THREE.BoxGeometry(tubeWidth * 2, tubeHeight, length);
-        const tubeMat = new THREE.MeshBasicMaterial({
+        const centerX = (edge.x1 + edge.x2) / 2;
+        const centerZ = (edge.z1 + edge.z2) / 2;
+
+        // Create outer glow layer (larger, softer)
+        const glowGeo = new THREE.CylinderGeometry(tubeRadius * glowScale, tubeRadius * glowScale, length, 8, 1, true);
+        const glowMat = new THREE.MeshBasicMaterial({
           color: color,
           transparent: true,
           opacity: 0,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
-          depthTest: false
+          depthTest: false,
+          side: THREE.DoubleSide
         });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.position.set(centerX, tubeHeight / 2, centerZ);
+        glow.rotation.x = Math.PI / 2;
+        glow.rotation.z = angle;
+        scene.add(glow);
 
-        const tube = new THREE.Mesh(tubeGeo, tubeMat);
-        // Position at center of edge
-        const centerX = (edge.x1 + edge.x2) / 2;
-        const centerZ = (edge.z1 + edge.z2) / 2;
-        tube.position.set(centerX, tubeHeight / 2, centerZ);
-        tube.rotation.y = angle;
-        scene.add(tube);
+        // Create inner core (brighter, smaller)
+        const coreGeo = new THREE.CylinderGeometry(tubeRadius, tubeRadius, length, 8, 1, true);
+        const coreMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff, // White core for brightness
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          depthTest: false,
+          side: THREE.DoubleSide
+        });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        core.position.set(centerX, tubeHeight / 2, centerZ);
+        core.rotation.x = Math.PI / 2;
+        core.rotation.z = angle;
+        scene.add(core);
 
         // Calculate distance from capture origin to edge center
         const dist = Math.sqrt((centerX - originX) ** 2 + (centerZ - originZ) ** 2);
 
-        gridLines.push({ line: tube, material: tubeMat, geometry: tubeGeo, distance: dist });
+        gridLines.push({
+          line: core,
+          glow: glow,
+          material: coreMat,
+          glowMaterial: glowMat,
+          geometry: coreGeo,
+          glowGeometry: glowGeo,
+          distance: dist
+        });
       }
     }
 
@@ -4127,6 +4177,11 @@ const GUI = window.lil.GUI;
           scene.remove(gl.line);
           gl.geometry.dispose();
           gl.material.dispose();
+          if (gl.glow) {
+            scene.remove(gl.glow);
+            gl.glowGeometry.dispose();
+            gl.glowMaterial.dispose();
+          }
         }
         scene.remove(effect.particles);
         effect.particles.geometry.dispose();
@@ -4153,16 +4208,23 @@ const GUI = window.lil.GUI;
         const distFromPulse = Math.abs(gl.distance - pulseRadius);
 
         if (distFromPulse < effect.pulseWidth) {
-          // Use flat opacity within wave to avoid overlap artifacts
-          // Smooth edges only at the very front and back of the wave
-          const edgeFalloff = Math.min(
-            distFromPulse / (effect.pulseWidth * 0.3),
-            (effect.pulseWidth - distFromPulse) / (effect.pulseWidth * 0.3),
-            1
-          );
-          gl.material.opacity = Math.min(1, edgeFalloff) * effect.intensity * (1 - fadeOut);
+          // Smooth gaussian-like falloff for feathered edges
+          const normalizedDist = distFromPulse / effect.pulseWidth;
+          const smoothFalloff = Math.exp(-normalizedDist * normalizedDist * 4); // Gaussian falloff
+          const opacity = smoothFalloff * effect.intensity * (1 - fadeOut);
+
+          // Core is brighter
+          gl.material.opacity = Math.min(1, opacity);
+
+          // Glow is softer, wider, and more transparent
+          if (gl.glowMaterial) {
+            gl.glowMaterial.opacity = Math.min(0.4, opacity * 0.4);
+          }
         } else {
           gl.material.opacity = 0;
+          if (gl.glowMaterial) {
+            gl.glowMaterial.opacity = 0;
+          }
         }
       }
 
@@ -4684,7 +4746,10 @@ const GUI = window.lil.GUI;
           initActorOnPath(chaser);
         }
 
-        // Set full opacity when activated
+        // Make visible and set full opacity when activated
+        if (chaser.mesh) chaser.mesh.visible = true;
+        if (chaser.light) chaser.light.visible = true;
+
         if (chaser.isCarModel) {
           chaser.mesh.traverse((child) => {
             if (child.isMesh && child.material) {
