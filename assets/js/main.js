@@ -1771,9 +1771,25 @@ const loadingProgress = {
     const highScores = loadHighScores();
     if (position >= 0 && position < highScores.length) {
       const hs = highScores[position];
-      return `${position + 1} ${hs.initials}${hs.score}`;
+      return `${hs.initials} ${hs.score}`;
     }
     return "";
+  }
+
+  function getHighScoreInitials(position) {
+    const highScores = loadHighScores();
+    if (position >= 0 && position < highScores.length) {
+      return highScores[position].initials;
+    }
+    return "___";
+  }
+
+  function getHighScoreScore(position) {
+    const highScores = loadHighScores();
+    if (position >= 0 && position < highScores.length) {
+      return String(highScores[position].score);
+    }
+    return "0";
   }
 
   function getCountdownText() {
@@ -1808,9 +1824,18 @@ const loadingProgress = {
       .replace(/\$\{status\}/g, getEndStatus())
       .replace(/\$\{initials\}/g, initials)
       .replace(/\$\{countdown\}/g, getCountdownText())
+      // High scores: ${s1}, ${s2}, ${s3} = "AAA 999" format
       .replace(/\$\{s1\}/g, getHighScoreString(0))
       .replace(/\$\{s2\}/g, getHighScoreString(1))
-      .replace(/\$\{s3\}/g, getHighScoreString(2));
+      .replace(/\$\{s3\}/g, getHighScoreString(2))
+      // High score initials: ${hs1i}, ${hs2i}, ${hs3i}
+      .replace(/\$\{hs1i\}/g, getHighScoreInitials(0))
+      .replace(/\$\{hs2i\}/g, getHighScoreInitials(1))
+      .replace(/\$\{hs3i\}/g, getHighScoreInitials(2))
+      // High score scores: ${hs1s}, ${hs2s}, ${hs3s}
+      .replace(/\$\{hs1s\}/g, getHighScoreScore(0))
+      .replace(/\$\{hs2s\}/g, getHighScoreScore(1))
+      .replace(/\$\{hs3s\}/g, getHighScoreScore(2));
   }
 
   function applyStartingText() {

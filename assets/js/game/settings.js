@@ -253,11 +253,11 @@ export const defaultSettings = {
   playingTextRow3: "SCORE:${score}",
   playingTextRow4: "",
 
-  // Game Over state text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3})
-  gameOverTextRow1: "  ${initials}${score} ",
-  gameOverTextRow2: "${s1} ",
-  gameOverTextRow3: "${s2} ",
-  gameOverTextRow4: "${s3} ",
+  // Game Over state text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3}, ${hs1i}, ${hs1s}, ${hs2i}, ${hs2s}, ${hs3i}, ${hs3s})
+  gameOverTextRow1: "${initials} ${score}",
+  gameOverTextRow2: "${s1}",
+  gameOverTextRow3: "${s2}",
+  gameOverTextRow4: "${s3}",
 
   // State projection images
   preGameImage: "pre-game.png",
