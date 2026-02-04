@@ -757,9 +757,10 @@ const GUI = window.lil.GUI;
         // Character is locked
         result += state.target[i];
       } else if (state.changedIndices.includes(i)) {
-        // Only shuffle changed characters
-        if (state.target[i] === " ") {
-          result += " ";
+        // Only shuffle changed characters, but skip spaces and numbers
+        const char = state.target[i];
+        if (char === " " || (char >= "0" && char <= "9")) {
+          result += char;
         } else {
           result += SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
         }
@@ -1137,6 +1138,9 @@ const GUI = window.lil.GUI;
     glassMaterials = [];
     const brightness = settings.glassTextBrightness || 1;
     for (const mesh of glassMeshes) {
+      // Store original Y position for offset calculations
+      mesh.userData.originalY = mesh.position.y;
+
       // Use BasicMaterial with toneMapped:false to allow brightness > 1
       const glassMaterial = new THREE.MeshBasicMaterial({
         map: glassTexture,
@@ -1152,6 +1156,17 @@ const GUI = window.lil.GUI;
       mesh.castShadow = false; // Don't block light (helicopter spotlight shines through)
       mesh.renderOrder = 999; // Render on top
       glassMaterials.push(glassMaterial);
+    }
+
+    // Apply initial Y offset
+    updateGlassPosY();
+  }
+
+  function updateGlassPosY() {
+    for (const mesh of glassMeshes) {
+      if (mesh.userData.originalY !== undefined) {
+        mesh.position.y = mesh.userData.originalY + (settings.glassPosY || 0);
+      }
     }
   }
 
@@ -2218,6 +2233,8 @@ const GUI = window.lil.GUI;
       }
     });
     billboardFolder.add(settings, "billboardCenterPull", 0, 1, 0.05).name("Center Pull");
+    billboardFolder.add(settings, "billboardLightIntensity", 0, 20, 0.5).name("Light Intensity");
+    billboardFolder.add(settings, "billboardLightDistance", 0, 10, 0.5).name("Light Distance");
     billboardFolder.close();
 
     fugitiveFolder.close();
@@ -2238,6 +2255,7 @@ const GUI = window.lil.GUI;
     textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
     if (settings.glassMaterialOpacity === undefined) settings.glassMaterialOpacity = 1.0;
     textFolder.add(settings, "glassMaterialOpacity", 0, 1, 0.05).name("Glass Opacity").onChange(() => updateGlassMaterialOpacity());
+    textFolder.add(settings, "glassPosY", -5, 5, 0.01).name("Glass 3D Y").onChange(() => updateGlassPosY());
     textFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
@@ -3008,11 +3026,11 @@ const GUI = window.lil.GUI;
     // Cyberpunk shader pass (vignette, chromatic aberration, color grading)
     const cyberpunkPass = new ShaderPass(CyberpunkShader);
     cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
-    cyberpunkPass.uniforms['chromaticAberration'].value = settings.chromaticAberration;
+    cyberpunkPass.uniforms['chromaticAberration'].value = settings.colorGradingEnabled ? settings.chromaticAberration : 0;
     cyberpunkPass.uniforms['tintColor'].value.set(settings.colorGradingTint);
     cyberpunkPass.uniforms['tintIntensity'].value = settings.colorGradingEnabled ? settings.colorGradingIntensity : 0;
-    cyberpunkPass.uniforms['saturation'].value = settings.colorGradingSaturation;
-    cyberpunkPass.uniforms['contrast'].value = settings.colorGradingContrast;
+    cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
+    cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
     composer.addPass(cyberpunkPass);
 
     // Output pass for tone mapping
@@ -3296,6 +3314,15 @@ const GUI = window.lil.GUI;
       this.billboard.renderOrder = 1001; // Render on top of wire and glass
       scene.add(this.billboard);
 
+      // Add point light for billboard emission
+      this.billboardLight = new THREE.PointLight(
+        this.color,
+        settings.billboardLightIntensity,
+        settings.billboardLightDistance
+      );
+      this.billboardLight.castShadow = false;
+      scene.add(this.billboardLight);
+
       if (!this.isChaser) {
         const textureLoader = new THREE.TextureLoader();
         const pair = FACE_TEXTURES[this.index] || FACE_TEXTURES[0];
@@ -3476,6 +3503,14 @@ const GUI = window.lil.GUI;
       }
 
       this.billboard.position.set(billboardX, actorPos.y + totalHeight, billboardZ);
+
+      // Update billboard light position and settings
+      if (this.billboardLight) {
+        this.billboardLight.position.copy(this.billboard.position);
+        this.billboardLight.intensity = settings.billboardLightIntensity;
+        this.billboardLight.distance = settings.billboardLightDistance;
+        this.billboardLight.visible = this.billboard.visible;
+      }
     }
 
     dispose() {
@@ -3488,6 +3523,9 @@ const GUI = window.lil.GUI;
         scene.remove(this.billboard);
         this.billboard.geometry.dispose();
         this.billboard.material.dispose();
+      }
+      if (this.billboardLight) {
+        scene.remove(this.billboardLight);
       }
     }
   }
@@ -5325,8 +5363,8 @@ const GUI = window.lil.GUI;
         mesh.position.set(roadPoint.x, 0, roadPoint.z);
         projectYOnRoad(mesh.position);
         mesh.position.y += settings.chaserHeightOffset;
-        // Set initial facing direction: C1, C2 face left (positive X), C3, C4 face right (negative X)
-        mesh.rotation.y = (i < 2) ? Math.PI / 2 : -Math.PI / 2;
+        // Set initial facing direction: C1, C3 face left; C2, C4 face right
+        mesh.rotation.y = (i === 0 || i === 2) ? Math.PI / 2 : -Math.PI / 2;
         mesh.visible = true;
 
         const chaserObj = {
@@ -5381,7 +5419,7 @@ const GUI = window.lil.GUI;
     // Ensure glass text is always enabled and static (no marquee)
     settings.glassEnabled = true;
     settings.glassTextMarquee = false;
-    settings.glassTextShuffle = false;
+    settings.glassTextShuffle = true; // Enable shuffle effect when text changes
     for (const mesh of glassMeshes) {
       mesh.visible = true;
     }
