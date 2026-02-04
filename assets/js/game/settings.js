@@ -136,9 +136,9 @@ export const defaultSettings = {
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
   glassTextShuffle: true,
-  glassTextShuffleSpeed: 2.0,
-  glassTextShuffleChars: "!@#$%^&*()[]{}|<>?/\\~`+=_-",
-  glassTextShuffleCharDelay: 30,
+  glassTextShuffleSpeed: 1.5,
+  glassTextShuffleChars: "ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*!?",
+  glassTextShuffleCharDelay: 500,
   // Iframe Planes
   leftPanelEnabled: true,
   // 4 independent corners (counter-clockwise from top-left)
@@ -222,8 +222,8 @@ export const defaultSettings = {
 
   // Pre-game state text
   preGameTextRow1: "",
-  preGameTextRow2: "JAGAD",
-  preGameTextRow3: "",
+  preGameTextRow2: "",
+  preGameTextRow3: "JAGAD",
   preGameTextRow4: "",
 
   // Starting state text (supports ${countdown} for 3, 2, 1, GO!)

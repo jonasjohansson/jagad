@@ -706,75 +706,38 @@ const GUI = window.lil.GUI;
   let glassVideo = null;
   let glassVideoReady = false;
 
-  // Text shuffle effect - only shuffles characters that change
+  // Text shuffle effect - similar to domedreaming.com
+  // Each character has its own scramble state with startTime and duration
   const textShuffleState = {
     rows: [{}, {}, {}, {}], // State for each row
     lastTexts: ["", "", "", ""], // Track previous text to detect changes
+    lastFlickerTime: 0, // Throttle random char updates
+    flickerChars: {}, // Cached random chars per row
   };
+
+  const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*!?";
 
   function initShuffleRow(rowIndex, targetText, previousText) {
     const state = textShuffleState.rows[rowIndex];
     state.target = targetText;
-    state.previous = previousText || "";
-    state.shuffleTime = 0;
-    state.charDelays = [];
-    state.changedIndices = [];
+    state.chars = []; // Per-character state: { active, startTime }
 
-    // Find which characters changed
-    const maxLen = Math.max(targetText.length, state.previous.length);
-    for (let i = 0; i < maxLen; i++) {
-      const oldChar = state.previous[i] || "";
-      const newChar = targetText[i] || "";
-      if (oldChar !== newChar && newChar !== " ") {
-        state.changedIndices.push(i);
-      }
-    }
+    const now = performance.now();
+    const duration = settings.glassTextShuffleCharDelay || 200; // Duration each char scrambles
+    const stagger = 30; // Stagger start time between characters
 
-    // Calculate delays with staggered character reveal
-    const speedFactor = Math.max(0.1, settings.glassTextShuffleSpeed);
-    const baseDelay = 30 / speedFactor;
-    const shuffleIterations = 3;
-    const charDelay = settings.glassTextShuffleCharDelay || 0;
-
+    // Initialize per-character state
     for (let i = 0; i < targetText.length; i++) {
-      if (state.changedIndices.includes(i)) {
-        // Add staggered delay: each character waits for previous ones
-        const staggerDelay = i * charDelay;
-        state.charDelays.push(baseDelay * shuffleIterations + staggerDelay);
-      } else {
-        state.charDelays.push(0); // Unchanged chars lock immediately
-      }
+      const oldChar = (previousText || "")[i] || "";
+      const newChar = targetText[i] || "";
+      const isChanged = oldChar !== newChar && newChar !== " " && !(newChar >= "0" && newChar <= "9");
+
+      state.chars.push({
+        active: isChanged,
+        startTime: now + (i * stagger), // Stagger each character
+        duration: duration,
+      });
     }
-    state.maxDelay = state.charDelays.length > 0 ? Math.max(...state.charDelays) : 0;
-  }
-
-  function updateShuffleRow(rowIndex, dt) {
-    const state = textShuffleState.rows[rowIndex];
-    if (!state.target) return state.target || "";
-
-    state.shuffleTime += dt * 1000 * settings.glassTextShuffleSpeed;
-
-    let result = "";
-    for (let i = 0; i < state.target.length; i++) {
-      if (state.shuffleTime >= state.charDelays[i]) {
-        // Character is locked
-        result += state.target[i];
-      } else if (state.changedIndices.includes(i)) {
-        // Only shuffle changed characters, but skip spaces and numbers
-        const char = state.target[i];
-        const shuffleChars = settings.glassTextShuffleChars || "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        if (char === " " || (char >= "0" && char <= "9")) {
-          result += char;
-        } else {
-          result += shuffleChars[Math.floor(Math.random() * shuffleChars.length)];
-        }
-      } else {
-        // Unchanged character - show target immediately
-        result += state.target[i];
-      }
-    }
-    state.current = result;
-    return result;
   }
 
   function getShuffledText(rowIndex, targetText, dt) {
@@ -792,22 +755,66 @@ const GUI = window.lil.GUI;
     }
 
     const state = textShuffleState.rows[rowIndex];
-    if (!state.target) return targetText;
+    if (!state.target || !state.chars) return targetText;
 
-    // Check if shuffle is complete
-    if (state.shuffleTime >= state.maxDelay) {
-      return targetText;
+    const now = performance.now();
+
+    // Throttle random char updates (every 150ms for slower, readable flicker)
+    const flickerInterval = 150;
+    if (now - textShuffleState.lastFlickerTime >= flickerInterval) {
+      textShuffleState.lastFlickerTime = now;
+      // Generate new random chars for all rows
+      for (let r = 0; r < 4; r++) {
+        textShuffleState.flickerChars[r] = {};
+        const rowState = textShuffleState.rows[r];
+        if (rowState.target) {
+          for (let i = 0; i < rowState.target.length; i++) {
+            textShuffleState.flickerChars[r][i] = SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+          }
+        }
+      }
     }
 
-    return updateShuffleRow(rowIndex, dt);
+    // Build result string
+    let result = "";
+    let allComplete = true;
+
+    for (let i = 0; i < state.target.length; i++) {
+      const char = state.target[i];
+      const charState = state.chars[i];
+
+      if (!charState || !charState.active || char === " ") {
+        result += char;
+      } else {
+        const elapsed = now - charState.startTime;
+        if (elapsed >= charState.duration) {
+          // Scramble complete - lock to final char
+          charState.active = false;
+          result += char;
+        } else if (elapsed < 0) {
+          // Not started yet (staggered) - show original or space
+          result += " ";
+          allComplete = false;
+        } else {
+          // Still scrambling - show cached random char
+          result += textShuffleState.flickerChars[rowIndex]?.[i] || char;
+          allComplete = false;
+        }
+      }
+    }
+
+    return result;
   }
 
   function isShuffleActive() {
     if (!settings.glassTextShuffle) return false;
+    const now = performance.now();
     for (let i = 0; i < 4; i++) {
       const state = textShuffleState.rows[i];
-      if (state.target && state.maxDelay && state.shuffleTime < state.maxDelay) {
-        return true;
+      if (state.chars) {
+        for (const charState of state.chars) {
+          if (charState.active) return true;
+        }
       }
     }
     return false;
@@ -1258,7 +1265,7 @@ const GUI = window.lil.GUI;
 
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
-      // In PRE_GAME state, mark the chaser as ready (turns on headlights)
+      // In PRE_GAME state, mark the chaser as ready (lights up car fully)
       if (STATE.loaded && STATE.gameState === "PRE_GAME") {
         const chaserIndex = getChaserIndexForKey(keyLower);
         if (chaserIndex >= 0) {
@@ -1353,9 +1360,34 @@ const GUI = window.lil.GUI;
     if (chaser.ready) return; // Already ready
 
     chaser.ready = true;
-    // Turn on headlights to show ready
+
+    // Light up the car fully (like when active/moving)
+    if (chaser.isCarModel && chaser.mesh) {
+      chaser.mesh.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const mat = child.material;
+          mat.transparent = true;
+          mat.opacity = 1;
+          mat.depthWrite = true;
+          if (mat.emissive) {
+            mat.emissiveIntensity = 0.3;
+          }
+          mat.needsUpdate = true;
+        }
+      });
+    } else if (chaser.material) {
+      chaser.material.transparent = true;
+      chaser.material.opacity = 1;
+      chaser.material.depthWrite = true;
+      if (chaser.material.emissive) {
+        chaser.material.emissiveIntensity = 0.3;
+      }
+      chaser.material.needsUpdate = true;
+    }
+
+    // Turn on headlights
     if (chaser.light) {
-      chaser.light.intensity = settings.chaserLightIntensity * 0.5; // Half brightness for ready
+      chaser.light.intensity = settings.chaserLightIntensity;
     }
     if (DEBUG) console.log(`Chaser ${chaserIndex} is ready!`);
 
@@ -1397,32 +1429,42 @@ const GUI = window.lil.GUI;
   function setChasersOpacity(opacity) {
     const isLowOpacity = opacity < 1;
     for (const c of chasers) {
+      // Respect ready state - ready chasers stay fully lit
+      const effectiveOpacity = (isLowOpacity && c.ready) ? 1 : opacity;
+      const effectiveEmissive = (isLowOpacity && c.ready) ? 0.3 : (isLowOpacity ? 0.05 : 0.3);
+      const effectiveDepthWrite = (isLowOpacity && c.ready) ? true : !isLowOpacity;
+
       if (c.isCarModel && c.mesh) {
         c.mesh.traverse((child) => {
           if (child.isMesh && child.material) {
             const mat = child.material;
             mat.transparent = true;
-            mat.opacity = opacity;
-            mat.depthWrite = !isLowOpacity;
+            mat.opacity = effectiveOpacity;
+            mat.depthWrite = effectiveDepthWrite;
             if (mat.emissive) {
-              mat.emissiveIntensity = isLowOpacity ? 0.05 : 0.3;
+              mat.emissiveIntensity = effectiveEmissive;
             }
             mat.needsUpdate = true;
           }
         });
       } else if (c.material) {
         c.material.transparent = true;
-        c.material.opacity = opacity;
-        c.material.depthWrite = !isLowOpacity;
+        c.material.opacity = effectiveOpacity;
+        c.material.depthWrite = effectiveDepthWrite;
         if (c.material.emissive) {
-          c.material.emissiveIntensity = isLowOpacity ? 0.05 : 0.3;
+          c.material.emissiveIntensity = effectiveEmissive;
         }
         c.material.needsUpdate = true;
       }
       if (c.light) {
-        c.light.intensity = isLowOpacity
-          ? settings.chaserLightIntensity * 0.1
-          : settings.chaserLightIntensity;
+        if (isLowOpacity) {
+          // Respect ready state - ready chasers get full brightness, others get 10%
+          c.light.intensity = c.ready
+            ? settings.chaserLightIntensity
+            : settings.chaserLightIntensity * 0.1;
+        } else {
+          c.light.intensity = settings.chaserLightIntensity;
+        }
       }
     }
   }
@@ -5300,8 +5342,9 @@ const GUI = window.lil.GUI;
         emissiveIntensity: 0.3
       });
       const mesh = new THREE.Mesh(fugitiveGeo, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.visible = false; // Hide the cube, only show wire and billboard
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
 
       const light = new THREE.PointLight(fugitiveColor, settings.fugitiveLightIntensity, 100);
       light.position.set(0, 0, 0);
