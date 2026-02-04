@@ -3929,12 +3929,6 @@ const GUI = window.lil.GUI;
           gl.glowMaterial.dispose();
         }
       }
-      // Clean up glow ring
-      if (effect.glowRing) {
-        scene.remove(effect.glowRing);
-        effect.ringGeo.dispose();
-        effect.ringMat.dispose();
-      }
       scene.remove(effect.particles);
       effect.particles.geometry.dispose();
       effect.particleMat.dispose();
@@ -4012,21 +4006,6 @@ const GUI = window.lil.GUI;
     const color = new THREE.Color(chaserColor);
     const originX = position.x;
     const originZ = position.z;
-
-    // Create a single expanding glow ring (lightweight volumetric effect)
-    const ringGeo = new THREE.RingGeometry(0.1, 0.4, 24);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: color,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    const glowRing = new THREE.Mesh(ringGeo, ringMat);
-    glowRing.position.set(originX, 0.08, originZ);
-    glowRing.rotation.x = -Math.PI / 2;
-    scene.add(glowRing);
 
     // Create grid pulse - glowing tubes along each edge that light up based on distance
     const gridLines = [];
@@ -4167,9 +4146,6 @@ const GUI = window.lil.GUI;
 
     captureEffects.push({
       gridLines,
-      glowRing,
-      ringGeo,
-      ringMat,
       particles,
       particleMat,
       particleVelocities,
@@ -4220,12 +4196,6 @@ const GUI = window.lil.GUI;
             gl.glowMaterial.dispose();
           }
         }
-        // Clean up glow ring
-        if (effect.glowRing) {
-          scene.remove(effect.glowRing);
-          effect.ringGeo.dispose();
-          effect.ringMat.dispose();
-        }
         scene.remove(effect.particles);
         effect.particles.geometry.dispose();
         effect.particleMat.dispose();
@@ -4269,15 +4239,6 @@ const GUI = window.lil.GUI;
             gl.glowMaterial.opacity = 0;
           }
         }
-      }
-
-      // Animate expanding glow ring
-      if (effect.glowRing) {
-        const scale = 1 + pulseRadius * 2;
-        effect.glowRing.scale.set(scale, scale, 1);
-        // Fade based on progress
-        const ringFade = Math.max(0, (1 - t * 1.2) * (1 - fadeOut));
-        effect.ringMat.opacity = ringFade * 0.5 * effect.intensity;
       }
 
       // Animate particles with physics
