@@ -1027,6 +1027,11 @@ const GUI = window.lil.GUI;
   function updateGlassCanvas(timestamp = 0) {
     if (!glassContext) return;
 
+    // Re-apply game over text each frame during high score entry for blinking initials
+    if (STATE.enteringHighScore) {
+      applyGameOverText();
+    }
+
     const ctx = glassContext;
     const w = glassCanvas.width;
     const h = glassCanvas.height;
