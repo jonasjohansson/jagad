@@ -61,7 +61,7 @@ export const defaultSettings = {
   buildingScaleX: 1.15,
   buildingScaleY: 1.12,
   buildingOffsetX: 0.11,
-  buildingOffsetY: -0.5,
+  buildingOffsetY: -0.01,
   buildingOffsetZ: 0.65,
   buildingOpacity: 1.0,
   bloomEnabled: true,
