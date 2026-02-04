@@ -137,7 +137,7 @@ const GUI = window.lil.GUI;
     fugitiveValue: 250,    // Points per fugitive (decreases over time)
     // High score entry
     enteringHighScore: false,
-    highScoreInitials: ["_", "_", "_"],
+    highScoreInitials: ["A", "A", "A"],
     highScorePosition: 0,  // Which initial being edited (0-2)
     highScoreCharIndex: 0, // Current character A-Z, 0-9
     newHighScoreRank: -1,  // Position in high scores list (0, 1, or 2)
@@ -703,6 +703,27 @@ const GUI = window.lil.GUI;
           }
         });
       }
+    }
+  }
+
+  function updateTextBPMPulse() {
+    if (!settings.textBPMPulse || glassMaterials.length === 0) return;
+
+    // BPM-based pulsing (same timing as cars)
+    const bpm = settings.carAudioBPM || 95;
+    const beatInterval = 60000 / bpm; // ms per beat
+    const now = performance.now();
+    const beatPhase = (now % beatInterval) / beatInterval; // 0 to 1
+
+    // Create a pulse that peaks at the beat and fades
+    const pulse = Math.pow(1 - beatPhase, 3); // Exponential decay from beat
+    const pulseBoost = pulse * (settings.textBPMIntensity || 0.5);
+
+    const baseBrightness = settings.glassTextBrightness || 1;
+    const finalBrightness = baseBrightness + pulseBoost * baseBrightness;
+
+    for (const mat of glassMaterials) {
+      mat.color.setRGB(finalBrightness, finalBrightness, finalBrightness);
     }
   }
 
@@ -1932,7 +1953,7 @@ const GUI = window.lil.GUI;
   function startHighScoreEntry(position) {
     STATE.enteringHighScore = true;
     STATE.highScorePosition = 0;
-    STATE.highScoreInitials = ["A", "_", "_"];
+    STATE.highScoreInitials = ["A", "A", "A"];
     STATE.highScoreCharIndex = 0;
     STATE.newHighScoreRank = position;
     updateHighScoreDisplay();
@@ -1945,12 +1966,6 @@ const GUI = window.lil.GUI;
   }
 
   function confirmHighScoreEntry() {
-    // Check if all 3 initials are set (no underscores)
-    if (STATE.highScoreInitials.includes("_")) {
-      // Not all initials set - don't confirm yet
-      return;
-    }
-
     const initials = STATE.highScoreInitials.join("");
     const score = STATE.playerScore;
     const position = STATE.newHighScoreRank;
@@ -2719,8 +2734,10 @@ const GUI = window.lil.GUI;
     emissiveFolder.add(settings, "lampAudioReactive").name("Lamp Audio Reactive");
     emissiveFolder.add(settings, "lampAudioSensitivity", 0, 10, 0.5).name("Lamp Audio Sens.");
     emissiveFolder.add(settings, "carAudioReactive").name("Car BPM Pulse");
-    emissiveFolder.add(settings, "carAudioBPM", 60, 180, 1).name("Car BPM");
+    emissiveFolder.add(settings, "carAudioBPM", 60, 180, 1).name("BPM");
     emissiveFolder.add(settings, "carAudioIntensity", 0, 10, 0.1).name("Car Pulse Intensity");
+    emissiveFolder.add(settings, "textBPMPulse").name("Text BPM Pulse");
+    emissiveFolder.add(settings, "textBPMIntensity", 0, 2, 0.1).name("Text Pulse Intensity");
     emissiveFolder.close();
     lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
       for (const f of fugitives) { if (f.light) f.light.visible = v; }
@@ -3865,7 +3882,7 @@ const GUI = window.lil.GUI;
     STATE.playerScore = 0;
     STATE.fugitiveValue = 250;
     STATE.enteringHighScore = false;
-    STATE.highScoreInitials = ["_", "_", "_"];
+    STATE.highScoreInitials = ["A", "A", "A"];
     STATE.highScorePosition = 0;
     STATE.highScoreCharIndex = 0;
     STATE.countdownValue = 3;
@@ -4606,10 +4623,11 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update helicopter, lamps, cars audio, atmosphere and capture effects
+      // Update helicopter, lamps, cars audio, text pulse, atmosphere and capture effects
       updateHelicopter(dt);
       updateLamps();
       updateCarsAudio();
+      updateTextBPMPulse();
       updateCaptureEffects(dt);
       updateAtmosphere(dt);
 

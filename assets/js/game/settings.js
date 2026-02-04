@@ -112,6 +112,8 @@ export const defaultSettings = {
   carAudioReactive: true,
   carAudioBPM: 95,
   carAudioIntensity: 10,
+  textBPMPulse: true,
+  textBPMIntensity: 0.5,
   glassEnabled: true,
   glassOpacity: 0.8,
   glassMaterialOpacity: 0.5,
