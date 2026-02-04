@@ -3943,7 +3943,7 @@ const GUI = window.lil.GUI;
     // Reset fugitives
     for (const f of fugitives) {
       f.captured = false;
-      f.mesh.visible = true;
+      f.mesh.visible = false; // Keep cube hidden, only show wire and billboard
       if (f.light) {
         f.light.visible = true;
         f.light.intensity = settings.fugitiveLightIntensity;
