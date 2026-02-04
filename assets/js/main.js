@@ -3929,6 +3929,21 @@ const GUI = window.lil.GUI;
           gl.glowMaterial.dispose();
         }
       }
+      // Clean up volumetric lights
+      if (effect.pulseLights) {
+        for (const light of effect.pulseLights) {
+          scene.remove(light);
+          light.dispose();
+        }
+      }
+      // Clean up glow rings
+      if (effect.glowRings) {
+        for (const ring of effect.glowRings) {
+          scene.remove(ring.mesh);
+          ring.geometry.dispose();
+          ring.material.dispose();
+        }
+      }
       scene.remove(effect.particles);
       effect.particles.geometry.dispose();
       effect.particleMat.dispose();
@@ -4006,6 +4021,41 @@ const GUI = window.lil.GUI;
     const color = new THREE.Color(chaserColor);
     const originX = position.x;
     const originZ = position.z;
+
+    // Create volumetric point lights that follow the pulse wave
+    const pulseLights = [];
+    const lightCount = 6; // Number of lights in a ring
+    const lightIntensity = 50;
+    const lightDistance = 3;
+    for (let i = 0; i < lightCount; i++) {
+      const angle = (i / lightCount) * Math.PI * 2;
+      const light = new THREE.PointLight(color, 0, lightDistance);
+      light.position.set(originX, 0.3, originZ);
+      light._angle = angle; // Store angle for animation
+      scene.add(light);
+      pulseLights.push(light);
+    }
+
+    // Create vertical glow rings that expand outward
+    const glowRings = [];
+    const ringCount = 3;
+    for (let i = 0; i < ringCount; i++) {
+      const ringGeo = new THREE.RingGeometry(0.1, 0.3, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.set(originX, 0.05 + i * 0.15, originZ);
+      ring.rotation.x = -Math.PI / 2;
+      ring._delay = i * 0.1; // Staggered start
+      scene.add(ring);
+      glowRings.push({ mesh: ring, material: ringMat, geometry: ringGeo });
+    }
 
     // Create grid pulse - glowing tubes along each edge that light up based on distance
     const gridLines = [];
@@ -4146,6 +4196,9 @@ const GUI = window.lil.GUI;
 
     captureEffects.push({
       gridLines,
+      pulseLights,
+      glowRings,
+      lightIntensity,
       particles,
       particleMat,
       particleVelocities,
@@ -4196,6 +4249,21 @@ const GUI = window.lil.GUI;
             gl.glowMaterial.dispose();
           }
         }
+        // Clean up volumetric lights
+        if (effect.pulseLights) {
+          for (const light of effect.pulseLights) {
+            scene.remove(light);
+            light.dispose();
+          }
+        }
+        // Clean up glow rings
+        if (effect.glowRings) {
+          for (const ring of effect.glowRings) {
+            scene.remove(ring.mesh);
+            ring.geometry.dispose();
+            ring.material.dispose();
+          }
+        }
         scene.remove(effect.particles);
         effect.particles.geometry.dispose();
         effect.particleMat.dispose();
@@ -4237,6 +4305,34 @@ const GUI = window.lil.GUI;
           gl.material.opacity = 0;
           if (gl.glowMaterial) {
             gl.glowMaterial.opacity = 0;
+          }
+        }
+      }
+
+      // Animate volumetric point lights - they follow the pulse wave front
+      if (effect.pulseLights) {
+        for (const light of effect.pulseLights) {
+          const lightRadius = pulseRadius;
+          const x = effect.originX + Math.cos(light._angle) * lightRadius;
+          const z = effect.originZ + Math.sin(light._angle) * lightRadius;
+          light.position.set(x, 0.3, z);
+          // Intensity peaks at pulse front and fades
+          const lightFade = (1 - fadeOut) * effect.intensity;
+          light.intensity = effect.lightIntensity * lightFade;
+        }
+      }
+
+      // Animate expanding glow rings
+      if (effect.glowRings) {
+        for (const ring of effect.glowRings) {
+          const delayedT = Math.max(0, t - ring._delay);
+          if (delayedT > 0) {
+            const ringRadius = pulseRadius * (1 + ring._delay);
+            const scale = 1 + ringRadius * 2;
+            ring.mesh.scale.set(scale, scale, 1);
+            // Fade based on progress
+            const ringFade = Math.max(0, (1 - delayedT * 1.5) * (1 - fadeOut));
+            ring.material.opacity = ringFade * 0.3 * effect.intensity;
           }
         }
       }
