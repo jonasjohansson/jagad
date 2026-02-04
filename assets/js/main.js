@@ -12,7 +12,7 @@ import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings } from "./game/settings.js?v=2";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=3";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
 
 // lil-gui loaded via script tag in index.html
@@ -92,17 +92,25 @@ const GUI = window.lil.GUI;
       STATE.gameOver = false;
       statusEl.textContent = "Game started! Escape the chasers!";
     },
-    saveSettings: function() {
-      if (saveSettings(settings)) {
-        statusEl.textContent = "Settings saved!";
-      } else {
-        statusEl.textContent = "Failed to save settings.";
-      }
+    exportSettings: function() {
+      exportSettings(settings);
+      statusEl.textContent = "Settings exported!";
     },
-    clearSettings: function() {
-      if (clearSettings()) {
-        statusEl.textContent = "Settings cleared! Reload to apply defaults.";
-      }
+    importSettings: function() {
+      importSettings((imported) => {
+        // Apply each setting and trigger onChange handlers
+        if (guiLeft) {
+          guiLeft.controllersRecursive().forEach(c => {
+            const prop = c.property;
+            if (prop && imported[prop] !== undefined) {
+              c.setValue(imported[prop]);
+            }
+          });
+        }
+        // Also directly assign any settings not in GUI
+        Object.assign(settings, imported);
+        statusEl.textContent = "Settings imported!";
+      });
     },
   };
 
@@ -139,10 +147,14 @@ const GUI = window.lil.GUI;
   const getLevelCenter = () => STATE.levelCenter;
 
   // ============================================
-  // AUDIO
+  // AUDIO WITH ANALYZER
   // ============================================
 
   let audioElement = null;
+  let audioContext = null;
+  let audioAnalyser = null;
+  let audioSource = null;
+  let audioFrequencyData = null;
 
   function initAudio() {
     const trackPath = PATHS.audio[settings.audioTrack];
@@ -150,11 +162,46 @@ const GUI = window.lil.GUI;
       audioElement = new Audio(trackPath);
       audioElement.loop = true;
       audioElement.volume = settings.audioVolume;
+      audioElement.crossOrigin = "anonymous";
     }
+  }
+
+  function setupAudioAnalyser() {
+    if (audioContext || !audioElement) return;
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 256;
+      audioAnalyser.smoothingTimeConstant = 0.8;
+      audioSource = audioContext.createMediaElementSource(audioElement);
+      audioSource.connect(audioAnalyser);
+      audioAnalyser.connect(audioContext.destination);
+      audioFrequencyData = new Uint8Array(audioAnalyser.frequencyBinCount);
+    } catch (e) {
+      console.warn("Failed to setup audio analyser:", e);
+    }
+  }
+
+  function getAudioFrequency(bandIndex, numBands) {
+    if (!audioAnalyser || !audioFrequencyData) return 0;
+    audioAnalyser.getByteFrequencyData(audioFrequencyData);
+    const binCount = audioFrequencyData.length;
+    const bandSize = Math.floor(binCount / numBands);
+    const start = bandIndex * bandSize;
+    const end = Math.min(start + bandSize, binCount);
+    let sum = 0;
+    for (let i = start; i < end; i++) {
+      sum += audioFrequencyData[i];
+    }
+    return sum / (end - start) / 255; // Normalize to 0-1
   }
 
   function playAudio() {
     if (!audioElement) return;
+    setupAudioAnalyser();
+    if (audioContext && audioContext.state === "suspended") {
+      audioContext.resume();
+    }
     audioElement.play().catch(() => {});
   }
 
@@ -340,22 +387,26 @@ const GUI = window.lil.GUI;
       lightCone.userData.layers = coneLayers;
       mesh.add(lightCone);
 
+      const helicopterMaterials = [];
       mesh.traverse((child) => {
         // Skip the lightCone - it should not cast/receive shadows
         if (child === lightCone) return;
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-          // Make helicopter brighter with emissive
+          // Apply helicopter color
           if (child.material) {
             const mat = child.material;
+            mat.color.set(settings.helicopterColor);
             if (mat.emissive) {
-              mat.emissive.set(0xffffff);
+              mat.emissive.set(settings.helicopterColor);
               mat.emissiveIntensity = 0.3;
             }
+            helicopterMaterials.push(mat);
           }
         }
       });
+      mesh.userData.materials = helicopterMaterials;
 
       scene.add(mesh);
 
@@ -576,6 +627,40 @@ const GUI = window.lil.GUI;
     lightCone.userData.layers = coneLayers;
     helicopter.lightCone = lightCone;
     helicopter.mesh.add(lightCone);
+  }
+
+  function updateHelicopterColor() {
+    if (!helicopter || !helicopter.mesh) return;
+    const materials = helicopter.mesh.userData.materials;
+    if (!materials) return;
+    for (const mat of materials) {
+      mat.color.set(settings.helicopterColor);
+      if (mat.emissive) {
+        mat.emissive.set(settings.helicopterColor);
+      }
+    }
+  }
+
+  function updateLamps() {
+    if (!STATE.lampMeshes || STATE.lampMeshes.length === 0) return;
+
+    // Get audio frequency if audio-reactive is enabled
+    let audioBoost = 0;
+    if (settings.lampAudioReactive && audioAnalyser) {
+      // Use low-mid frequencies for lamp pulsing
+      const bass = getAudioFrequency(0, 8);
+      const mid = getAudioFrequency(2, 8);
+      audioBoost = (bass * 0.6 + mid * 0.4) * settings.lampAudioSensitivity;
+    }
+
+    const baseIntensity = settings.lampEmissiveIntensity || 2.0;
+    const finalIntensity = baseIntensity + audioBoost;
+
+    for (const mesh of STATE.lampMeshes) {
+      if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
+        mesh.material.emissiveIntensity = finalIntensity;
+      }
+    }
   }
 
   function updateHelicopterBoundsHelper() {
@@ -1141,9 +1226,12 @@ const GUI = window.lil.GUI;
 
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
-      // In PRE_GAME state, any movement key starts the countdown
+      // In PRE_GAME state, mark the chaser as ready (turns on headlights)
       if (STATE.loaded && STATE.gameState === "PRE_GAME") {
-        setGameState("STARTING");
+        const chaserIndex = getChaserIndexForKey(keyLower);
+        if (chaserIndex >= 0) {
+          markChaserReady(chaserIndex);
+        }
       }
     }
 
@@ -1215,6 +1303,35 @@ const GUI = window.lil.GUI;
 
     const hasInput = dx !== 0 || dz !== 0;
     return { x: dx, z: dz, hasInput };
+  }
+
+  function getChaserIndexForKey(key) {
+    for (let i = 0; i < CHASER_CONTROLS.length; i++) {
+      const ctrl = CHASER_CONTROLS[i];
+      if (key === ctrl.up || key === ctrl.down || key === ctrl.left || key === ctrl.right) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function markChaserReady(chaserIndex) {
+    if (chaserIndex < 0 || chaserIndex >= chasers.length) return;
+    const chaser = chasers[chaserIndex];
+    if (chaser.ready) return; // Already ready
+
+    chaser.ready = true;
+    // Turn on headlights to show ready
+    if (chaser.light) {
+      chaser.light.intensity = settings.chaserLightIntensity * 0.5; // Half brightness for ready
+    }
+    if (DEBUG) console.log(`Chaser ${chaserIndex} is ready!`);
+
+    // Check if this is the first ready chaser - start countdown
+    const readyCount = chasers.filter(c => c.ready).length;
+    if (readyCount === 1) {
+      setGameState("STARTING");
+    }
   }
 
   // ============================================
@@ -1298,8 +1415,8 @@ const GUI = window.lil.GUI;
         break;
 
       case "STARTING":
-        // Begin countdown
-        STATE.countdownValue = 3;
+        // Begin countdown (10 seconds for players to get ready)
+        STATE.countdownValue = 10;
         STATE.countdownTimer = 0;
         applyStartingText();
         settings.gameStarted = true; // Mark as started but input blocked
@@ -1369,9 +1486,23 @@ const GUI = window.lil.GUI;
 
   function replaceTemplateVars(text) {
     if (!text) return "";
-    const initials = STATE.highScoreInitials ? STATE.highScoreInitials.join("") : "___";
+    // Flash unset initials (underscores) when entering high score
+    let initials;
+    if (STATE.highScoreInitials) {
+      const blink = Math.floor(Date.now() / 400) % 2 === 0; // Toggle every 400ms
+      initials = STATE.highScoreInitials.map(c => {
+        if (c === "_" && STATE.enteringHighScore) {
+          return blink ? "_" : " ";
+        }
+        return c;
+      }).join("");
+    } else {
+      initials = "___";
+    }
+    // Pad score to 4 characters so "SCORE:" doesn't shift
+    const paddedScore = String(STATE.playerScore || 0).padStart(4, " ");
     return text
-      .replace(/\$\{score\}/g, String(STATE.playerScore || 0))
+      .replace(/\$\{score\}/g, paddedScore)
       .replace(/\$\{time\}/g, String(Math.floor(STATE.gameTimerRemaining || 0)))
       .replace(/\$\{caught\}/g, String(STATE.capturedCount || 0))
       .replace(/\$\{total\}/g, String(fugitives.length || 4))
@@ -1848,8 +1979,8 @@ const GUI = window.lil.GUI;
     guiLeft.domElement.style.top = "0px";
 
     // Settings controls at the top
-    guiLeft.add(settings, "saveSettings").name("💾 Save Settings");
-    guiLeft.add(settings, "clearSettings").name("🗑️ Clear Settings");
+    guiLeft.add(settings, "exportSettings").name("💾 Export Settings");
+    guiLeft.add(settings, "importSettings").name("📂 Import Settings");
     guiLeft.add({ clearCache: async function() {
       if (confirm("Clear all browser cache and reload?")) {
         try {
@@ -2075,7 +2206,6 @@ const GUI = window.lil.GUI;
       for (const wire of fugitiveWires) {
         if (wire.billboard && wire.billboard.material) {
           wire.billboard.material.color.setRGB(v, v, v);
-          wire.billboard.material.emissiveIntensity = v;
         }
       }
     });
@@ -2153,6 +2283,7 @@ const GUI = window.lil.GUI;
     // Helicopter
     const helicopterFolder = addonsFolder.addFolder("Helicopter");
     helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
+    helicopterFolder.addColor(settings, "helicopterColor").name("Color").onChange(() => updateHelicopterColor());
     helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Fly Height");
     helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
     helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
@@ -2340,6 +2471,10 @@ const GUI = window.lil.GUI;
         }
       }
     });
+    // Lamp controls
+    lightsFolder.add(settings, "lampEmissiveIntensity", 0, 10, 0.1).name("Lamp Emissive");
+    lightsFolder.add(settings, "lampAudioReactive").name("Lamp Audio Reactive");
+    lightsFolder.add(settings, "lampAudioSensitivity", 0, 10, 0.5).name("Lamp Audio Sens.");
     lightsFolder.add(settings, "punctualLights").name("Actor Lights").onChange((v) => {
       for (const f of fugitives) { if (f.light) f.light.visible = v; }
       for (const c of chasers) { if (c.light) c.light.visible = v; }
@@ -3119,16 +3254,12 @@ const GUI = window.lil.GUI;
       const billboardSize = settings.wireCubeSize * this.actorSize * 2;
       const billboardGeo = new THREE.PlaneGeometry(billboardSize, billboardSize);
       const brightness = settings.billboardBrightness;
-      const billboardMat = new THREE.MeshStandardMaterial({
+      const billboardMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(brightness, brightness, brightness),
-        emissive: new THREE.Color(1, 1, 1),
-        emissiveIntensity: brightness,
         side: THREE.DoubleSide,
         transparent: true,
         depthWrite: false,
         depthTest: false,
-        roughness: 1.0,
-        metalness: 0.0
       });
 
       // Add contrast adjustment via shader modification
@@ -3476,10 +3607,16 @@ const GUI = window.lil.GUI;
     // Reset chasers
     for (const c of chasers) {
       c.active = false;
+      c.ready = false;
       c.isMoving = false;
       c.queuedDirX = 0;
       c.queuedDirZ = 0;
       c.currentEdge = null;
+
+      // Turn off headlights
+      if (c.light) {
+        c.light.intensity = 0;
+      }
 
       // Reset to spawn position and rotation
       c.mesh.position.x = c.spawnX;
@@ -4160,8 +4297,9 @@ const GUI = window.lil.GUI;
         }
       }
 
-      // Update helicopter, atmosphere and capture effects
+      // Update helicopter, lamps, atmosphere and capture effects
       updateHelicopter(dt);
+      updateLamps();
       updateCaptureEffects(dt);
       updateAtmosphere(dt);
 
@@ -4347,8 +4485,9 @@ const GUI = window.lil.GUI;
     const gltf = levelGltf;
     const root = gltf.scene;
 
-    // Store window meshes for emissive control
+    // Store window and lamp meshes for emissive control
     const windowMeshes = [];
+    const lampMeshes = [];
 
     root.traverse((obj) => {
       if (obj.isMesh) {
@@ -4356,6 +4495,7 @@ const GUI = window.lil.GUI;
         // Glass meshes don't cast shadows so helicopter light shines through
         const isGlass = nameUpper.includes("GLASS");
         const isWindow = nameUpper.includes("WINDOW");
+        const isLamp = nameUpper.includes("LAMP");
         obj.castShadow = !isGlass;
         obj.receiveShadow = true;
 
@@ -4367,6 +4507,16 @@ const GUI = window.lil.GUI;
             mat.emissiveIntensity = settings.windowEmissiveIntensity || 0.5;
           }
         }
+
+        // Store lamp meshes for audio-reactive lighting
+        if (isLamp && obj.material) {
+          lampMeshes.push(obj);
+          const mat = obj.material;
+          if (mat.emissive) {
+            mat.emissive.set(0xffffaa); // Warm light color
+            mat.emissiveIntensity = settings.lampEmissiveIntensity || 2.0;
+          }
+        }
       }
       if (obj.isCamera) {
         glbCameras.push({ name: obj.name || `GLB Camera ${glbCameras.length + 1}`, camera: obj });
@@ -4374,6 +4524,7 @@ const GUI = window.lil.GUI;
     });
 
     STATE.windowMeshes = windowMeshes;
+    STATE.lampMeshes = lampMeshes;
 
     const levelContainer = new THREE.Group();
     levelContainer.add(root);
@@ -5174,6 +5325,8 @@ const GUI = window.lil.GUI;
         mesh.position.set(roadPoint.x, 0, roadPoint.z);
         projectYOnRoad(mesh.position);
         mesh.position.y += settings.chaserHeightOffset;
+        // Set initial facing direction: C1, C2 face left (positive X), C3, C4 face right (negative X)
+        mesh.rotation.y = (i < 2) ? Math.PI / 2 : -Math.PI / 2;
         mesh.visible = true;
 
         const chaserObj = {
@@ -5187,6 +5340,7 @@ const GUI = window.lil.GUI;
           queuedDirX: 0,
           queuedDirZ: 0,
           active: false,
+          ready: false, // Player has pressed keys to indicate they're ready
           isMoving: false,
           isCarModel: !!carModel,
           spawnX: roadPoint.x,

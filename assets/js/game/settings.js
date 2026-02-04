@@ -100,6 +100,9 @@ export const defaultSettings = {
   motionTrailsOpacity: 0.3,
   motionTrailsSize: 0.15,
   windowEmissiveIntensity: 0.5,
+  lampEmissiveIntensity: 2.0,
+  lampAudioReactive: true,
+  lampAudioSensitivity: 3.0,
   glassEnabled: true,
   glassOpacity: 0.8,
   glassMaterialOpacity: 0.5,
@@ -154,6 +157,7 @@ export const defaultSettings = {
   audioTrack: "triumph-hill",
   // Helicopter
   helicopterEnabled: true,
+  helicopterColor: "#333333",
   helicopterHeight: 4,
   helicopterSpeed: 0.5,
   helicopterRadius: 6,
@@ -210,7 +214,7 @@ export const defaultSettings = {
   // Pre-game state text
   preGameTextRow1: "",
   preGameTextRow2: "JAGAD",
-  preGameTextRow3: "4MARS",
+  preGameTextRow3: "",
   preGameTextRow4: "",
 
   // Starting state text (supports ${countdown} for 3, 2, 1, GO!)
@@ -285,4 +289,44 @@ export function clearSettings() {
     console.error("Failed to clear settings:", e);
     return false;
   }
+}
+
+export function exportSettings(settings) {
+  const toExport = {};
+  for (const key of Object.keys(defaultSettings)) {
+    toExport[key] = settings[key];
+  }
+  const json = JSON.stringify(toExport, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "jagad-settings.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function importSettings(callback) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json";
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target.result);
+        const merged = { ...defaultSettings, ...imported };
+        callback(merged);
+      } catch (err) {
+        console.error("Failed to import settings:", err);
+        alert("Failed to import settings: Invalid JSON file");
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
 }
