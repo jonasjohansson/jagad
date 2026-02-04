@@ -11,6 +11,7 @@ import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPa
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
+import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=3";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
@@ -2139,6 +2140,10 @@ const GUI = window.lil.GUI;
     if (composer && composer.renderPass) {
       composer.renderPass.camera = camera;
     }
+    // Update pixelation pass camera
+    if (composer && composer.pixelPass) {
+      composer.pixelPass.camera = camera;
+    }
   }
 
   // ============================================
@@ -2810,6 +2815,14 @@ const GUI = window.lil.GUI;
     gradeFolder.close();
 
     vfxFolder.add(settings, "fxaaEnabled").name("Anti-Aliasing").onChange(updatePostProcessing);
+
+    const pixelFolder = vfxFolder.addFolder("Pixelation");
+    pixelFolder.add(settings, "pixelationEnabled").name("Enabled").onChange(updatePostProcessing);
+    pixelFolder.add(settings, "pixelationSize", 1, 16, 1).name("Pixel Size").onChange(updatePostProcessing);
+    pixelFolder.add(settings, "pixelationNormalEdge", 0, 2, 0.05).name("Normal Edge").onChange(updatePostProcessing);
+    pixelFolder.add(settings, "pixelationDepthEdge", 0, 1, 0.05).name("Depth Edge").onChange(updatePostProcessing);
+    pixelFolder.close();
+
     vfxFolder.close();
 
     // ==================== AUDIO ====================
@@ -3289,8 +3302,23 @@ const GUI = window.lil.GUI;
   function initPostProcessing() {
     composer = new EffectComposer(renderer);
 
+    // Regular render pass
     const renderPass = new RenderPass(scene, camera);
+    renderPass.enabled = !settings.pixelationEnabled;
     composer.addPass(renderPass);
+
+    // Pixelation pass (replaces render pass when enabled)
+    const pixelPass = new RenderPixelatedPass(
+      settings.pixelationSize || 4,
+      scene,
+      camera,
+      {
+        normalEdgeStrength: settings.pixelationNormalEdge || 0.3,
+        depthEdgeStrength: settings.pixelationDepthEdge || 0.4
+      }
+    );
+    pixelPass.enabled = settings.pixelationEnabled;
+    composer.addPass(pixelPass);
 
     // Bloom pass
     const bloomPass = new UnrealBloomPass(
@@ -3326,6 +3354,7 @@ const GUI = window.lil.GUI;
     composer.cyberpunkPass = cyberpunkPass;
     composer.fxaaPass = fxaaPass;
     composer.renderPass = renderPass;
+    composer.pixelPass = pixelPass;
   }
 
   function updatePostProcessing() {
@@ -3349,6 +3378,17 @@ const GUI = window.lil.GUI;
 
     if (composer.fxaaPass) {
       composer.fxaaPass.enabled = settings.fxaaEnabled;
+    }
+
+    // Update pixelation
+    if (composer.pixelPass && composer.renderPass) {
+      composer.pixelPass.enabled = settings.pixelationEnabled;
+      composer.renderPass.enabled = !settings.pixelationEnabled;
+      if (settings.pixelationEnabled) {
+        composer.pixelPass.setPixelSize(settings.pixelationSize || 4);
+        composer.pixelPass.normalEdgeStrength = settings.pixelationNormalEdge || 0.3;
+        composer.pixelPass.depthEdgeStrength = settings.pixelationDepthEdge || 0.4;
+      }
     }
 
     // Update fog

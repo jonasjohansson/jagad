@@ -69,6 +69,11 @@ export const defaultSettings = {
   bloomStrength: 0.2,
   bloomRadius: 1.0,
   fxaaEnabled: false,
+  // Pixelation
+  pixelationEnabled: false,
+  pixelationSize: 4,
+  pixelationNormalEdge: 0.3,
+  pixelationDepthEdge: 0.4,
   // Cyberpunk VFX
   vignetteEnabled: false,
   vignetteIntensity: 0.2,
