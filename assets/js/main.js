@@ -1674,11 +1674,24 @@ const GUI = window.lil.GUI;
         STATE.fugitiveValue = 250; // Reset fugitive value
         STATE.playerScore = 0;
         STATE.capturedCount = 0;
-        // Hide non-ready chasers, they'll appear when activated
+        // Make non-ready chasers fully transparent (not hidden, to avoid shader recompilation lag)
         for (const c of chasers) {
           if (!c.ready) {
-            if (c.mesh) c.mesh.visible = false;
             if (c.light) c.light.visible = false;
+            // Set opacity to 0 instead of hiding mesh
+            if (c.isCarModel && c.mesh) {
+              c.mesh.traverse((child) => {
+                if (child.isMesh && child.material) {
+                  child.material.transparent = true;
+                  child.material.opacity = 0;
+                  child.material.needsUpdate = true;
+                }
+              });
+            } else if (c.material) {
+              c.material.transparent = true;
+              c.material.opacity = 0;
+              c.material.needsUpdate = true;
+            }
           }
         }
         // Trigger fugitive billboard pop-in animation
@@ -4746,24 +4759,19 @@ const GUI = window.lil.GUI;
           initActorOnPath(chaser);
         }
 
-        // Make visible and set full opacity when activated
-        if (chaser.mesh) chaser.mesh.visible = true;
+        // Set full opacity when activated (material is already configured for transparency)
         if (chaser.light) chaser.light.visible = true;
 
-        if (chaser.isCarModel) {
+        if (chaser.isCarModel && chaser.mesh) {
           chaser.mesh.traverse((child) => {
             if (child.isMesh && child.material) {
-              child.material.transparent = true;
               child.material.opacity = 1.0;
               child.material.depthWrite = true;
-              child.material.needsUpdate = true;
             }
           });
         } else if (chaser.material) {
-          chaser.material.transparent = false;
           chaser.material.opacity = 1.0;
           chaser.material.depthWrite = true;
-          chaser.material.needsUpdate = true;
         }
         if (chaser.light) {
           chaser.light.intensity = settings.chaserLightIntensity;
