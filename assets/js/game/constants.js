@@ -24,7 +24,7 @@ export const PATHS = {
   },
   sfx: {
     capture: "assets/sounds/SFX_5_CaptureEnemy.wav",
-    helicopter: "assets/sounds/SFX_6_Helicopter.wav",
+    helicopter: "assets/sounds/SFX_6_Helicopter.mp3",
     countdown: "assets/sounds/SFX_3_3-2-1-GO!.wav",
     playerSelect: "assets/sounds/SFX_1_PlayerSelect.wav",
     gameStart: "assets/sounds/SFX_4_GamePlayStarts.wav",

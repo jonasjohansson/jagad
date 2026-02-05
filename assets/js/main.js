@@ -13,7 +13,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=10";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=11";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
 
 // lil-gui loaded via script tag in index.html
@@ -518,11 +518,9 @@ const loadingProgress = {
     if (!helicopter || !helicopter.mesh) return;
     if (!settings.helicopterEnabled) {
       helicopter.mesh.visible = false;
-      stopHelicopterSound();
       return;
     }
     helicopter.mesh.visible = true;
-    playHelicopterSound();
 
     const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
     const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
@@ -1563,7 +1561,6 @@ const loadingProgress = {
 
     if (wire) {
       if (wire.billboard) wire.billboard.visible = false;
-      if (wire.line) wire.line.visible = false;
     }
 
     // Check if all captured
@@ -1732,6 +1729,7 @@ const loadingProgress = {
 
     switch (newState) {
       case "PRE_GAME":
+        stopHelicopterSound(); // Stop helicopter loop
         // Display pre-game text
         settings.glassTextRow1 = settings.preGameTextRow1;
         settings.glassTextRow2 = settings.preGameTextRow2;
@@ -1769,6 +1767,7 @@ const loadingProgress = {
         // Set playing text and start timer
         applyPlayingText();
         playSFX("gameStart");
+        playHelicopterSound(); // Start helicopter loop
         STATE.gameTimerStarted = true;
         STATE.gameTimerRemaining = 90;
         STATE.fugitiveValue = 250; // Reset fugitive value
@@ -1803,6 +1802,7 @@ const loadingProgress = {
         break;
 
       case "GAME_OVER":
+        stopHelicopterSound(); // Stop helicopter loop
         STATE.gameOver = true;
         STATE.gameTimerStarted = false;
         setChasersOpacity(0.1);
@@ -2585,10 +2585,8 @@ const loadingProgress = {
     fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
 
     const billboardFolder = fugitiveFolder.addFolder("Face Billboards");
-    billboardFolder.add(settings, "wireEnabled").name("Enabled");
-    billboardFolder.add(settings, "wireHeight", 0.1, 5, 0.1).name("Wire Height");
     billboardFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
-    billboardFolder.add(settings, "billboardBrightness", 0, 1, 0.05).name("Brightness").onChange((v) => {
+    billboardFolder.add(settings, "billboardBrightness", 0, 5, 0.1).name("Brightness").onChange((v) => {
       for (const wire of fugitiveWires) {
         if (wire.billboard && wire.billboard.material) {
           wire.billboard.material.color.setRGB(v, v, v);
@@ -2958,6 +2956,23 @@ const loadingProgress = {
     audioFolder.add(settings, "audioTrack", Object.keys(PATHS.audio)).name("Track").onChange((v) => {
       setAudioTrack(v);
     });
+
+    // SFX display (read-only info)
+    const sfxFolder = audioFolder.addFolder("Sound Effects");
+    const sfxInfo = {
+      capture: PATHS.sfx?.capture?.split('/').pop() || "N/A",
+      helicopter: PATHS.sfx?.helicopter?.split('/').pop() || "N/A",
+      countdown: PATHS.sfx?.countdown?.split('/').pop() || "N/A",
+      playerSelect: PATHS.sfx?.playerSelect?.split('/').pop() || "N/A",
+      gameStart: PATHS.sfx?.gameStart?.split('/').pop() || "N/A",
+    };
+    sfxFolder.add(sfxInfo, "capture").name("Capture").disable();
+    sfxFolder.add(sfxInfo, "helicopter").name("Helicopter").disable();
+    sfxFolder.add(sfxInfo, "countdown").name("Countdown").disable();
+    sfxFolder.add(sfxInfo, "playerSelect").name("Player Select").disable();
+    sfxFolder.add(sfxInfo, "gameStart").name("Game Start").disable();
+    sfxFolder.close();
+
     audioFolder.close();
 
     // Store reference for GLB parts to add to later
@@ -3670,8 +3685,8 @@ const loadingProgress = {
     }
 
     initWire() {
-      const segmentCount = settings.wireSegments;
-      const totalHeight = settings.wireHeight * this.actorSize;
+      const segmentCount = 12; // Fixed value since wire is removed
+      const totalHeight = 3.2 * this.actorSize; // Fixed height for billboard positioning
       const segmentLength = totalHeight / segmentCount;
 
       const actorPos = this.actor.mesh.position;
@@ -3692,22 +3707,6 @@ const loadingProgress = {
 
       this.points[0].pinned = true;
       this.points[this.points.length - 1].pinned = true;
-
-      const positions = new Float32Array((segmentCount + 1) * 3);
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-
-      const material = new THREE.LineBasicMaterial({
-        color: this.color,
-        linewidth: 2,
-        transparent: true,
-        depthWrite: false,
-        depthTest: false
-      });
-
-      this.line = new THREE.Line(geometry, material);
-      this.line.renderOrder = 1000;
-      scene.add(this.line);
 
       const billboardSize = settings.wireCubeSize * this.actorSize * 2;
       const billboardGeo = new THREE.PlaneGeometry(billboardSize, billboardSize);
@@ -3847,7 +3846,6 @@ const loadingProgress = {
     }
 
     isVisible() {
-      if (!settings.wireEnabled) return false;
       if (this.isChaser) {
         return this.actor.active;
       } else {
@@ -3891,12 +3889,10 @@ const loadingProgress = {
       }
 
       if (!this.isVisible()) {
-        if (this.line) this.line.visible = false;
         if (this.billboard) this.billboard.visible = false;
         return;
       }
 
-      if (this.line) this.line.visible = true;
       if (this.billboard) {
         this.billboard.visible = true;
         // Apply pop scale
@@ -3904,7 +3900,7 @@ const loadingProgress = {
       }
 
       const actorPos = this.actor.mesh.position;
-      const totalHeight = settings.wireHeight * this.actorSize;
+      const totalHeight = 3.2 * this.actorSize; // Hardcoded (wire removed)
 
       this.points[0].setPos(actorPos.x, actorPos.y, actorPos.z);
 
@@ -3932,8 +3928,8 @@ const loadingProgress = {
 
       topPoint.setPos(targetX, actorPos.y + totalHeight, targetZ);
 
-      const gravity = settings.wireGravity * this.actorSize;
-      const friction = settings.wireFriction;
+      const gravity = 0.15 * this.actorSize; // Hardcoded (wire removed)
+      const friction = 0.92; // Hardcoded (wire removed)
 
       for (const p of this.points) {
         if (!p.pinned) {
@@ -3945,19 +3941,13 @@ const loadingProgress = {
         p.update(gravity, friction);
       }
 
-      for (let i = 0; i < settings.wireIterations; i++) {
+      for (let i = 0; i < 3; i++) { // Hardcoded iterations (wire removed)
         for (const stick of this.sticks) {
           stick.update();
         }
       }
 
-      const positions = this.line.geometry.attributes.position.array;
-      for (let i = 0; i < this.points.length; i++) {
-        positions[i * 3] = this.points[i].pos.x;
-        positions[i * 3 + 1] = this.points[i].pos.y;
-        positions[i * 3 + 2] = this.points[i].pos.z;
-      }
-      this.line.geometry.attributes.position.needsUpdate = true;
+      // Wire line removed - only billboard remains
 
       // Billboard position: pull toward center based on centerPull setting
       const toCenterX = center.x - actorPos.x;
@@ -4120,7 +4110,6 @@ const loadingProgress = {
       const wire = fugitiveWires[f.index];
       if (wire) {
         if (wire.billboard) wire.billboard.visible = true;
-        if (wire.line) wire.line.visible = true;
       }
     }
 
@@ -5021,7 +5010,6 @@ const loadingProgress = {
 
           if (wire) {
             if (wire.billboard) wire.billboard.visible = false;
-            if (wire.line) wire.line.visible = false;
           }
           break; // One capture per chaser per frame
         }
