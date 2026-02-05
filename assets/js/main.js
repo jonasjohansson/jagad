@@ -256,20 +256,33 @@ const loadingProgress = {
   // ============================================
 
   let helicopterAudio = null;
+  const preloadedSFX = {};
 
   function initSFX() {
-    // Initialize helicopter sound (looping)
-    if (PATHS.sfx && PATHS.sfx.helicopter) {
-      helicopterAudio = new Audio(PATHS.sfx.helicopter);
-      helicopterAudio.loop = true;
-      helicopterAudio.volume = 0.3;
+    // Preload all SFX for immediate playback
+    if (PATHS.sfx) {
+      for (const [name, path] of Object.entries(PATHS.sfx)) {
+        if (name === "helicopter") {
+          // Helicopter is looping, handle separately
+          helicopterAudio = new Audio(path);
+          helicopterAudio.loop = true;
+          helicopterAudio.volume = 0.3;
+        } else {
+          // Preload other SFX
+          const audio = new Audio(path);
+          audio.volume = 0.5;
+          audio.preload = "auto";
+          preloadedSFX[name] = audio;
+        }
+      }
     }
   }
 
   function playSFX(sfxName) {
-    if (!PATHS.sfx || !PATHS.sfx[sfxName]) return;
-    const sfx = new Audio(PATHS.sfx[sfxName]);
-    sfx.volume = 0.5;
+    if (!preloadedSFX[sfxName]) return;
+    const sfx = preloadedSFX[sfxName];
+    // Reset to start and play immediately
+    sfx.currentTime = 0;
     sfx.play().catch(() => {});
   }
 
@@ -1508,8 +1521,8 @@ const loadingProgress = {
 
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
-      // In PRE_GAME state, mark the chaser as ready (lights up car fully)
-      if (STATE.loaded && STATE.gameState === "PRE_GAME") {
+      // In PRE_GAME or STARTING state, mark the chaser as ready (lights up car fully)
+      if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
         const chaserIndex = getChaserIndexForKey(keyLower);
         if (chaserIndex >= 0) {
           markChaserReady(chaserIndex);
@@ -5155,8 +5168,12 @@ const loadingProgress = {
         marker.getWorldPosition(worldPos);
         chaserSpawns.push(worldPos);
         marker.visible = false;
+        if (DEBUG) console.log(`Found chaser spawn C${i}:`, worldPos);
+      } else {
+        console.warn(`Missing chaser spawn marker C${i} in GLB!`);
       }
     }
+    console.log(`Total chaser spawns found: ${chaserSpawns.length}`);
 
     // Find ROADS mesh within level GLB (same scale as markers)
     let roadsMeshes = [];
