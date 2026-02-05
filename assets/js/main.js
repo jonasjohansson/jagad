@@ -9,13 +9,12 @@ import { EffectComposer } from "./lib/three/addons/postprocessing/EffectComposer
 import { RenderPass } from "./lib/three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
-import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=5";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=5";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=10";
+import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -253,6 +252,41 @@ const loadingProgress = {
   }
 
   // ============================================
+  // SOUND EFFECTS
+  // ============================================
+
+  let helicopterAudio = null;
+
+  function initSFX() {
+    // Initialize helicopter sound (looping)
+    if (PATHS.sfx && PATHS.sfx.helicopter) {
+      helicopterAudio = new Audio(PATHS.sfx.helicopter);
+      helicopterAudio.loop = true;
+      helicopterAudio.volume = 0.3;
+    }
+  }
+
+  function playSFX(sfxName) {
+    if (!PATHS.sfx || !PATHS.sfx[sfxName]) return;
+    const sfx = new Audio(PATHS.sfx[sfxName]);
+    sfx.volume = 0.5;
+    sfx.play().catch(() => {});
+  }
+
+  function playHelicopterSound() {
+    if (helicopterAudio && helicopterAudio.paused) {
+      helicopterAudio.play().catch(() => {});
+    }
+  }
+
+  function stopHelicopterSound() {
+    if (helicopterAudio) {
+      helicopterAudio.pause();
+      helicopterAudio.currentTime = 0;
+    }
+  }
+
+  // ============================================
   // VOLUMETRIC FOG (3D Noise Texture)
   // ============================================
 
@@ -309,8 +343,10 @@ const loadingProgress = {
       const size = new THREE.Vector3();
       box.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
-      const scale = (settings.helicopterScale * 2) / maxDim;
+      const baseScaleRatio = 2 / maxDim; // Store base ratio for dynamic scaling
+      const scale = settings.helicopterScale * baseScaleRatio;
       mesh.scale.setScalar(scale);
+      mesh.userData.baseScaleRatio = baseScaleRatio; // Store for later use
       if (DEBUG) console.log("Helicopter size:", size, "maxDim:", maxDim, "scale:", scale);
 
       // Position above the level - start near chaser spawn area
@@ -458,6 +494,7 @@ const loadingProgress = {
         targetX: startX,
         targetZ: startZ,
         waypointTimer: 2,
+        baseScaleRatio,
       };
 
       // Find rotor parts to animate
@@ -481,9 +518,11 @@ const loadingProgress = {
     if (!helicopter || !helicopter.mesh) return;
     if (!settings.helicopterEnabled) {
       helicopter.mesh.visible = false;
+      stopHelicopterSound();
       return;
     }
     helicopter.mesh.visible = true;
+    playHelicopterSound();
 
     const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
     const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
@@ -675,8 +714,15 @@ const loadingProgress = {
       mat.color.set(settings.helicopterColor);
       if (mat.emissive) {
         mat.emissive.set(settings.helicopterColor);
+        mat.emissiveIntensity = settings.helicopterBrightness || 1.0;
       }
     }
+  }
+
+  function updateHelicopterScale() {
+    if (!helicopter || !helicopter.mesh || !helicopter.baseScaleRatio) return;
+    const scale = settings.helicopterScale * helicopter.baseScaleRatio;
+    helicopter.mesh.scale.setScalar(scale);
   }
 
   function updateLamps() {
@@ -1494,6 +1540,7 @@ const loadingProgress = {
     // Mark as captured
     f.captured = true;
     STATE.capturedCount = (STATE.capturedCount || 0) + 1;
+    playSFX("capture");
 
     // Add score based on current fugitive value
     const points = Math.max(0, Math.floor(STATE.fugitiveValue));
@@ -1559,6 +1606,14 @@ const loadingProgress = {
     if (chaser.ready) return; // Already ready
 
     chaser.ready = true;
+    playSFX("playerSelect");
+
+    // Create pulse wave from chaser position in their color
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    const chaserColor = chaserColors[chaserIndex] || "#ffffff";
+    if (chaser.mesh) {
+      createCaptureEffect(chaser.mesh.position.clone(), chaserColor, null);
+    }
 
     // Light up the car fully (like when active/moving)
     if (chaser.isCarModel && chaser.mesh) {
@@ -1707,11 +1762,13 @@ const loadingProgress = {
         applyStartingText();
         settings.gameStarted = true; // Mark as started but input blocked
         setChasersOpacity(0.1);
+        playSFX("countdown");
         break;
 
       case "PLAYING":
         // Set playing text and start timer
         applyPlayingText();
+        playSFX("gameStart");
         STATE.gameTimerStarted = true;
         STATE.gameTimerRemaining = 90;
         STATE.fugitiveValue = 250; // Reset fugitive value
@@ -2284,9 +2341,6 @@ const loadingProgress = {
     // Resize post-processing
     if (composer) {
       composer.setSize(width, height);
-      if (composer.fxaaPass) {
-        composer.fxaaPass.material.uniforms['resolution'].value.set(1 / width, 1 / height);
-      }
     }
 
     // Check portrait mode for mobile
@@ -2626,10 +2680,11 @@ const loadingProgress = {
     const helicopterFolder = addonsFolder.addFolder("Helicopter");
     helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
     helicopterFolder.addColor(settings, "helicopterColor").name("Color").onChange(() => updateHelicopterColor());
+    helicopterFolder.add(settings, "helicopterBrightness", 0, 5, 0.1).name("Brightness").onChange(() => updateHelicopterColor());
     helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Fly Height");
     helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
     helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
-    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale");
+    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale").onChange(() => updateHelicopterScale());
     helicopterFolder.add(settings, "helicopterLightIntensity", 0, 2000, 10).name("Spotlight Intensity");
     helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
     helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
@@ -2871,12 +2926,7 @@ const loadingProgress = {
     gradeFolder.add(settings, "vignetteIntensity", 0, 1, 0.05).name("Vignette Amount").onChange(updatePostProcessing);
     gradeFolder.add(settings, "colorGradingSaturation", 0.5, 2, 0.05).name("Saturation").onChange(updatePostProcessing);
     gradeFolder.add(settings, "colorGradingContrast", 0.5, 2, 0.05).name("Contrast").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "chromaticAberration", 0, 0.02, 0.001).name("Chromatic Aberr.").onChange(updatePostProcessing);
-    gradeFolder.addColor(settings, "colorGradingTint").name("Tint Color").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingIntensity", 0, 0.5, 0.01).name("Tint Amount").onChange(updatePostProcessing);
     gradeFolder.close();
-
-    vfxFolder.add(settings, "fxaaEnabled").name("Anti-Aliasing").onChange(updatePostProcessing);
 
     const pixelFolder = vfxFolder.addFolder("Pixelation");
     pixelFolder.add(settings, "pixelationEnabled").name("Enabled").onChange(updatePostProcessing);
@@ -2950,6 +3000,22 @@ const loadingProgress = {
 
     // Parts that should have 0 opacity by default
     const hiddenByDefault = ["building-building", "pavement-paths"];
+
+    // Apply default material values for specific parts
+    glbParts.forEach((data, name) => {
+      const nameLower = name.toLowerCase();
+      const mat = data.mesh.material;
+      if (!mat) return;
+
+      if (nameLower.includes("lamp")) {
+        if (mat.metalness !== undefined) mat.metalness = 0.54;
+      } else if (nameLower.includes("window") || nameLower.includes("path")) {
+        if (mat.metalness !== undefined) mat.metalness = 0;
+      } else if (nameLower.includes("road")) {
+        if (mat.metalness !== undefined) mat.metalness = 0;
+        if (mat.roughness !== undefined) mat.roughness = 0.84;
+      }
+    });
 
     // Helper to add part controls to a folder
     function addPartControls(parentFolder, data, name) {
@@ -3395,9 +3461,9 @@ const loadingProgress = {
     // Cyberpunk shader pass (vignette, chromatic aberration, color grading)
     const cyberpunkPass = new ShaderPass(CyberpunkShader);
     cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
-    cyberpunkPass.uniforms['chromaticAberration'].value = settings.colorGradingEnabled ? settings.chromaticAberration : 0;
-    cyberpunkPass.uniforms['tintColor'].value.set(settings.colorGradingTint);
-    cyberpunkPass.uniforms['tintIntensity'].value = settings.colorGradingEnabled ? settings.colorGradingIntensity : 0;
+    cyberpunkPass.uniforms['chromaticAberration'].value = 0;
+    cyberpunkPass.uniforms['tintColor'].value.set("#ffffff");
+    cyberpunkPass.uniforms['tintIntensity'].value = 0;
     cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
     cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
     composer.addPass(cyberpunkPass);
@@ -3406,15 +3472,9 @@ const loadingProgress = {
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
-    // FXAA pass for anti-aliasing
-    const fxaaPass = new FXAAPass();
-    fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
-    composer.addPass(fxaaPass);
-
     // Store references for updates
     composer.bloomPass = bloomPass;
     composer.cyberpunkPass = cyberpunkPass;
-    composer.fxaaPass = fxaaPass;
     composer.selectivePixelPass = selectivePixelPass;
   }
 
@@ -3430,15 +3490,11 @@ const loadingProgress = {
 
     if (composer.cyberpunkPass) {
       composer.cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
-      composer.cyberpunkPass.uniforms['chromaticAberration'].value = settings.colorGradingEnabled ? settings.chromaticAberration : 0;
-      composer.cyberpunkPass.uniforms['tintColor'].value.set(settings.colorGradingTint);
-      composer.cyberpunkPass.uniforms['tintIntensity'].value = settings.colorGradingEnabled ? settings.colorGradingIntensity : 0;
+      composer.cyberpunkPass.uniforms['chromaticAberration'].value = 0;
+      composer.cyberpunkPass.uniforms['tintColor'].value.set("#ffffff");
+      composer.cyberpunkPass.uniforms['tintIntensity'].value = 0;
       composer.cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
       composer.cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
-    }
-
-    if (composer.fxaaPass) {
-      composer.fxaaPass.enabled = settings.fxaaEnabled;
     }
 
     // Update selective pixelation
@@ -4942,6 +4998,7 @@ const loadingProgress = {
           // Mark as captured
           f.captured = true;
           STATE.capturedCount = (STATE.capturedCount || 0) + 1;
+          playSFX("capture");
 
           // Add score based on current fugitive value
           const points = Math.max(0, Math.floor(STATE.fugitiveValue));
@@ -5918,6 +5975,7 @@ const loadingProgress = {
     initPostProcessing();
     initAtmosphere();
     initAudio();
+    initSFX();
     loadHelicopter();
     updateHelicopterBoundsHelper();
     initIframePanels();

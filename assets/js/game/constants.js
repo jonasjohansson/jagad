@@ -22,6 +22,13 @@ export const PATHS = {
   audio: {
     "triumph-hill": "assets/audio/triumph-hill.mp3",
   },
+  sfx: {
+    capture: "assets/sounds/SFX_5_CaptureEnemy.wav",
+    helicopter: "assets/sounds/SFX_6_Helicopter.wav",
+    countdown: "assets/sounds/SFX_3_3-2-1-GO!.wav",
+    playerSelect: "assets/sounds/SFX_1_PlayerSelect.wav",
+    gameStart: "assets/sounds/SFX_4_GamePlayStarts.wav",
+  },
   video: {
     windowAmbience: "assets/video/Jagad_Window_Ambience_v1.mp4",
   },
