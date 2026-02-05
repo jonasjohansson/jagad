@@ -12,12 +12,19 @@ import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
 import { FXAAPass } from "./lib/three/addons/postprocessing/FXAAPass.js";
 import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
+import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=3";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
+
+// Layer constants for selective pixelation
+const LAYERS = {
+  DEFAULT: 0,      // Effects, particles, billboards, UI
+  GLB_MODELS: 1    // Pixelated: helicopter, level, cars
+};
 
 // Loading progress tracker
 const loadingProgress = {
@@ -431,6 +438,13 @@ const loadingProgress = {
         }
       });
       mesh.userData.materials = helicopterMaterials;
+
+      // Assign GLB layer for selective pixelation
+      mesh.traverse(child => {
+        if (child.isMesh) child.layers.set(LAYERS.GLB_MODELS);
+      });
+      // Keep light cone on default layer (volumetric effect should not be pixelated)
+      lightCone.traverse(child => child.layers.set(LAYERS.DEFAULT));
 
       scene.add(mesh);
 
@@ -2184,13 +2198,9 @@ const loadingProgress = {
       }
     }
 
-    // Update composer render pass camera
-    if (composer && composer.renderPass) {
-      composer.renderPass.camera = camera;
-    }
-    // Update pixelation pass camera
-    if (composer && composer.pixelPass) {
-      composer.pixelPass.camera = camera;
+    // Update selective pixel pass camera
+    if (composer && composer.selectivePixelPass) {
+      composer.selectivePixelPass.camera = camera;
     }
   }
 
@@ -3350,23 +3360,19 @@ const loadingProgress = {
   function initPostProcessing() {
     composer = new EffectComposer(renderer);
 
-    // Regular render pass
-    const renderPass = new RenderPass(scene, camera);
-    renderPass.enabled = !settings.pixelationEnabled;
-    composer.addPass(renderPass);
-
-    // Pixelation pass (replaces render pass when enabled)
-    const pixelPass = new RenderPixelatedPass(
+    // Selective pixel pass - renders GLB models with pixelation, other elements normally
+    const selectivePixelPass = new SelectivePixelPass(
       settings.pixelationSize || 4,
       scene,
       camera,
       {
         normalEdgeStrength: settings.pixelationNormalEdge || 0.3,
-        depthEdgeStrength: settings.pixelationDepthEdge || 0.4
+        depthEdgeStrength: settings.pixelationDepthEdge || 0.4,
+        glbLayer: LAYERS.GLB_MODELS,
+        pixelationEnabled: settings.pixelationEnabled
       }
     );
-    pixelPass.enabled = settings.pixelationEnabled;
-    composer.addPass(pixelPass);
+    composer.addPass(selectivePixelPass);
 
     // Bloom pass
     const bloomPass = new UnrealBloomPass(
@@ -3401,8 +3407,7 @@ const loadingProgress = {
     composer.bloomPass = bloomPass;
     composer.cyberpunkPass = cyberpunkPass;
     composer.fxaaPass = fxaaPass;
-    composer.renderPass = renderPass;
-    composer.pixelPass = pixelPass;
+    composer.selectivePixelPass = selectivePixelPass;
   }
 
   function updatePostProcessing() {
@@ -3428,15 +3433,12 @@ const loadingProgress = {
       composer.fxaaPass.enabled = settings.fxaaEnabled;
     }
 
-    // Update pixelation
-    if (composer.pixelPass && composer.renderPass) {
-      composer.pixelPass.enabled = settings.pixelationEnabled;
-      composer.renderPass.enabled = !settings.pixelationEnabled;
-      if (settings.pixelationEnabled) {
-        composer.pixelPass.setPixelSize(settings.pixelationSize || 4);
-        composer.pixelPass.normalEdgeStrength = settings.pixelationNormalEdge || 0.3;
-        composer.pixelPass.depthEdgeStrength = settings.pixelationDepthEdge || 0.4;
-      }
+    // Update selective pixelation
+    if (composer.selectivePixelPass) {
+      composer.selectivePixelPass.pixelationEnabled = settings.pixelationEnabled;
+      composer.selectivePixelPass.setPixelSize(settings.pixelationSize || 4);
+      composer.selectivePixelPass.normalEdgeStrength = settings.pixelationNormalEdge || 0.3;
+      composer.selectivePixelPass.depthEdgeStrength = settings.pixelationDepthEdge || 0.4;
     }
 
     // Update fog
@@ -5055,6 +5057,11 @@ const loadingProgress = {
     scene.add(levelContainer);
     STATE.levelContainer = levelContainer;
 
+    // Assign GLB layer for selective pixelation
+    levelContainer.traverse(child => {
+      if (child.isMesh) child.layers.set(LAYERS.GLB_MODELS);
+    });
+
     levelContainer.updateMatrixWorld(true);
 
     const fugitiveSpawns = [];
@@ -5799,6 +5806,8 @@ const loadingProgress = {
             if (child.isMesh) {
               child.castShadow = false; // Don't cast shadows so lights pass through other chasers
               child.receiveShadow = true;
+              // Assign GLB layer for selective pixelation
+              child.layers.set(LAYERS.GLB_MODELS);
               // Store original material for reference
               child.userData.originalMaterial = child.material;
               child.material = new THREE.MeshStandardMaterial({
@@ -5826,6 +5835,8 @@ const loadingProgress = {
           mesh = new THREE.Mesh(chaserGeo, material);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
+          // Assign GLB layer for selective pixelation
+          mesh.layers.set(LAYERS.GLB_MODELS);
         }
 
         // Create spotlight as headlight at the front of the car
