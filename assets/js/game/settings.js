@@ -174,7 +174,7 @@ export const defaultSettings = {
   rightPanelC3Z: 4.29,
   rightPanelC4X: 0.24,
   rightPanelC4Z: 4.28,
-  panelsY: 0.01,
+  panelsY: 0.12,
   // Audio
   audioVolume: 0.5,
   audioTrack: "triumph-hill",

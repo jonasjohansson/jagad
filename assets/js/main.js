@@ -14,8 +14,8 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=3";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=3";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=5";
+import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=5";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -2630,7 +2630,7 @@ const loadingProgress = {
     helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
     helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
     helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale");
-    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 500, 10).name("Spotlight Intensity");
+    helicopterFolder.add(settings, "helicopterLightIntensity", 0, 2000, 10).name("Spotlight Intensity");
     helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
     helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
     if (settings.helicopterLightDistance === undefined) settings.helicopterLightDistance = 50;
