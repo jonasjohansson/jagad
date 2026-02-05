@@ -2715,6 +2715,10 @@ const loadingProgress = {
 
     // Panels
     const panelsFolder = addonsFolder.addFolder("Panels");
+    panelsFolder.add(settings, "panelsY", -5, 5, 0.01).name("Y (Global)").onChange(() => {
+      updateLeftPanel();
+      updateRightPanel();
+    });
 
     // Left Panel (iframe) - 4 independent corners for skewing
     const leftPanelFolder = panelsFolder.addFolder("Left Panel");
@@ -2936,6 +2940,10 @@ const loadingProgress = {
 
     // Add GLB Parts folder to main GUI
     const glbPartsFolder = STATE.mainGUI.addFolder("GLB");
+
+    // Display current GLB file name
+    const glbFileName = PATHS.models.level.split('/').pop();
+    glbPartsFolder.add({ file: glbFileName }, "file").name("Current").disable();
 
     // Create Nav subfolder for navigation-related parts
     const navFolder = glbPartsFolder.addFolder("Nav");
@@ -3236,7 +3244,7 @@ const loadingProgress = {
       settings.leftPanelC2X, settings.leftPanelC2Z,
       settings.leftPanelC3X, settings.leftPanelC3Z,
       settings.leftPanelC4X, settings.leftPanelC4Z,
-      0.01
+      settings.panelsY
     );
     const leftMat = new THREE.MeshBasicMaterial({
       map: leftTexture,
@@ -3254,7 +3262,7 @@ const loadingProgress = {
       settings.rightPanelC2X, settings.rightPanelC2Z,
       settings.rightPanelC3X, settings.rightPanelC3Z,
       settings.rightPanelC4X, settings.rightPanelC4Z,
-      0.01
+      settings.panelsY
     );
     const rightMat = new THREE.MeshBasicMaterial({
       map: rightTexture,
@@ -3318,7 +3326,7 @@ const loadingProgress = {
       settings.leftPanelC2X, settings.leftPanelC2Z,
       settings.leftPanelC3X, settings.leftPanelC3Z,
       settings.leftPanelC4X, settings.leftPanelC4Z,
-      0.01
+      settings.panelsY
     );
     leftPanel.visible = settings.leftPanelEnabled;
   }
@@ -3330,7 +3338,7 @@ const loadingProgress = {
       settings.rightPanelC2X, settings.rightPanelC2Z,
       settings.rightPanelC3X, settings.rightPanelC3Z,
       settings.rightPanelC4X, settings.rightPanelC4Z,
-      0.01
+      settings.panelsY
     );
     rightPanel.visible = settings.rightPanelEnabled;
   }
