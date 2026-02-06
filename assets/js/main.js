@@ -5200,6 +5200,7 @@ const loadingProgress = {
         } else if (isPath && obj.material) {
           pathMeshes.push(obj);
           const mat = obj.material;
+          mat.side = THREE.DoubleSide;
           if (mat.emissive) {
             mat.emissiveIntensity = (settings.pathEmissiveIntensity || 1.0) * globalMult;
           }
