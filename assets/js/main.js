@@ -2381,8 +2381,12 @@ const loadingProgress = {
     guiLeft.add(settings, "exportSettings").name("💾 Export Settings");
     guiLeft.add(settings, "importSettings").name("📂 Import Settings");
     guiLeft.add({ clearCache: async function() {
-      if (confirm("Clear all browser cache and reload?")) {
+      if (confirm("Clear all browser cache, storage, and reload?")) {
         try {
+          // Clear localStorage (settings, high scores, etc.)
+          localStorage.clear();
+          // Clear sessionStorage
+          sessionStorage.clear();
           // Clear Cache Storage
           if ('caches' in window) {
             const cacheNames = await caches.keys();
