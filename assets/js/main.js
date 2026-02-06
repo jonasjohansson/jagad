@@ -77,7 +77,7 @@ const loadingProgress = {
 
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(window.devicePixelRatio * (defaultSettings.renderScale || 1));
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -389,8 +389,8 @@ const loadingProgress = {
       );
       light.position.set(0, 0, 0);
       light.castShadow = true;
-      light.shadow.mapSize.width = 1024;
-      light.shadow.mapSize.height = 1024;
+      light.shadow.mapSize.width = 2048;
+      light.shadow.mapSize.height = 2048;
 
       // Create target below helicopter
       const lightTarget = new THREE.Object3D();
@@ -1572,6 +1572,7 @@ const loadingProgress = {
 
     if (wire) {
       if (wire.billboard) wire.billboard.visible = false;
+      if (wire.billboardLight) wire.billboardLight.visible = false;
     }
 
     // Check if all captured
@@ -1858,7 +1859,9 @@ const loadingProgress = {
     const highScores = loadHighScores();
     if (position >= 0 && position < highScores.length) {
       const hs = highScores[position];
-      return `${hs.initials} ${hs.score}`;
+      // Ensure initials are exactly 3 characters
+      const initials = (hs.initials || "???").substring(0, 3).padEnd(3, "?");
+      return `${initials} ${hs.score}`;
     }
     return "";
   }
@@ -1866,7 +1869,8 @@ const loadingProgress = {
   function getHighScoreInitials(position) {
     const highScores = loadHighScores();
     if (position >= 0 && position < highScores.length) {
-      return highScores[position].initials;
+      // Ensure initials are exactly 3 characters
+      return (highScores[position].initials || "???").substring(0, 3).padEnd(3, "?");
     }
     return "___";
   }
@@ -2134,7 +2138,8 @@ const loadingProgress = {
   }
 
   function confirmHighScoreEntry() {
-    const initials = STATE.highScoreInitials.join("");
+    // Ensure initials are exactly 3 characters
+    const initials = STATE.highScoreInitials.join("").substring(0, 3).padEnd(3, "A");
     const score = STATE.playerScore;
     const position = STATE.newHighScoreRank;
 
@@ -2171,8 +2176,8 @@ const loadingProgress = {
   const directionalLight = new THREE.DirectionalLight(settings.directColor, settings.directIntensity);
   directionalLight.position.set(settings.directPosX, settings.directPosY, settings.directPosZ);
   directionalLight.castShadow = true;
-  directionalLight.shadow.mapSize.width = 2048;
-  directionalLight.shadow.mapSize.height = 2048;
+  directionalLight.shadow.mapSize.width = 4096;
+  directionalLight.shadow.mapSize.height = 4096;
   directionalLight.shadow.camera.near = 0.1;
   directionalLight.shadow.camera.far = 50;
   directionalLight.shadow.camera.left = -15;
@@ -2851,11 +2856,18 @@ const loadingProgress = {
     cameraFolder.add(settings, "orthoZoom", 0.1, 3, 0.1).name("Ortho Zoom").onChange((v) => {
       if (orthoCamera) { orthoCamera.zoom = v; orthoCamera.updateProjectionMatrix(); }
     });
-    cameraFolder.add(settings, "perspFov", 20, 120, 1).name("Persp FOV").onChange((v) => {
+    cameraFolder.add(settings, "perspFov", 5, 120, 1).name("Persp FOV").onChange((v) => {
       if (perspCamera) { perspCamera.fov = v; perspCamera.updateProjectionMatrix(); }
     });
     cameraFolder.add(settings, "perspPosY", 0, 500, 0.1).name("Persp Height").onChange(updatePerspCameraPos);
     cameraFolder.add(settings, "perspPosZ", -50, 50, 0.1).name("Persp Distance").onChange(updatePerspCameraPos);
+    cameraFolder.add(settings, "renderScale", 0.5, 2, 0.25).name("Render Scale").onChange((v) => {
+      renderer.setPixelRatio(window.devicePixelRatio * v);
+      if (composer) {
+        composer.setPixelRatio(window.devicePixelRatio * v);
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }
+    });
     cameraFolder.close();
 
     const lightsFolder = sceneFolder.addFolder("Lighting");
@@ -4202,6 +4214,7 @@ const loadingProgress = {
       const wire = fugitiveWires[f.index];
       if (wire) {
         if (wire.billboard) wire.billboard.visible = true;
+        if (wire.billboardLight) wire.billboardLight.visible = true;
       }
     }
 
@@ -5202,9 +5215,22 @@ const loadingProgress = {
     scene.add(levelContainer);
     STATE.levelContainer = levelContainer;
 
-    // Assign GLB layer for selective pixelation
+    // Assign GLB layer for selective pixelation and apply anisotropic filtering to textures
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
     levelContainer.traverse(child => {
-      if (child.isMesh) child.layers.set(LAYERS.GLB_MODELS);
+      if (child.isMesh) {
+        child.layers.set(LAYERS.GLB_MODELS);
+        // Apply anisotropic filtering to all textures for sharper roads/ground at angles
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          for (const mat of mats) {
+            if (mat.map) mat.map.anisotropy = maxAnisotropy;
+            if (mat.normalMap) mat.normalMap.anisotropy = maxAnisotropy;
+            if (mat.roughnessMap) mat.roughnessMap.anisotropy = maxAnisotropy;
+            if (mat.metalnessMap) mat.metalnessMap.anisotropy = maxAnisotropy;
+          }
+        }
+      }
     });
 
     levelContainer.updateMatrixWorld(true);
@@ -5871,8 +5897,8 @@ const loadingProgress = {
       const light = new THREE.PointLight(fugitiveColor, settings.fugitiveLightIntensity, 100);
       light.position.set(0, 0, 0);
       light.castShadow = true;
-      light.shadow.mapSize.width = 512;
-      light.shadow.mapSize.height = 512;
+      light.shadow.mapSize.width = 1024;
+      light.shadow.mapSize.height = 1024;
       light.shadow.camera.near = 0.1;
       light.shadow.camera.far = 50;
       light.shadow.bias = -0.001;
@@ -5995,8 +6021,8 @@ const loadingProgress = {
         // Position at front of car (local Z-) and at set height (negative due to car flip)
         light.position.set(0, settings.chaserLightHeight / meshScale, -settings.chaserLightOffset / meshScale);
         light.castShadow = true;
-        light.shadow.mapSize.width = 512;
-        light.shadow.mapSize.height = 512;
+        light.shadow.mapSize.width = 1024;
+        light.shadow.mapSize.height = 1024;
         light.shadow.camera.near = 0.1;
         light.shadow.camera.far = settings.chaserLightDistance || 50;
         light.shadow.bias = -0.001;
