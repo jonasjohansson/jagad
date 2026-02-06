@@ -1480,6 +1480,15 @@ const loadingProgress = {
   window.addEventListener("keydown", (e) => {
     const keyLower = e.key.toLowerCase();
 
+    // Toggle GUI with CMD/CTRL+G
+    if (keyLower === "g" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (guiLeft) {
+        guiLeft.domElement.style.display = guiLeft.domElement.style.display === "none" ? "" : "none";
+      }
+      return;
+    }
+
     // High score entry mode
     if (STATE.enteringHighScore) {
       e.preventDefault();
@@ -3010,6 +3019,9 @@ const loadingProgress = {
 
     // Store reference for GLB parts to add to later
     STATE.mainGUI = guiLeft;
+
+    // Hide GUI by default (toggle with CMD/CTRL+G)
+    guiLeft.domElement.style.display = "none";
   }
 
   // ============================================
