@@ -13,7 +13,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=11";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=12";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
 
 // lil-gui loaded via script tag in index.html
@@ -111,6 +111,12 @@ const loadingProgress = {
   const chasers = [];
   let helicopter = null;
   let helicopterBoundsHelper = null;
+
+  // Reusable temp objects to avoid per-frame allocations
+  const _tempVec3A = new THREE.Vector3();
+  const _tempVec3B = new THREE.Vector3();
+  const _tempQuat = new THREE.Quaternion();
+  const _defaultDownDir = new THREE.Vector3(0, -1, 0);
 
   const settings = {
     gameStarted: false,
@@ -616,12 +622,10 @@ const loadingProgress = {
     if (helicopter.lightCone) {
       helicopter.lightCone.visible = settings.helicopterVolumetric;
 
-      // Point cone toward the light target direction
-      // The cone points down by default (-Y), we need to rotate it to match the light direction
-      const targetDir = new THREE.Vector3(swayX, -10, swayZ).normalize();
-      const defaultDir = new THREE.Vector3(0, -1, 0);
-      const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultDir, targetDir);
-      helicopter.lightCone.quaternion.copy(quaternion);
+      // Point cone toward the light target direction (reuse temp objects)
+      _tempVec3A.set(swayX, -10, swayZ).normalize();
+      _tempQuat.setFromUnitVectors(_defaultDownDir, _tempVec3A);
+      helicopter.lightCone.quaternion.copy(_tempQuat);
 
       // Update all layers
       if (helicopter.lightCone.userData.layers) {
@@ -780,23 +784,23 @@ const loadingProgress = {
 
     for (let i = 0; i < chasers.length; i++) {
       const chaser = chasers[i];
-      if (chaser.isCarModel && chaser.mesh) {
+      if (chaser.isCarModel && chaser.cachedMaterials) {
         const chaserColor = chaserColors[i] || "#ffffff";
-        chaser.mesh.traverse((child) => {
-          if (child.isMesh && child.material) {
-            const mat = child.material;
-            // Set emissive color to chaser color
+        const baseEmissive = chaser.ready || chaser.active ? 0.3 : 0.05;
+        const intensity = baseEmissive + audioBoost;
+
+        for (const mat of chaser.cachedMaterials) {
+          // Initialize emissive color once
+          if (!mat._emissiveInitialized) {
             if (!mat.emissive) {
               mat.emissive = new THREE.Color(chaserColor);
-            } else if (!child._emissiveSet) {
+            } else {
               mat.emissive.set(chaserColor);
-              child._emissiveSet = true;
             }
-            // Boost emissive based on BPM pulse
-            const baseEmissive = chaser.ready || chaser.active ? 0.3 : 0.05;
-            mat.emissiveIntensity = baseEmissive + audioBoost;
+            mat._emissiveInitialized = true;
           }
-        });
+          mat.emissiveIntensity = intensity;
+        }
       }
     }
   }
@@ -926,6 +930,7 @@ const loadingProgress = {
     lastTexts: ["", "", "", ""], // Track previous text to detect changes
     lastFlickerTime: 0, // Throttle random char updates
     flickerChars: {}, // Cached random chars per row
+    activeCount: 0, // Track active shuffle count to avoid iteration
   };
 
   const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -956,6 +961,7 @@ const loadingProgress = {
         startTime: now + (i * stagger), // Stagger each character
         duration: duration,
       });
+      if (isChanged) textShuffleState.activeCount++;
     }
   }
 
@@ -983,6 +989,7 @@ const loadingProgress = {
       state.chars[randomIdx].active = true;
       state.chars[randomIdx].startTime = now;
       state.chars[randomIdx].duration = duration;
+      textShuffleState.activeCount++;
     }
   }
 
@@ -1043,6 +1050,7 @@ const loadingProgress = {
         if (elapsed >= charState.duration) {
           // Scramble complete - lock to final char
           charState.active = false;
+          textShuffleState.activeCount--;
           result += char;
         } else if (elapsed < 0) {
           // Not started yet (staggered) - show space
@@ -1059,16 +1067,7 @@ const loadingProgress = {
 
   function isShuffleActive() {
     if (!settings.glassTextShuffle) return false;
-    const now = performance.now();
-    for (let i = 0; i < 4; i++) {
-      const state = textShuffleState.rows[i];
-      if (state.chars) {
-        for (const charState of state.chars) {
-          if (charState.active) return true;
-        }
-      }
-    }
-    return false;
+    return textShuffleState.activeCount > 0;
   }
 
   // Preload fonts for canvas usage
@@ -1180,15 +1179,14 @@ const loadingProgress = {
         ctx.fillRect(0, 0, w, h);
       }
     } else {
-      // Fallback solid background
-      ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity})`;
-      ctx.fillRect(0, 0, w, h);
-
-      // Compensate for text brightness boost (darken background)
-      if (bgCompensation > 0) {
-        ctx.fillStyle = `rgba(0, 0, 0, ${bgCompensation})`;
+      // Fallback solid background - only draw if opacity > 0
+      if (settings.glassOpacity > 0) {
+        // Combined opacity includes brightness compensation
+        const combinedOpacity = Math.min(1, settings.glassOpacity + bgCompensation);
+        ctx.fillStyle = `rgba(0, 0, 0, ${combinedOpacity})`;
         ctx.fillRect(0, 0, w, h);
       }
+      // When glassOpacity is 0, keep background transparent (no compensation needed)
     }
 
     // Calculate dt for shuffle effect
@@ -1684,6 +1682,8 @@ const loadingProgress = {
     try {
       localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(scores));
       settings.highScores = scores;
+      // Update GUI display
+      if (STATE.updateStateDisplay) STATE.updateStateDisplay();
     } catch (e) {
       console.error("Failed to save high scores:", e);
     }
@@ -1698,19 +1698,17 @@ const loadingProgress = {
       const effectiveEmissive = (isLowOpacity && c.ready) ? 0.3 : (isLowOpacity ? 0.05 : 0.3);
       const effectiveDepthWrite = (isLowOpacity && c.ready) ? true : !isLowOpacity;
 
-      if (c.isCarModel && c.mesh) {
-        c.mesh.traverse((child) => {
-          if (child.isMesh && child.material) {
-            const mat = child.material;
-            mat.transparent = true;
-            mat.opacity = effectiveOpacity;
-            mat.depthWrite = effectiveDepthWrite;
-            if (mat.emissive) {
-              mat.emissiveIntensity = effectiveEmissive;
-            }
-            mat.needsUpdate = true;
+      // Use cached materials if available (car models)
+      if (c.cachedMaterials && c.cachedMaterials.length > 0) {
+        for (const mat of c.cachedMaterials) {
+          mat.transparent = true;
+          mat.opacity = effectiveOpacity;
+          mat.depthWrite = effectiveDepthWrite;
+          if (mat.emissive) {
+            mat.emissiveIntensity = effectiveEmissive;
           }
-        });
+          mat.needsUpdate = true;
+        }
       } else if (c.material) {
         c.material.transparent = true;
         c.material.opacity = effectiveOpacity;
@@ -1837,6 +1835,9 @@ const loadingProgress = {
 
     // Update projection image for this state
     updateProjectionForState(newState);
+
+    // Update GUI state display
+    if (STATE.updateStateDisplay) STATE.updateStateDisplay();
   }
 
   // ============================================
@@ -2560,15 +2561,15 @@ const loadingProgress = {
     statesFolder.close();
     gameFolder.close();
 
-    // Update state display in animation loop
-    const updateStateDisplay = () => {
+    // Update state display - called when state/scores change (not on interval)
+    STATE.updateStateDisplay = () => {
       stateDisplay.current = STATE.gameState;
-      const hs = loadHighScores();
+      const hs = settings.highScores;
       highScoreDisplay.score1 = `#1: ${hs[0].initials} - ${hs[0].score}`;
       highScoreDisplay.score2 = `#2: ${hs[1].initials} - ${hs[1].score}`;
       highScoreDisplay.score3 = `#3: ${hs[2].initials} - ${hs[2].score}`;
     };
-    setInterval(updateStateDisplay, 500);
+    STATE.updateStateDisplay(); // Initial update
 
     // ==================== PROJECTION ====================
     const projectionFolder = guiLeft.addFolder("🎥 Projection");
@@ -2594,7 +2595,7 @@ const loadingProgress = {
 
     const fugitiveFolder = actorsFolder.addFolder("Fugitives");
     fugitiveFolder.addColor(settings, "fugitiveColor").name("Light Color").onChange(updateFugitiveLights);
-    fugitiveFolder.add(settings, "fugitiveLightIntensity", 0, 10, 0.1).name("Light Intensity").onChange(updateFugitiveLights);
+    fugitiveFolder.add(settings, "fugitiveLightIntensity", 0, 50, 0.1).name("Light Intensity").onChange(updateFugitiveLights);
     fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
 
     const billboardFolder = fugitiveFolder.addFolder("Face Billboards");
@@ -2998,18 +2999,61 @@ const loadingProgress = {
 
   const glbParts = new Map();
 
+  // Get default settings for a part based on name patterns
+  function getGLBPartDefaults(name, meshDefaults) {
+    const nameLower = name.toLowerCase();
+    const defaults = settings.glbParts._defaults || {};
+    const result = { ...meshDefaults };
+
+    // Check each default pattern
+    for (const [pattern, overrides] of Object.entries(defaults)) {
+      if (nameLower.includes(pattern.toLowerCase())) {
+        Object.assign(result, overrides);
+      }
+    }
+
+    // Check for exact match override (e.g., "building-building")
+    if (defaults[nameLower]) {
+      Object.assign(result, defaults[nameLower]);
+    }
+
+    // Apply any saved per-part settings
+    if (settings.glbParts[name]) {
+      Object.assign(result, settings.glbParts[name]);
+    }
+
+    return result;
+  }
+
+  // Save GLB part setting to settings
+  function saveGLBPartSetting(name, key, value) {
+    if (!settings.glbParts[name]) {
+      settings.glbParts[name] = {};
+    }
+    settings.glbParts[name][key] = value;
+    saveSettings(settings);
+  }
+
   function setupGLBPartsGUI() {
     if (!STATE.levelContainer || !STATE.mainGUI) return;
+
+    // Ensure glbParts object exists in settings
+    if (!settings.glbParts) {
+      settings.glbParts = { _defaults: {} };
+    }
 
     STATE.levelContainer.traverse((obj) => {
       if (obj.isMesh && obj.name && obj.material) {
         if (glbParts.has(obj.name)) return;
         if (obj.name.match(/^(F\d|C\d|Fugitive|Chaser)/i)) return;
 
+        const mat = obj.material;
         glbParts.set(obj.name, {
           mesh: obj,
-          originalColor: obj.material.color ? obj.material.color.clone() : new THREE.Color(1, 1, 1),
-          originalOpacity: obj.material.opacity || 1
+          meshColor: mat.color ? "#" + mat.color.getHexString() : "#ffffff",
+          meshOpacity: mat.opacity || 1,
+          meshRoughness: mat.roughness,
+          meshMetalness: mat.metalness
         });
       }
     });
@@ -3026,76 +3070,93 @@ const loadingProgress = {
     // Create Nav subfolder for navigation-related parts
     const navFolder = glbPartsFolder.addFolder("Nav");
 
-    // Parts that should have 0 opacity by default
-    const hiddenByDefault = ["building-building", "pavement-paths"];
-
-    // Apply default material values for specific parts
-    glbParts.forEach((data, name) => {
-      const nameLower = name.toLowerCase();
+    // Helper to add part controls to a folder
+    function addPartControls(parentFolder, data, name) {
       const mat = data.mesh.material;
       if (!mat) return;
 
-      if (nameLower.includes("lamp")) {
-        if (mat.metalness !== undefined) mat.metalness = 0.54;
-      } else if (nameLower.includes("window") || nameLower.includes("path")) {
-        if (mat.metalness !== undefined) mat.metalness = 0;
-      } else if (nameLower.includes("road")) {
-        if (mat.metalness !== undefined) mat.metalness = 0;
-        if (mat.roughness !== undefined) mat.roughness = 0.84;
+      // Get defaults from settings (pattern-based + per-part overrides)
+      const partDefaults = getGLBPartDefaults(name, {
+        color: data.meshColor,
+        opacity: data.meshOpacity,
+        visible: true,
+        roughness: data.meshRoughness,
+        metalness: data.meshMetalness,
+        wireframe: false
+      });
+
+      // Apply settings to material
+      if (mat.color && partDefaults.color) {
+        mat.color.set(partDefaults.color);
       }
-    });
-
-    // Helper to add part controls to a folder
-    function addPartControls(parentFolder, data, name) {
-      const nameLower = name.toLowerCase();
-      const shouldHide = hiddenByDefault.some(h => nameLower.includes(h.toLowerCase()));
-      const defaultOpacity = shouldHide ? 0 : data.originalOpacity;
-
-      if (shouldHide) {
-        data.mesh.material.transparent = true;
-        data.mesh.material.opacity = 0;
-        data.mesh.material.needsUpdate = true;
+      if (partDefaults.opacity !== undefined) {
+        mat.transparent = partDefaults.opacity < 1;
+        mat.opacity = partDefaults.opacity;
       }
+      if (partDefaults.roughness !== undefined && mat.roughness !== undefined) {
+        mat.roughness = partDefaults.roughness;
+      }
+      if (partDefaults.metalness !== undefined && mat.metalness !== undefined) {
+        mat.metalness = partDefaults.metalness;
+      }
+      if (partDefaults.wireframe !== undefined && mat.wireframe !== undefined) {
+        mat.wireframe = partDefaults.wireframe;
+      }
+      data.mesh.visible = partDefaults.visible !== false;
+      mat.needsUpdate = true;
 
+      // Create GUI controls
       const partSettings = {
-        color: "#" + data.originalColor.getHexString(),
-        opacity: defaultOpacity,
-        visible: true
+        color: partDefaults.color || "#ffffff",
+        opacity: partDefaults.opacity !== undefined ? partDefaults.opacity : 1,
+        visible: partDefaults.visible !== false
       };
 
       const folder = parentFolder.addFolder(name);
-      const mat = data.mesh.material;
 
       folder.addColor(partSettings, "color").name("Color").onChange((v) => {
-        if (data.mesh.material) {
-          data.mesh.material.color.set(v);
-          if (data.mesh.material.emissive) {
-            data.mesh.material.emissive.set(v);
-          }
-          data.mesh.material.needsUpdate = true;
+        if (mat.color) {
+          mat.color.set(v);
+          if (mat.emissive) mat.emissive.set(v);
+          mat.needsUpdate = true;
         }
-      });
-      folder.add(partSettings, "opacity", 0, 1, 0.05).name("Opacity").onChange((v) => {
-        if (data.mesh.material) {
-          data.mesh.material.transparent = v < 1;
-          data.mesh.material.opacity = v;
-          data.mesh.material.needsUpdate = true;
-        }
-      });
-      folder.add(partSettings, "visible").name("Visible").onChange((v) => {
-        data.mesh.visible = v;
+        saveGLBPartSetting(name, "color", v);
       });
 
-      if (mat) {
-        if (mat.roughness !== undefined) {
-          folder.add(mat, "roughness", 0, 1, 0.01).name("Roughness");
-        }
-        if (mat.metalness !== undefined) {
-          folder.add(mat, "metalness", 0, 1, 0.01).name("Metalness");
-        }
-        if (mat.wireframe !== undefined) {
-          folder.add(mat, "wireframe").name("Wireframe");
-        }
+      folder.add(partSettings, "opacity", 0, 1, 0.05).name("Opacity").onChange((v) => {
+        mat.transparent = v < 1;
+        mat.opacity = v;
+        mat.needsUpdate = true;
+        saveGLBPartSetting(name, "opacity", v);
+      });
+
+      folder.add(partSettings, "visible").name("Visible").onChange((v) => {
+        data.mesh.visible = v;
+        saveGLBPartSetting(name, "visible", v);
+      });
+
+      if (mat.roughness !== undefined) {
+        const roughnessCtrl = { roughness: partDefaults.roughness !== undefined ? partDefaults.roughness : mat.roughness };
+        folder.add(roughnessCtrl, "roughness", 0, 1, 0.01).name("Roughness").onChange((v) => {
+          mat.roughness = v;
+          saveGLBPartSetting(name, "roughness", v);
+        });
+      }
+
+      if (mat.metalness !== undefined) {
+        const metalnessCtrl = { metalness: partDefaults.metalness !== undefined ? partDefaults.metalness : mat.metalness };
+        folder.add(metalnessCtrl, "metalness", 0, 1, 0.01).name("Metalness").onChange((v) => {
+          mat.metalness = v;
+          saveGLBPartSetting(name, "metalness", v);
+        });
+      }
+
+      if (mat.wireframe !== undefined) {
+        const wireframeCtrl = { wireframe: partDefaults.wireframe || false };
+        folder.add(wireframeCtrl, "wireframe").name("Wireframe").onChange((v) => {
+          mat.wireframe = v;
+          saveGLBPartSetting(name, "wireframe", v);
+        });
       }
 
       folder.close();
@@ -3563,6 +3624,14 @@ const loadingProgress = {
         f.mesh.material.emissiveIntensity = 0.3;
       }
     }
+    // Also update the billboard lights (the visible ones)
+    for (const wire of fugitiveWires) {
+      if (wire.billboardLight) {
+        wire.billboardLight.color.set(color);
+        wire.billboardLight.intensity = settings.fugitiveLightIntensity;
+      }
+      wire.color = color;
+    }
   }
 
   function updateChaserLights() {
@@ -3767,9 +3836,11 @@ const loadingProgress = {
       scene.add(this.billboard);
 
       // Add point light for billboard emission
+      // Fugitives use fugitiveLightIntensity, chasers use billboardLightIntensity
+      const lightIntensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
       this.billboardLight = new THREE.PointLight(
         this.color,
-        settings.billboardLightIntensity,
+        lightIntensity,
         settings.billboardLightDistance
       );
       this.billboardLight.castShadow = false;
@@ -3985,7 +4056,8 @@ const loadingProgress = {
       // Update billboard light position and settings
       if (this.billboardLight) {
         this.billboardLight.position.copy(this.billboard.position);
-        this.billboardLight.intensity = settings.billboardLightIntensity;
+        // Fugitives use fugitiveLightIntensity, chasers use billboardLightIntensity
+        this.billboardLight.intensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
         this.billboardLight.distance = settings.billboardLightDistance;
         this.billboardLight.visible = this.billboard.visible;
       }
@@ -5939,11 +6011,20 @@ const loadingProgress = {
         mesh.rotation.y = (i === 0 || i === 2) ? Math.PI / 2 : -Math.PI / 2;
         mesh.visible = true;
 
+        // Cache materials for efficient per-frame updates
+        const cachedMaterials = [];
+        mesh.traverse((child) => {
+          if (child.isMesh && child.material) {
+            cachedMaterials.push(child.material);
+          }
+        });
+
         const chaserObj = {
           mesh,
           light,
           lightTarget,
           material: null, // Materials are on child meshes now
+          cachedMaterials, // Cached for efficient per-frame updates
           speed: settings.chaserSpeed,
           dirX: 0,
           dirZ: 0,

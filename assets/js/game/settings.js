@@ -8,7 +8,7 @@ export const defaultSettings = {
   actorScale: 1,
   fugitiveIntelligence: 0.85,
   fugitiveColor: "#ffffff",
-  fugitiveLightIntensity: 10,
+  fugitiveLightIntensity: 20,
   faceSwapDuration: 30,
   faceSwapFade: false,
   faceSwapFadeDuration: 1,
@@ -19,7 +19,7 @@ export const defaultSettings = {
   chaserLightIntensity: 500,
   chaserLightHeight: -0.02,
   chaserLightDistance: 3,
-  chaserLightAngle: 41,
+  chaserLightAngle: 50,
   chaserLightPenumbra: 1,
   chaserLightOffset: 0.1,
   chaserHeightOffset: -0.03,
@@ -86,11 +86,6 @@ export const defaultSettings = {
   rainCount: 1000,
   rainSpeed: 15,
   rainOpacity: 0.4,
-  // Cloud shadows
-  cloudShadowsEnabled: true,
-  cloudShadowsSpeed: 0.3,
-  cloudShadowsOpacity: 0.3,
-  cloudShadowsScale: 15,
   // Motion trails
   motionTrailsEnabled: false,
   motionTrailsLength: 5,
@@ -110,7 +105,7 @@ export const defaultSettings = {
   textBPMPulse: true,
   textBPMIntensity: 0.5,
   glassEnabled: true,
-  glassOpacity: 0,
+  glassOpacity: 1,
   glassMaterialOpacity: 0.5,
   glassPosX: 0,
   glassPosY: 0,
@@ -157,7 +152,7 @@ export const defaultSettings = {
   rightPanelEnabled: true,
   // 4 independent corners (counter-clockwise from top-left)
   rightPanelC1X: 0.24,
-  rightPanelC1Z: 3.4,
+  rightPanelC1Z: 3.32,
   rightPanelC2X: 5.21,
   rightPanelC2Z: 3.42,
   rightPanelC3X: 5.21,
@@ -194,17 +189,6 @@ export const defaultSettings = {
   helicopterBoundsMinZ: -1.2,
   helicopterBoundsMaxZ: 2.8,
   helicopterShowBounds: false,
-  // Clouds
-  cloudsEnabled: true,
-  cloudCount: 3,
-  cloudOpacity: 0.6,
-  cloudScaleMin: 2,
-  cloudScaleMax: 5,
-  cloudHeightMin: 5,
-  cloudHeightMax: 10,
-  cloudSpeedMin: 0.3,
-  cloudSpeedMax: 0.8,
-  cloudBlending: "Normal",
 
   // Pulse Wave (capture effect)
   pulseWaveEnabled: true,
@@ -229,8 +213,8 @@ export const defaultSettings = {
 
   // Pre-game state text
   preGameTextRow1: "",
-  preGameTextRow2: "",
-  preGameTextRow3: "JAGAD",
+  preGameTextRow2: "  JAGAD",
+  preGameTextRow3: "",
   preGameTextRow4: "",
 
   // Starting state text (supports ${countdown} for 3, 2, 1, GO!)
@@ -262,6 +246,20 @@ export const defaultSettings = {
   projectionOffsetY: 0.02,
   projectionOffsetZ: 0.3,
 
+  // GLB Parts - per-mesh material overrides (partName -> settings)
+  // Only non-default values need to be stored
+  glbParts: {
+    // Default overrides for specific part types
+    "_defaults": {
+      "lamp": { color: "#111111", metalness: 0.54 },
+      "window": { metalness: 0 },
+      "path": { metalness: 0 },
+      "road": { metalness: 0, roughness: 0.84 },
+      "building-building": { opacity: 0 },
+      "pavement-paths": { opacity: 0 }
+    }
+  },
+
   // High Scores (array of {initials: "AAA", score: 0})
   highScores: [
     { initials: "AAA", score: 999 },
@@ -275,7 +273,15 @@ export function loadSettings() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { ...defaultSettings, ...parsed };
+      // Deep merge glbParts to preserve _defaults while adding saved per-part settings
+      const result = { ...defaultSettings, ...parsed };
+      if (parsed.glbParts) {
+        result.glbParts = {
+          _defaults: { ...defaultSettings.glbParts._defaults },
+          ...parsed.glbParts
+        };
+      }
+      return result;
     }
   } catch (e) {
     console.warn("Failed to load settings:", e);
@@ -336,6 +342,13 @@ export function importSettings(callback) {
       try {
         const imported = JSON.parse(event.target.result);
         const merged = { ...defaultSettings, ...imported };
+        // Deep merge glbParts to preserve _defaults
+        if (imported.glbParts) {
+          merged.glbParts = {
+            _defaults: { ...defaultSettings.glbParts._defaults },
+            ...imported.glbParts
+          };
+        }
         callback(merged);
       } catch (err) {
         console.error("Failed to import settings:", err);
