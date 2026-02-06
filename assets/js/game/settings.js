@@ -28,7 +28,7 @@ export const defaultSettings = {
   perspFov: 20,
   perspNear: 0.1,
   perspFar: 5000,
-  renderScale: 1,
+  renderScale: 2,
   perspPosX: 0.04,
   perspPosY: 33,
   perspPosZ: 10,
@@ -69,7 +69,7 @@ export const defaultSettings = {
   pixelationNormalEdge: 0.3,
   pixelationDepthEdge: 0.4,
   // Cyberpunk VFX
-  vignetteEnabled: true,
+  vignetteEnabled: false,
   vignetteIntensity: 1,
   colorGradingEnabled: true,
   colorGradingSaturation: 1.75,
