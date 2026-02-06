@@ -1819,6 +1819,9 @@ const loadingProgress = {
         setChasersOpacity(0.1);
         applyGameOverText();
         showGameScore();
+        // Play win/lose SFX based on high score
+        const isHighScore = checkHighScore(STATE.playerScore) >= 0;
+        playSFX(isHighScore ? "gameWin" : "gameLose");
         // Reset to PRE_GAME after 10 seconds (unless entering high score)
         setTimeout(() => {
           if (STATE.gameState === "GAME_OVER" && !STATE.enteringHighScore) {

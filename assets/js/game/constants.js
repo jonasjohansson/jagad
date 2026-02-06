@@ -28,6 +28,8 @@ export const PATHS = {
     countdown: "assets/sounds/SFX_3_3-2-1-GO!.wav",
     playerSelect: "assets/sounds/SFX_1_PlayerSelect.wav",
     gameStart: "assets/sounds/SFX_4_GamePlayStarts.wav",
+    gameWin: "assets/sounds/SFX_7_GameEnd(Win).wav",
+    gameLose: "assets/sounds/SFX_8_GameEnd(Loose).wav",
   },
   video: {
     windowAmbience: "assets/video/Jagad_Window_Ambience_v1.mp4",
