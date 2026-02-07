@@ -204,7 +204,7 @@ export const defaultSettings = {
   pulseWaveFlash: true,
 
   // Mobile
-  mobileEnabled: false,
+  mobileEnabled: true,
   mobileOrthoZoom: 0.5,
   mobileOrthoOffsetZ: 0.6,
 

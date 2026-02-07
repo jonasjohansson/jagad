@@ -1614,6 +1614,69 @@ const loadingProgress = {
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
+  // ============================================
+  // TOUCH INPUT (mobile swipe controls for Chaser 1)
+  // ============================================
+  const TOUCH_DEAD_ZONE = 20;
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchActiveKey = null; // currently held direction key from touch
+
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+
+    // First touch readies Chaser 1 in PRE_GAME/STARTING
+    if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
+      markChaserReady(0);
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStartX;
+    const dy = touch.clientY - touchStartY;
+
+    // Clear previous touch direction
+    if (touchActiveKey) {
+      keys.delete(touchActiveKey);
+      touchActiveKey = null;
+    }
+
+    // Check dead zone
+    if (Math.abs(dx) < TOUCH_DEAD_ZONE && Math.abs(dy) < TOUCH_DEAD_ZONE) return;
+
+    // Determine primary direction
+    let newKey;
+    if (Math.abs(dy) >= Math.abs(dx)) {
+      newKey = dy < 0 ? "w" : "s";
+    } else {
+      newKey = dx < 0 ? "a" : "d";
+    }
+
+    touchActiveKey = newKey;
+    keys.add(newKey);
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", (e) => {
+    e.preventDefault();
+    if (touchActiveKey) {
+      keys.delete(touchActiveKey);
+      touchActiveKey = null;
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchcancel", (e) => {
+    e.preventDefault();
+    if (touchActiveKey) {
+      keys.delete(touchActiveKey);
+      touchActiveKey = null;
+    }
+  }, { passive: false });
+
   function triggerCapture(fugitiveIndex, chaserIndex) {
     if (!STATE.loaded) return;
     if (STATE.gameState !== "PLAYING") return; // Only allow captures during PLAYING state
@@ -6201,8 +6264,12 @@ const loadingProgress = {
     // Initialize game state to PRE_GAME
     setGameState("PRE_GAME");
 
-    // Apply mobile mode if it was saved as enabled
-    if (settings.mobileEnabled) {
+    // Auto-detect mobile/touch device and apply mobile mode
+    const isTouchDevice = ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+    if (settings.mobileEnabled && isTouchDevice) {
+      applyMobileMode(true);
+      markChaserReady(0);
+    } else if (settings.mobileEnabled) {
       applyMobileMode(true);
     }
 
