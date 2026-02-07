@@ -151,6 +151,66 @@ const loadingProgress = {
 
   let guiLeft = null;
 
+  // ============================================
+  // FPS / PERFORMANCE STATS
+  // ============================================
+
+  const statsPanel = (() => {
+    const el = document.createElement("div");
+    el.id = "stats-panel";
+    Object.assign(el.style, {
+      position: "fixed",
+      top: "10px",
+      right: "10px",
+      zIndex: "9999",
+      background: "rgba(0,0,0,0.7)",
+      color: "#0f0",
+      fontFamily: "monospace",
+      fontSize: "12px",
+      padding: "8px 10px",
+      borderRadius: "4px",
+      lineHeight: "1.5",
+      pointerEvents: "none",
+      minWidth: "140px",
+    });
+    document.body.appendChild(el);
+
+    let frames = 0;
+    let lastSec = performance.now();
+    let fps = 0;
+    let frameTime = 0;
+    let minFps = Infinity;
+    let maxFps = 0;
+
+    return {
+      el,
+      begin() {
+        this._start = performance.now();
+      },
+      end() {
+        const now = performance.now();
+        frameTime = now - this._start;
+        frames++;
+        if (now - lastSec >= 1000) {
+          fps = frames;
+          if (fps < minFps) minFps = fps;
+          if (fps > maxFps) maxFps = fps;
+          frames = 0;
+          lastSec = now;
+          const mem = performance.memory ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(1)} MB` : "N/A";
+          const calls = renderer.info.render.calls;
+          const tris = renderer.info.render.triangles;
+          el.innerHTML =
+            `<b>${fps}</b> FPS (${frameTime.toFixed(1)} ms)` +
+            `<br>min ${minFps} / max ${maxFps}` +
+            `<br>draw calls: ${calls}` +
+            `<br>triangles: ${(tris / 1000).toFixed(1)}k` +
+            `<br>mem: ${mem}`;
+        }
+      },
+    };
+  })();
+
   const STATE = {
     loaded: false,
     gameOver: false,
@@ -1486,6 +1546,13 @@ const loadingProgress = {
       if (guiLeft) {
         guiLeft.domElement.style.display = guiLeft.domElement.style.display === "none" ? "" : "none";
       }
+      return;
+    }
+
+    // Toggle stats panel with CMD/CTRL+F
+    if (keyLower === "f" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      statsPanel.el.style.display = statsPanel.el.style.display === "none" ? "" : "none";
       return;
     }
 
@@ -4906,6 +4973,7 @@ const loadingProgress = {
 
   function animate(timestamp) {
     requestAnimationFrame(animate);
+    statsPanel.begin();
     const t = timestamp / 1000;
     const dt = STATE.lastTime ? Math.min(t - STATE.lastTime, 0.05) : 0;
     STATE.lastTime = t;
@@ -4983,6 +5051,8 @@ const loadingProgress = {
     } else {
       renderer.render(scene, camera);
     }
+
+    statsPanel.end();
   }
 
   function updateGame(dt) {
