@@ -15,14 +15,14 @@ export function isMobileDevice() {
 export const MOBILE_OVERRIDES = {
   renderScale: 1,              // was 2 — 4x fewer pixels
   bloomEnabled: false,         // multi-pass blur
-  punctualLights: false,       // actor SpotLights
-  colorGradingEnabled: false,  // shader pass
-  helicopterEnabled: false,    // extra model + SpotLight
-  pulseWaveParticles: false,   // 120 particles per capture
+  punctualLights: true,        // actor SpotLights
+  colorGradingEnabled: true,   // shader pass
+  helicopterEnabled: true,     // extra model + SpotLight
+  pulseWaveParticles: true,    // 120 particles per capture
   leftPanelEnabled: false,     // canvas texture draw calls
   rightPanelEnabled: false,
-  carAudioReactive: false,     // per-frame emissive updates
-  textBPMPulse: false,         // per-frame text brightness
+  carAudioReactive: true,      // per-frame emissive updates
+  textBPMPulse: true,          // per-frame text brightness
 };
 
 // Snapshot of desktop values for keys in MOBILE_OVERRIDES
@@ -124,4 +124,84 @@ export function initTouchInput(canvas, keys, STATE, markChaserReady) {
       touchActiveKey = null;
     }
   }, { passive: false });
+}
+
+/**
+ * Create and append the SVG branding overlay for mobile mode
+ * All images are absolutely positioned; updateMobileOverlay() places them.
+ */
+export function createMobileOverlay() {
+  // Don't double-create
+  if (document.getElementById("mobile-overlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "mobile-overlay";
+
+  // Side SVGs (vertically centred beside the board)
+  const leftImg = document.createElement("img");
+  leftImg.src = "assets/images/mobile/jagad-left.svg";
+  leftImg.className = "side-svg left";
+
+  const rightImg = document.createElement("img");
+  rightImg.src = "assets/images/mobile/jagad-left.svg";
+  rightImg.className = "side-svg right";
+
+  // Bottom SVGs (resting at viewport bottom, aligned to board)
+  const bumper = document.createElement("img");
+  bumper.src = "assets/images/mobile/jagad-kanal5-bumper.svg";
+  bumper.className = "bottom-svg bottom-left";
+
+  const instruktioner = document.createElement("img");
+  instruktioner.src = "assets/images/mobile/jagad-kanal5-instruktioner.svg";
+  instruktioner.className = "bottom-svg bottom-right";
+
+  overlay.appendChild(leftImg);
+  overlay.appendChild(rightImg);
+  overlay.appendChild(bumper);
+  overlay.appendChild(instruktioner);
+
+  document.body.appendChild(overlay);
+}
+
+/**
+ * Position all overlay SVGs relative to the board's screen-space bounds
+ * @param {{ left: number, right: number, top: number, bottom: number }} bounds
+ * @param {number} offset — gap in pixels between board edge and SVG
+ */
+export function updateMobileOverlay(bounds, offset) {
+  const overlay = document.getElementById("mobile-overlay");
+  if (!overlay) return;
+
+  const vw = window.innerWidth;
+
+  // Side SVGs: match board top/height, pushed out from board left/right edges
+  const leftSvg = overlay.querySelector(".side-svg.left");
+  const rightSvg = overlay.querySelector(".side-svg.right");
+  const boardTop = bounds.top + "px";
+  const boardHeight = (bounds.bottom - bounds.top) + "px";
+  if (leftSvg) {
+    leftSvg.style.top = boardTop;
+    leftSvg.style.height = boardHeight;
+    leftSvg.style.right = (vw - bounds.left + offset) + "px";
+  }
+  if (rightSvg) {
+    rightSvg.style.top = boardTop;
+    rightSvg.style.height = boardHeight;
+    rightSvg.style.left = (bounds.right + offset) + "px";
+  }
+
+  // Bottom SVGs: resting at viewport bottom, aligned to board edges (inset)
+  const bottomLeft = overlay.querySelector(".bottom-left");
+  const bottomRight = overlay.querySelector(".bottom-right");
+
+  if (bottomLeft) bottomLeft.style.left = (bounds.left + offset * 0.25) + "px";
+  if (bottomRight) bottomRight.style.right = (vw - bounds.right + offset) + "px";
+}
+
+/**
+ * Remove the SVG branding overlay
+ */
+export function destroyMobileOverlay() {
+  const overlay = document.getElementById("mobile-overlay");
+  if (overlay) overlay.remove();
 }

@@ -207,6 +207,8 @@ export const defaultSettings = {
   mobileEnabled: true,
   mobileOrthoZoom: 0.5,
   mobileOrthoOffsetZ: 0.6,
+  mobileSvgOffset: 20,
+  mobileBoardScale: 1.3,
 
   // Game States
   gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER

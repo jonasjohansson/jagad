@@ -17,7 +17,7 @@ body {
     "Bank Gothic",
     system-ui,
     sans-serif;
-  background: #000;
+  background: #000033;
   color: #e5e7eb;
 }
 
@@ -59,4 +59,32 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+/* Mobile SVG branding overlay */
+#mobile-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+#mobile-overlay .side-svg {
+  position: absolute;
+  width: auto;
+}
+
+#mobile-overlay .side-svg.right {
+  transform: scaleX(-1);
+}
+
+#mobile-overlay .bottom-svg {
+  position: absolute;
+  bottom: 5vh;
+  height: 8vh;
+  width: auto;
+}
+
+#mobile-overlay .bottom-svg.bottom-right {
+  height: 5vh;
 }

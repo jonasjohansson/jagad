@@ -15,7 +15,7 @@ import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectiveP
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=12";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
-import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=1";
+import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=3";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -74,12 +74,12 @@ const loadingProgress = {
   };
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  scene.background = new THREE.Color(0x000033);
 
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio * (defaultSettings.renderScale || 1));
-  renderer.setClearColor(0x000000, 0);
+  renderer.setClearColor(0x000033, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.NeutralToneMapping;
@@ -2369,6 +2369,42 @@ const loadingProgress = {
 
   const portraitOverlay = document.getElementById("portrait-overlay");
 
+  /** Project board corners to screen-space pixel bounds using ortho camera */
+  function getBoardScreenBounds() {
+    if (!orthoCamera) return null;
+    const halfX = (STATE.levelSizeX || STATE.horizontalSize) / 2;
+    const halfZ = (STATE.levelSizeZ || STATE.horizontalSize) / 2;
+    const cx = STATE.levelCenter.x, cy = STATE.levelCenter.y, cz = STATE.levelCenter.z;
+    // Project actual board corners
+    const corners = [
+      new THREE.Vector3(cx - halfX, cy, cz - halfZ),
+      new THREE.Vector3(cx + halfX, cy, cz - halfZ),
+      new THREE.Vector3(cx - halfX, cy, cz + halfZ),
+      new THREE.Vector3(cx + halfX, cy, cz + halfZ),
+    ];
+    for (const c of corners) c.project(orthoCamera);
+    const w = window.innerWidth, h = window.innerHeight;
+    const xs = corners.map(c => (c.x + 1) / 2 * w);
+    const ys = corners.map(c => (1 - c.y) / 2 * h);
+    const top = Math.min(...ys);
+    const bottom = Math.max(...ys);
+    // Extend only downward by boardScale factor
+    const boardHeight = bottom - top;
+    const extraBottom = boardHeight * (settings.mobileBoardScale - 1);
+    return {
+      left: Math.min(...xs),
+      right: Math.max(...xs),
+      top: top,
+      bottom: bottom + extraBottom,
+    };
+  }
+
+  /** Refresh SVG overlay positions from current camera state */
+  function refreshOverlayPositions() {
+    const bounds = getBoardScreenBounds();
+    if (bounds) updateMobileOverlay(bounds, settings.mobileSvgOffset);
+  }
+
   function applyMobileMode(enabled) {
     if (enabled) {
       // 1. Snapshot desktop values, then apply mobile overrides
@@ -2421,7 +2457,10 @@ const loadingProgress = {
       if (buildingPlane) buildingPlane.visible = false;
 
       checkPortraitMode();
+      createMobileOverlay();
+      refreshOverlayPositions();
     } else {
+      destroyMobileOverlay();
       // 1. Restore desktop settings
       restoreDesktopSettings(settings);
 
@@ -2505,6 +2544,7 @@ const loadingProgress = {
 
     // Check portrait mode for mobile
     checkPortraitMode();
+    if (settings.mobileEnabled) refreshOverlayPositions();
   }
   window.addEventListener("resize", onResize);
   window.addEventListener("orientationchange", () => {
@@ -2592,14 +2632,68 @@ const loadingProgress = {
         orthoCamera.top = orthoSize;
         orthoCamera.bottom = -orthoSize;
         orthoCamera.updateProjectionMatrix();
+        refreshOverlayPositions();
       }
     });
     mobileFolder.add(settings, "mobileOrthoOffsetZ", -10, 10, 0.1).name("View Z Offset").onChange((v) => {
       if (settings.mobileEnabled && orthoCamera) {
         orthoCamera.position.z = STATE.levelCenter.z + v;
         orthoCamera.lookAt(new THREE.Vector3(STATE.levelCenter.x, STATE.levelCenter.y, STATE.levelCenter.z + v));
+        refreshOverlayPositions();
       }
     });
+    mobileFolder.add(settings, "mobileSvgOffset", 0, 200, 1).name("SVG Offset (px)").onChange(() => {
+      if (settings.mobileEnabled) refreshOverlayPositions();
+    });
+    mobileFolder.add(settings, "mobileBoardScale", 0.5, 2, 0.05).name("Board Scale").onChange(() => {
+      if (settings.mobileEnabled) refreshOverlayPositions();
+    });
+
+    // ---- Performance subfolder (per-feature mobile toggles) ----
+    const perfFolder = mobileFolder.addFolder("Performance");
+
+    perfFolder.add(settings, "renderScale", 0.5, 2, 0.25).name("Render Scale").listen().onChange((v) => {
+      const dpr = window.devicePixelRatio;
+      renderer.setPixelRatio(dpr * v);
+      if (composer) {
+        composer.setPixelRatio(dpr * v);
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }
+    });
+
+    perfFolder.add(settings, "bloomEnabled").name("Bloom").listen().onChange(() => {
+      updatePostProcessing();
+    });
+
+    perfFolder.add(settings, "punctualLights").name("Actor Lights").listen().onChange((v) => {
+      for (const f of fugitives) { if (f.light) f.light.visible = v; }
+      for (const c of chasers) { if (c.light) c.light.visible = v; }
+    });
+
+    perfFolder.add(settings, "colorGradingEnabled").name("Color Grading").listen().onChange(() => {
+      updatePostProcessing();
+    });
+
+    perfFolder.add(settings, "helicopterEnabled").name("Helicopter").listen().onChange((v) => {
+      if (helicopter && helicopter.mesh) helicopter.mesh.visible = v;
+    });
+
+    perfFolder.add(settings, "pulseWaveParticles").name("Pulse Particles").listen();
+
+    perfFolder.add(settings, "leftPanelEnabled").name("Left Panel").listen().onChange((v) => {
+      if (leftPanel) leftPanel.visible = v;
+    });
+
+    perfFolder.add(settings, "rightPanelEnabled").name("Right Panel").listen().onChange((v) => {
+      if (rightPanel) rightPanel.visible = v;
+    });
+
+    perfFolder.add(settings, "carAudioReactive").name("Car BPM Pulse").listen();
+
+    perfFolder.add(settings, "textBPMPulse").name("Text BPM Pulse").listen();
+
+    perfFolder.close();
+
     mobileFolder.close();
 
     // ==================== STATES (under Game) ====================
@@ -5486,6 +5580,8 @@ const loadingProgress = {
 
     STATE.levelCenter.copy(levelCenter);
     STATE.horizontalSize = horizontalSize;
+    STATE.levelSizeX = size.x;
+    STATE.levelSizeZ = size.z;
 
     const streetY = roadsBbox.min.y;
 
