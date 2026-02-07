@@ -23,6 +23,7 @@ export const MOBILE_OVERRIDES = {
   rightPanelEnabled: false,
   carAudioReactive: true,      // per-frame emissive updates
   textBPMPulse: true,          // per-frame text brightness
+  chaserSpeed: 1.2,            // solo mobile boost (+0.2)
 };
 
 // Snapshot of desktop values for keys in MOBILE_OVERRIDES

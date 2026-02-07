@@ -41,7 +41,11 @@ const loadingProgress = {
   update() {
     if (this.total === 0) return;
     const percent = Math.round((this.loaded / this.total) * 100);
-    document.title = `Jagad ${percent}%`;
+    if (percent < 100) {
+      document.title = `Jagad ${percent}%`;
+    } else {
+      document.title = "Jagad";
+    }
   },
   finish() {
     document.title = "Jagad";
@@ -74,12 +78,12 @@ const loadingProgress = {
   };
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000033);
+  scene.background = new THREE.Color(0x191928);
 
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio * (defaultSettings.renderScale || 1));
-  renderer.setClearColor(0x000033, 0);
+  renderer.setClearColor(0x191928, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.NeutralToneMapping;
@@ -263,9 +267,9 @@ const loadingProgress = {
   }
 
   function setupAudioAnalyser() {
-    if (audioContext || !audioElement) return;
+    if (audioAnalyser || !audioContext || !audioElement) return;
+    if (audioContext.state !== "running") return;
     try {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
       audioAnalyser = audioContext.createAnalyser();
       audioAnalyser.fftSize = 256;
       audioAnalyser.smoothingTimeConstant = 0.8;
@@ -294,11 +298,11 @@ const loadingProgress = {
 
   function playAudio() {
     if (!audioElement) return;
-    setupAudioAnalyser();
     if (audioContext && audioContext.state === "suspended") {
-      audioContext.resume();
+      audioContext.resume().then(() => audioElement.play().catch(() => {}));
+    } else {
+      audioElement.play().catch(() => {});
     }
-    audioElement.play().catch(() => {});
   }
 
   function stopAudio() {
@@ -365,6 +369,28 @@ const loadingProgress = {
       helicopterAudio.currentTime = 0;
     }
   }
+
+  // Unlock audio on first user interaction (required by mobile browsers)
+  let audioUnlocked = false;
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    // Create AudioContext during user gesture, then wire up analyser once running
+    if (!audioContext && audioElement) {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        console.warn("Failed to create AudioContext:", e);
+      }
+    }
+    if (audioContext && audioContext.state === "suspended") {
+      audioContext.resume().then(() => setupAudioAnalyser());
+    } else {
+      setupAudioAnalyser();
+    }
+  }
+  document.addEventListener("touchstart", unlockAudio, { once: true });
+  document.addEventListener("click", unlockAudio, { once: true });
 
   // ============================================
   // VOLUMETRIC FOG (3D Noise Texture)
@@ -1853,12 +1879,14 @@ const loadingProgress = {
         settings.gameStarted = true; // Mark as started but input blocked
         setChasersOpacity(0.1);
         playSFX("countdown");
+        playAudio();
         break;
 
       case "PLAYING":
         // Set playing text and start timer
         applyPlayingText();
         playSFX("gameStart");
+        playAudio(); // Ensure music is playing
         playHelicopterSound(); // Start helicopter loop
         STATE.gameTimerStarted = true;
         STATE.gameTimerRemaining = 90;
@@ -1885,6 +1913,12 @@ const loadingProgress = {
             }
           }
         }
+        // Start fugitive light fade-in
+        for (const f of fugitives) {
+          if (f.light) f.light.intensity = 0;
+        }
+        STATE.fugitiveLightFadeStart = performance.now();
+
         // Trigger fugitive billboard pop-in animation
         for (const wire of fugitiveWires) {
           if (!wire.isChaser) {
@@ -2426,16 +2460,19 @@ const loadingProgress = {
       // Post-processing (bloom, color grading)
       updatePostProcessing();
 
-      // Hide actor lights
-      for (const f of fugitives) { if (f.light) f.light.visible = false; }
-      for (const c of chasers) { if (c.light) c.light.visible = false; }
+      // Apply actor lights from override
+      for (const f of fugitives) { if (f.light) f.light.visible = settings.punctualLights; }
+      for (const c of chasers) { if (c.light) c.light.visible = settings.punctualLights; }
 
-      // Hide helicopter
-      if (helicopter && helicopter.mesh) helicopter.mesh.visible = false;
+      // Apply helicopter from override
+      if (helicopter && helicopter.mesh) helicopter.mesh.visible = settings.helicopterEnabled;
 
-      // Hide panels
-      if (leftPanel) leftPanel.visible = false;
-      if (rightPanel) rightPanel.visible = false;
+      // Apply panels from override
+      if (leftPanel) leftPanel.visible = settings.leftPanelEnabled;
+      if (rightPanel) rightPanel.visible = settings.rightPanelEnabled;
+
+      // Chaser speed boost
+      for (const c of chasers) c.speed = settings.chaserSpeed;
 
       // 3. Camera + building + portrait (existing behavior)
       settings.cameraType = "orthographic";
@@ -2492,13 +2529,16 @@ const loadingProgress = {
       if (leftPanel) leftPanel.visible = settings.leftPanelEnabled;
       if (rightPanel) rightPanel.visible = settings.rightPanelEnabled;
 
+      // Restore chaser speed
+      for (const c of chasers) c.speed = settings.chaserSpeed;
+
       // Hide portrait overlay
       if (portraitOverlay) portraitOverlay.style.display = "none";
     }
   }
 
   function checkPortraitMode() {
-    if (!settings.mobileEnabled || !portraitOverlay) return;
+    if (!settings.mobileEnabled || !portraitOverlay || !isMobileDevice()) return;
 
     const isPortrait = window.innerHeight > window.innerWidth;
     portraitOverlay.style.display = isPortrait ? "flex" : "none";
@@ -2691,6 +2731,10 @@ const loadingProgress = {
     perfFolder.add(settings, "carAudioReactive").name("Car BPM Pulse").listen();
 
     perfFolder.add(settings, "textBPMPulse").name("Text BPM Pulse").listen();
+
+    perfFolder.add(settings, "chaserSpeed", 0.5, 3, 0.1).name("Chaser Speed").listen().onChange((v) => {
+      for (const c of chasers) c.speed = v;
+    });
 
     perfFolder.close();
 
@@ -5139,6 +5183,18 @@ const loadingProgress = {
       updateCountdown(dt);
     }
 
+    // Fugitive light fade-in during PLAYING
+    if (STATE.fugitiveLightFadeStart && STATE.gameState === "PLAYING") {
+      const elapsed = (performance.now() - STATE.fugitiveLightFadeStart) / 1000;
+      const fadeDuration = 2; // seconds
+      const t = Math.min(elapsed / fadeDuration, 1);
+      const target = settings.fugitiveLightIntensity;
+      for (const f of fugitives) {
+        if (f.light && f.light.visible) f.light.intensity = target * t;
+      }
+      if (t >= 1) STATE.fugitiveLightFadeStart = null;
+    }
+
     // Handle gameplay during PLAYING state
     if (STATE.loaded && STATE.gameState === "PLAYING" && !STATE.gameOver) {
       // Update game timer
@@ -6360,10 +6416,8 @@ const loadingProgress = {
     setGameState("PRE_GAME");
 
     // Auto-detect mobile/touch device and apply mobile mode
+    // Don't auto-ready the chaser — let the first touch do it (which also unlocks audio)
     if (settings.mobileEnabled && isMobileDevice()) {
-      applyMobileMode(true);
-      markChaserReady(0);
-    } else if (settings.mobileEnabled) {
       applyMobileMode(true);
     }
 
