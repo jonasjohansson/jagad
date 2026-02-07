@@ -8,3 +8,4 @@ export * from "./stateManager.js";
 export * from "./input.js";
 export * from "./collision.js";
 export * from "./timer.js";
+export * from "./mobile.js";

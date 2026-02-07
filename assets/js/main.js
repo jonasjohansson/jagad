@@ -15,6 +15,7 @@ import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectiveP
 
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=12";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
+import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=1";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -1614,68 +1615,8 @@ const loadingProgress = {
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
-  // ============================================
-  // TOUCH INPUT (mobile swipe controls for Chaser 1)
-  // ============================================
-  const TOUCH_DEAD_ZONE = 20;
-  let touchStartX = 0;
-  let touchStartY = 0;
-  let touchActiveKey = null; // currently held direction key from touch
-
-  canvas.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
-
-    // First touch readies Chaser 1 in PRE_GAME/STARTING
-    if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
-      markChaserReady(0);
-    }
-  }, { passive: false });
-
-  canvas.addEventListener("touchmove", (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const dx = touch.clientX - touchStartX;
-    const dy = touch.clientY - touchStartY;
-
-    // Clear previous touch direction
-    if (touchActiveKey) {
-      keys.delete(touchActiveKey);
-      touchActiveKey = null;
-    }
-
-    // Check dead zone
-    if (Math.abs(dx) < TOUCH_DEAD_ZONE && Math.abs(dy) < TOUCH_DEAD_ZONE) return;
-
-    // Determine primary direction
-    let newKey;
-    if (Math.abs(dy) >= Math.abs(dx)) {
-      newKey = dy < 0 ? "w" : "s";
-    } else {
-      newKey = dx < 0 ? "a" : "d";
-    }
-
-    touchActiveKey = newKey;
-    keys.add(newKey);
-  }, { passive: false });
-
-  canvas.addEventListener("touchend", (e) => {
-    e.preventDefault();
-    if (touchActiveKey) {
-      keys.delete(touchActiveKey);
-      touchActiveKey = null;
-    }
-  }, { passive: false });
-
-  canvas.addEventListener("touchcancel", (e) => {
-    e.preventDefault();
-    if (touchActiveKey) {
-      keys.delete(touchActiveKey);
-      touchActiveKey = null;
-    }
-  }, { passive: false });
+  // Touch input (mobile swipe controls for Chaser 1)
+  initTouchInput(canvas, keys, STATE, markChaserReady);
 
   function triggerCapture(fugitiveIndex, chaserIndex) {
     if (!STATE.loaded) return;
@@ -2430,11 +2371,40 @@ const loadingProgress = {
 
   function applyMobileMode(enabled) {
     if (enabled) {
-      // Switch to orthographic camera
+      // 1. Snapshot desktop values, then apply mobile overrides
+      saveDesktopSettings(settings);
+      applyMobileOverrides(settings);
+
+      // 2. Apply runtime effects that need API calls
+      // Render scale
+      renderer.setPixelRatio(window.devicePixelRatio * settings.renderScale);
+      if (composer) {
+        composer.setPixelRatio(window.devicePixelRatio * settings.renderScale);
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      // Shadows
+      renderer.shadowMap.enabled = false;
+      renderer.shadowMap.needsUpdate = true;
+
+      // Post-processing (bloom, color grading)
+      updatePostProcessing();
+
+      // Hide actor lights
+      for (const f of fugitives) { if (f.light) f.light.visible = false; }
+      for (const c of chasers) { if (c.light) c.light.visible = false; }
+
+      // Hide helicopter
+      if (helicopter && helicopter.mesh) helicopter.mesh.visible = false;
+
+      // Hide panels
+      if (leftPanel) leftPanel.visible = false;
+      if (rightPanel) rightPanel.visible = false;
+
+      // 3. Camera + building + portrait (existing behavior)
       settings.cameraType = "orthographic";
       switchCamera("orthographic");
 
-      // Apply mobile ortho zoom
       if (orthoCamera) {
         const aspect = window.innerWidth / window.innerHeight;
         const orthoSize = STATE.horizontalSize * 0.6 * settings.mobileOrthoZoom;
@@ -2447,14 +2417,43 @@ const loadingProgress = {
         orthoCamera.updateProjectionMatrix();
       }
 
-      // Disable building plane
       settings.buildingEnabled = false;
       if (buildingPlane) buildingPlane.visible = false;
 
-      // Check portrait mode
       checkPortraitMode();
     } else {
-      // Hide portrait overlay when mobile mode is disabled
+      // 1. Restore desktop settings
+      restoreDesktopSettings(settings);
+
+      // 2. Re-apply restored values to runtime objects
+      // Render scale
+      renderer.setPixelRatio(window.devicePixelRatio * settings.renderScale);
+      if (composer) {
+        composer.setPixelRatio(window.devicePixelRatio * settings.renderScale);
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      // Shadows
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.needsUpdate = true;
+
+      // Post-processing
+      updatePostProcessing();
+
+      // Restore actor lights
+      if (settings.punctualLights) {
+        for (const f of fugitives) { if (f.light) f.light.visible = true; }
+        for (const c of chasers) { if (c.light) c.light.visible = true; }
+      }
+
+      // Restore helicopter visibility (handled by update loop via helicopterEnabled)
+      if (helicopter && helicopter.mesh) helicopter.mesh.visible = settings.helicopterEnabled;
+
+      // Restore panels
+      if (leftPanel) leftPanel.visible = settings.leftPanelEnabled;
+      if (rightPanel) rightPanel.visible = settings.rightPanelEnabled;
+
+      // Hide portrait overlay
       if (portraitOverlay) portraitOverlay.style.display = "none";
     }
   }
@@ -6265,8 +6264,7 @@ const loadingProgress = {
     setGameState("PRE_GAME");
 
     // Auto-detect mobile/touch device and apply mobile mode
-    const isTouchDevice = ("ontouchstart" in window || navigator.maxTouchPoints > 0);
-    if (settings.mobileEnabled && isTouchDevice) {
+    if (settings.mobileEnabled && isMobileDevice()) {
       applyMobileMode(true);
       markChaserReady(0);
     } else if (settings.mobileEnabled) {
