@@ -3153,6 +3153,17 @@ const loadingProgress = {
     });
     cameraFolder.close();
 
+    function updateBoardOffset() {
+      if (STATE.levelContainer) {
+        STATE.levelContainer.position.set(settings.boardOffsetX, settings.boardOffsetY, settings.boardOffsetZ);
+      }
+    }
+    const boardFolder = sceneFolder.addFolder("Board Offset");
+    boardFolder.add(settings, "boardOffsetX", -10, 10, 0.01).name("X").onChange(updateBoardOffset);
+    boardFolder.add(settings, "boardOffsetY", -10, 10, 0.01).name("Y").onChange(updateBoardOffset);
+    boardFolder.add(settings, "boardOffsetZ", -10, 10, 0.01).name("Z").onChange(updateBoardOffset);
+    boardFolder.close();
+
     const lightsFolder = sceneFolder.addFolder("Lighting");
     lightsFolder.add(settings, "toneMapping", Object.keys(toneMappingOptions)).name("Tone Mapping").onChange((v) => {
       renderer.toneMapping = toneMappingOptions[v];
@@ -3238,8 +3249,16 @@ const loadingProgress = {
     gradeFolder.add(settings, "colorGradingEnabled").name("Enabled").onChange(updatePostProcessing);
     gradeFolder.add(settings, "vignetteEnabled").name("Vignette").onChange(updatePostProcessing);
     gradeFolder.add(settings, "vignetteIntensity", 0, 1, 0.05).name("Vignette Amount").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingSaturation", 0.5, 2, 0.05).name("Saturation").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingSaturation", 0, 3, 0.05).name("Saturation").onChange(updatePostProcessing);
     gradeFolder.add(settings, "colorGradingContrast", 0.5, 2, 0.05).name("Contrast").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingBrightness", 0, 3, 0.05).name("Brightness").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingGamma", 0.2, 3, 0.05).name("Gamma").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingGainR", 0, 2, 0.05).name("Red").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingGainG", 0, 2, 0.05).name("Green").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingGainB", 0, 2, 0.05).name("Blue").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingLiftR", -0.5, 0.5, 0.01).name("Lift R").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingLiftG", -0.5, 0.5, 0.01).name("Lift G").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingLiftB", -0.5, 0.5, 0.01).name("Lift B").onChange(updatePostProcessing);
     gradeFolder.close();
 
     const pixelFolder = vfxFolder.addFolder("Pixelation");
@@ -3494,6 +3513,10 @@ const loadingProgress = {
       'tintIntensity': { value: 0.15 },
       'saturation': { value: 1.2 },
       'contrast': { value: 1.1 },
+      'brightness': { value: 1.0 },
+      'gain': { value: new THREE.Vector3(1, 1, 1) },
+      'lift': { value: new THREE.Vector3(0, 0, 0) },
+      'gamma': { value: 1.0 },
       'time': { value: 0 }
     },
     vertexShader: `
@@ -3511,6 +3534,10 @@ const loadingProgress = {
       uniform float tintIntensity;
       uniform float saturation;
       uniform float contrast;
+      uniform float brightness;
+      uniform vec3 gain;
+      uniform vec3 lift;
+      uniform float gamma;
       uniform float time;
       varying vec2 vUv;
 
@@ -3525,6 +3552,19 @@ const loadingProgress = {
         float g = texture2D(tDiffuse, uv).g;
         float b = texture2D(tDiffuse, uv - vec2(aberration, 0.0)).b;
         vec3 color = vec3(r, g, b);
+
+        // Brightness
+        color *= brightness;
+
+        // RGB channel gain (multiply per channel)
+        color *= gain;
+
+        // Lift (add to shadows — applied before gamma so it mainly affects darks)
+        color += lift;
+
+        // Gamma correction
+        float invGamma = 1.0 / gamma;
+        color = pow(max(color, vec3(0.0)), vec3(invGamma));
 
         // Saturation
         float luminance = dot(color, vec3(0.299, 0.587, 0.114));
@@ -3605,6 +3645,18 @@ const loadingProgress = {
     cyberpunkPass.uniforms['tintIntensity'].value = 0;
     cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
     cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
+    cyberpunkPass.uniforms['brightness'].value = settings.colorGradingEnabled ? settings.colorGradingBrightness : 1.0;
+    cyberpunkPass.uniforms['gain'].value.set(
+      settings.colorGradingEnabled ? settings.colorGradingGainR : 1,
+      settings.colorGradingEnabled ? settings.colorGradingGainG : 1,
+      settings.colorGradingEnabled ? settings.colorGradingGainB : 1
+    );
+    cyberpunkPass.uniforms['lift'].value.set(
+      settings.colorGradingEnabled ? settings.colorGradingLiftR : 0,
+      settings.colorGradingEnabled ? settings.colorGradingLiftG : 0,
+      settings.colorGradingEnabled ? settings.colorGradingLiftB : 0
+    );
+    cyberpunkPass.uniforms['gamma'].value = settings.colorGradingEnabled ? settings.colorGradingGamma : 1.0;
     composer.addPass(cyberpunkPass);
 
     // Output pass for tone mapping
@@ -3634,6 +3686,15 @@ const loadingProgress = {
       composer.cyberpunkPass.uniforms['tintIntensity'].value = 0;
       composer.cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
       composer.cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
+      composer.cyberpunkPass.uniforms['brightness'].value = settings.colorGradingEnabled ? settings.colorGradingBrightness : 1.0;
+      const en = settings.colorGradingEnabled;
+      composer.cyberpunkPass.uniforms['gain'].value.set(
+        en ? settings.colorGradingGainR : 1, en ? settings.colorGradingGainG : 1, en ? settings.colorGradingGainB : 1
+      );
+      composer.cyberpunkPass.uniforms['lift'].value.set(
+        en ? settings.colorGradingLiftR : 0, en ? settings.colorGradingLiftG : 0, en ? settings.colorGradingLiftB : 0
+      );
+      composer.cyberpunkPass.uniforms['gamma'].value = en ? settings.colorGradingGamma : 1.0;
     }
 
     // Update selective pixelation
@@ -5318,6 +5379,7 @@ const loadingProgress = {
 
     const levelContainer = new THREE.Group();
     levelContainer.add(root);
+    levelContainer.position.set(settings.boardOffsetX, settings.boardOffsetY, settings.boardOffsetZ);
     scene.add(levelContainer);
     STATE.levelContainer = levelContainer;
 
