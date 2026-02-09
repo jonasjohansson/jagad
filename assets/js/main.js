@@ -13,7 +13,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=12";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=13";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=3";
 
@@ -116,6 +116,7 @@ const loadingProgress = {
   const chasers = [];
   let helicopter = null;
   let helicopterBoundsHelper = null;
+  let searchlights = null;
 
   // Reusable temp objects to avoid per-frame allocations
   const _tempVec3A = new THREE.Vector3();
@@ -825,6 +826,74 @@ const loadingProgress = {
     if (!helicopter || !helicopter.mesh || !helicopter.baseScaleRatio) return;
     const scale = settings.helicopterScale * helicopter.baseScaleRatio;
     helicopter.mesh.scale.setScalar(scale);
+  }
+
+  function setupSearchlights() {
+    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+    const height = settings.searchlightHeight;
+    const angleRad = THREE.MathUtils.degToRad(settings.searchlightAngle);
+
+    const lights = [];
+    for (let i = 0; i < 2; i++) {
+      const spot = new THREE.SpotLight(
+        settings.searchlightColor,
+        settings.searchlightIntensity,
+        settings.searchlightDistance,
+        angleRad,
+        settings.searchlightPenumbra,
+        1
+      );
+      // Position at opposite corners, high above the board
+      const offsetX = i === 0 ? -8 : 8;
+      const offsetZ = i === 0 ? -6 : 6;
+      spot.position.set(center.x + offsetX, height, center.z + offsetZ);
+      spot.castShadow = true;
+      spot.shadow.mapSize.width = 1024;
+      spot.shadow.mapSize.height = 1024;
+
+      const target = new THREE.Object3D();
+      target.position.copy(center);
+      scene.add(target);
+      spot.target = target;
+      scene.add(spot);
+
+      lights.push({ spot, target, phaseOffset: i * Math.PI });
+    }
+
+    searchlights = lights;
+    if (!settings.searchlightsEnabled) {
+      for (const sl of searchlights) sl.spot.visible = false;
+    }
+  }
+
+  function updateSearchlights(dt) {
+    if (!searchlights) return;
+    const enabled = settings.searchlightsEnabled;
+    for (const sl of searchlights) {
+      sl.spot.visible = enabled;
+    }
+    if (!enabled) return;
+
+    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
+    const time = performance.now() * 0.001;
+    const speed = settings.searchlightSpeed;
+    const sway = settings.searchlightSway;
+
+    for (const sl of searchlights) {
+      // Update light properties
+      sl.spot.intensity = settings.searchlightIntensity;
+      sl.spot.color.set(settings.searchlightColor);
+      sl.spot.angle = THREE.MathUtils.degToRad(settings.searchlightAngle);
+      sl.spot.distance = settings.searchlightDistance;
+      sl.spot.penumbra = settings.searchlightPenumbra;
+      sl.spot.position.y = settings.searchlightHeight;
+
+      // Slow sweeping pattern - each light has a phase offset
+      const phase = time * speed + sl.phaseOffset;
+      const targetX = center.x + Math.sin(phase) * sway;
+      const targetZ = center.z + Math.cos(phase * 0.7) * sway * 0.6;
+      sl.target.position.set(targetX, 0, targetZ);
+    }
   }
 
   function updateLamps() {
@@ -3017,6 +3086,19 @@ const loadingProgress = {
     boundsFolder.close();
     helicopterFolder.close();
 
+    // Searchlights
+    const searchlightsFolder = addonsFolder.addFolder("Searchlights");
+    searchlightsFolder.add(settings, "searchlightsEnabled").name("Enabled");
+    searchlightsFolder.add(settings, "searchlightIntensity", 0, 300, 1).name("Intensity");
+    searchlightsFolder.addColor(settings, "searchlightColor").name("Color");
+    searchlightsFolder.add(settings, "searchlightAngle", 5, 60, 1).name("Angle (deg)");
+    searchlightsFolder.add(settings, "searchlightDistance", 5, 50, 1).name("Distance");
+    searchlightsFolder.add(settings, "searchlightPenumbra", 0, 1, 0.05).name("Penumbra");
+    searchlightsFolder.add(settings, "searchlightHeight", 3, 30, 0.5).name("Height");
+    searchlightsFolder.add(settings, "searchlightSpeed", 0.05, 1, 0.05).name("Speed");
+    searchlightsFolder.add(settings, "searchlightSway", 1, 15, 0.5).name("Sway Range");
+    searchlightsFolder.close();
+
     // Pulse Wave (capture effect)
     const pulseWaveFolder = addonsFolder.addFolder("Pulse Wave");
     if (settings.pulseWaveEnabled === undefined) settings.pulseWaveEnabled = true;
@@ -5186,7 +5268,7 @@ const loadingProgress = {
     // Fugitive light fade-in during PLAYING
     if (STATE.fugitiveLightFadeStart && STATE.gameState === "PLAYING") {
       const elapsed = (performance.now() - STATE.fugitiveLightFadeStart) / 1000;
-      const fadeDuration = 2; // seconds
+      const fadeDuration = 3; // seconds
       const t = Math.min(elapsed / fadeDuration, 1);
       const target = settings.fugitiveLightIntensity;
       for (const f of fugitives) {
@@ -5245,6 +5327,7 @@ const loadingProgress = {
 
       // Update helicopter, lamps, cars audio, text pulse, atmosphere and capture effects
       updateHelicopter(dt);
+      updateSearchlights(dt);
       updateLamps();
       updateCarsAudio();
       updateTextBPMPulse();
@@ -5454,7 +5537,16 @@ const loadingProgress = {
         const isLamp = nameUpper.includes("LAMP");
         const isRoad = nameUpper.includes("ROAD");
         const isPath = nameUpper.includes("PATH");
+        const isLeaf = nameUpper.includes("LEAF") || nameUpper.includes("LEAVES");
         obj.castShadow = !isGlass;
+        if (isLeaf && obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const mat of mats) {
+            mat.side = THREE.DoubleSide;
+            mat.transparent = true;
+            mat.opacity = 0.95;
+          }
+        }
         obj.receiveShadow = true;
 
         const globalMult = settings.globalEmissiveMultiplier || 1.0;
@@ -6394,6 +6486,7 @@ const loadingProgress = {
     initSFX();
     loadHelicopter();
     updateHelicopterBoundsHelper();
+    setupSearchlights();
     initIframePanels();
 
     // Load path graph from GLB and initialize actors

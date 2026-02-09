@@ -191,6 +191,17 @@ export const defaultSettings = {
   helicopterBoundsMaxZ: 2.8,
   helicopterShowBounds: false,
 
+  // Searchlights
+  searchlightsEnabled: true,
+  searchlightIntensity: 80,
+  searchlightColor: "#ffffff",
+  searchlightAngle: 18,
+  searchlightDistance: 20,
+  searchlightPenumbra: 0.6,
+  searchlightHeight: 12,
+  searchlightSpeed: 0.3,
+  searchlightSway: 6,
+
   // Pulse Wave (capture effect)
   pulseWaveEnabled: true,
   pulseWaveSpeed: 3.5,
