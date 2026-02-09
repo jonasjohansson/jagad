@@ -638,18 +638,16 @@ const loadingProgress = {
     const speed = settings.helicopterSpeed * 0.3;
     helicopter.angle += speed * dt;
 
-    // Create smooth hovering path using sine waves
-    const targetX = center.x + Math.sin(helicopter.angle) * patrolRadius * 0.8;
-    const targetZ = center.z + Math.sin(helicopter.angle * 2) * patrolRadius * 0.4;
+    // Create smooth hovering path using sine waves, clamped to bounds
+    const rawX = center.x + Math.sin(helicopter.angle) * patrolRadius * 0.8;
+    const rawZ = center.z + Math.sin(helicopter.angle * 2) * patrolRadius * 0.4;
+    const targetX = Math.max(settings.helicopterBoundsMinX, Math.min(settings.helicopterBoundsMaxX, rawX));
+    const targetZ = Math.max(settings.helicopterBoundsMinZ, Math.min(settings.helicopterBoundsMaxZ, rawZ));
 
     // Smoothly interpolate position (no sudden jumps)
     const lerpSpeed = 1.5 * dt;
     helicopter.mesh.position.x += (targetX - helicopter.mesh.position.x) * lerpSpeed;
     helicopter.mesh.position.z += (targetZ - helicopter.mesh.position.z) * lerpSpeed;
-
-    // Clamp to boundary limits
-    helicopter.mesh.position.x = Math.max(settings.helicopterBoundsMinX, Math.min(settings.helicopterBoundsMaxX, helicopter.mesh.position.x));
-    helicopter.mesh.position.z = Math.max(settings.helicopterBoundsMinZ, Math.min(settings.helicopterBoundsMaxZ, helicopter.mesh.position.z));
 
     // Gentle height bobbing
     helicopter.mesh.position.y = settings.helicopterHeight + Math.sin(time * 0.8) * 0.15;
@@ -857,7 +855,10 @@ const loadingProgress = {
       spot.target = target;
       scene.add(spot);
 
-      lights.push({ spot, target, phaseOffset: i * Math.PI });
+      // Random wandering state
+      const goalX = center.x + (Math.random() - 0.5) * settings.searchlightSway * 2;
+      const goalZ = center.z + (Math.random() - 0.5) * settings.searchlightSway * 2;
+      lights.push({ spot, target, goalX, goalZ });
     }
 
     searchlights = lights;
@@ -875,7 +876,6 @@ const loadingProgress = {
     if (!enabled) return;
 
     const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const time = performance.now() * 0.001;
     const speed = settings.searchlightSpeed;
     const sway = settings.searchlightSway;
 
@@ -888,11 +888,18 @@ const loadingProgress = {
       sl.spot.penumbra = settings.searchlightPenumbra;
       sl.spot.position.y = settings.searchlightHeight;
 
-      // Slow sweeping pattern - each light has a phase offset
-      const phase = time * speed + sl.phaseOffset;
-      const targetX = center.x + Math.sin(phase) * sway;
-      const targetZ = center.z + Math.cos(phase * 0.7) * sway * 0.6;
-      sl.target.position.set(targetX, 0, targetZ);
+      // Smoothly move toward random goal point
+      const lerpSpeed = speed * dt;
+      sl.target.position.x += (sl.goalX - sl.target.position.x) * lerpSpeed;
+      sl.target.position.z += (sl.goalZ - sl.target.position.z) * lerpSpeed;
+
+      // Pick a new random goal when close enough to the current one
+      const dx = sl.goalX - sl.target.position.x;
+      const dz = sl.goalZ - sl.target.position.z;
+      if (dx * dx + dz * dz < 0.5) {
+        sl.goalX = center.x + (Math.random() - 0.5) * sway * 2;
+        sl.goalZ = center.z + (Math.random() - 0.5) * sway * 2;
+      }
     }
   }
 
@@ -3089,7 +3096,7 @@ const loadingProgress = {
     // Searchlights
     const searchlightsFolder = addonsFolder.addFolder("Searchlights");
     searchlightsFolder.add(settings, "searchlightsEnabled").name("Enabled");
-    searchlightsFolder.add(settings, "searchlightIntensity", 0, 300, 1).name("Intensity");
+    searchlightsFolder.add(settings, "searchlightIntensity", 0, 1000, 1).name("Intensity");
     searchlightsFolder.addColor(settings, "searchlightColor").name("Color");
     searchlightsFolder.add(settings, "searchlightAngle", 5, 60, 1).name("Angle (deg)");
     searchlightsFolder.add(settings, "searchlightDistance", 5, 50, 1).name("Distance");

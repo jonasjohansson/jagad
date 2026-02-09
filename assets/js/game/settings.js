@@ -185,22 +185,22 @@ export const defaultSettings = {
   helicopterSearchlightSway: 3.6,
   helicopterSearchlightSpeed: 0.7,
   // Helicopter boundary limits
-  helicopterBoundsMinX: -4.5,
-  helicopterBoundsMaxX: 4.5,
-  helicopterBoundsMinZ: -1.2,
+  helicopterBoundsMinX: -4.6,
+  helicopterBoundsMaxX: 5,
+  helicopterBoundsMinZ: -2,
   helicopterBoundsMaxZ: 2.8,
   helicopterShowBounds: false,
 
   // Searchlights
   searchlightsEnabled: true,
-  searchlightIntensity: 80,
+  searchlightIntensity: 1000,
   searchlightColor: "#ffffff",
-  searchlightAngle: 18,
-  searchlightDistance: 20,
-  searchlightPenumbra: 0.6,
-  searchlightHeight: 12,
+  searchlightAngle: 10,
+  searchlightDistance: 40,
+  searchlightPenumbra: 0.5,
+  searchlightHeight: 8,
   searchlightSpeed: 0.3,
-  searchlightSway: 6,
+  searchlightSway: 9.5,
 
   // Pulse Wave (capture effect)
   pulseWaveEnabled: true,
