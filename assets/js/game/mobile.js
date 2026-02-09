@@ -19,8 +19,6 @@ export const MOBILE_OVERRIDES = {
   colorGradingEnabled: true,   // shader pass
   helicopterEnabled: true,     // extra model + SpotLight
   pulseWaveParticles: true,    // 120 particles per capture
-  leftPanelEnabled: false,     // canvas texture draw calls
-  rightPanelEnabled: false,
   carAudioReactive: true,      // per-frame emissive updates
   textBPMPulse: true,          // per-frame text brightness
   chaserSpeed: 1.2,            // solo mobile boost (+0.2)

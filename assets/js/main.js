@@ -13,9 +13,9 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=13";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=6";
-import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=3";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=14";
+import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=7";
+import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=4";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -99,10 +99,6 @@ const loadingProgress = {
   let buildingPlane = null;
   let projectionPlane = null;
   let projectionTextures = {};
-  let leftPanel = null;
-  let rightPanel = null;
-  let leftPanelIframe = null;
-  let rightPanelIframe = null;
   let camera;
   let orthoCamera;
   let perspCamera;
@@ -1754,7 +1750,8 @@ const loadingProgress = {
 
     if (wire) {
       if (wire.billboard) wire.billboard.visible = false;
-      if (wire.billboardLight) wire.billboardLight.visible = false;
+      // Set intensity to 0 instead of visible=false to avoid shader recompilation
+      if (wire.billboardLight) wire.billboardLight.intensity = 0;
     }
 
     // Check if all captured
@@ -2543,10 +2540,6 @@ const loadingProgress = {
       // Apply helicopter from override
       if (helicopter && helicopter.mesh) helicopter.mesh.visible = settings.helicopterEnabled;
 
-      // Apply panels from override
-      if (leftPanel) leftPanel.visible = settings.leftPanelEnabled;
-      if (rightPanel) rightPanel.visible = settings.rightPanelEnabled;
-
       // Chaser speed boost
       for (const c of chasers) c.speed = settings.chaserSpeed;
 
@@ -2600,10 +2593,6 @@ const loadingProgress = {
 
       // Restore helicopter visibility (handled by update loop via helicopterEnabled)
       if (helicopter && helicopter.mesh) helicopter.mesh.visible = settings.helicopterEnabled;
-
-      // Restore panels
-      if (leftPanel) leftPanel.visible = settings.leftPanelEnabled;
-      if (rightPanel) rightPanel.visible = settings.rightPanelEnabled;
 
       // Restore chaser speed
       for (const c of chasers) c.speed = settings.chaserSpeed;
@@ -2707,23 +2696,6 @@ const loadingProgress = {
         }
       }
     }}, "clearCache").name("🔄 Clear Cache");
-    guiLeft.add({ showInfo: function() {
-      alert(
-        "JAGAD - The Chase Game\n\n" +
-        "HOW TO PLAY:\n" +
-        "- Fugitives (white) try to escape\n" +
-        "- Chasers (colored) hunt the fugitives\n" +
-        "- Game ends when all fugitives are caught or time runs out\n\n" +
-        "KEYBOARD SHORTCUTS:\n" +
-        "- Keys 1-4: Trigger capture for fugitive 1-4\n" +
-        "- Space: Toggle game start\n\n" +
-        "TIPS:\n" +
-        "- Adjust speeds and AI in Game settings\n" +
-        "- Customize colors in Actors settings\n" +
-        "- Save your settings to preserve them"
-      );
-    }}, "showInfo").name("ℹ️ How to Play");
-
     // ==================== GAME ====================
     const gameFolder = guiLeft.addFolder("🎮 Game");
     gameFolder.add(settings, "fugitiveSpeed", 0.1, 4, 0.1).name("Fugitive Speed").onChange((v) => {
@@ -2796,13 +2768,6 @@ const loadingProgress = {
 
     perfFolder.add(settings, "pulseWaveParticles").name("Pulse Particles").listen();
 
-    perfFolder.add(settings, "leftPanelEnabled").name("Left Panel").listen().onChange((v) => {
-      if (leftPanel) leftPanel.visible = v;
-    });
-
-    perfFolder.add(settings, "rightPanelEnabled").name("Right Panel").listen().onChange((v) => {
-      if (rightPanel) rightPanel.visible = v;
-    });
 
     perfFolder.add(settings, "carAudioReactive").name("Car BPM Pulse").listen();
 
@@ -3156,53 +3121,6 @@ const loadingProgress = {
       }
     });
     buildingPlaneFolderGUI.close();
-
-    // Panels
-    const panelsFolder = addonsFolder.addFolder("Panels");
-    panelsFolder.add(settings, "panelsY", -5, 5, 0.01).name("Y (Global)").onChange(() => {
-      updateLeftPanel();
-      updateRightPanel();
-    });
-
-    // Left Panel (iframe) - 4 independent corners for skewing
-    const leftPanelFolder = panelsFolder.addFolder("Left Panel");
-    leftPanelFolder.add(settings, "leftPanelEnabled").name("Enabled").onChange((v) => {
-      if (leftPanel) leftPanel.visible = v;
-    });
-    const leftC1 = leftPanelFolder.addFolder("Corner 1 (top-left)");
-    leftC1.add(settings, "leftPanelC1X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
-    leftC1.add(settings, "leftPanelC1Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
-    const leftC2 = leftPanelFolder.addFolder("Corner 2 (top-right)");
-    leftC2.add(settings, "leftPanelC2X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
-    leftC2.add(settings, "leftPanelC2Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
-    const leftC3 = leftPanelFolder.addFolder("Corner 3 (bottom-right)");
-    leftC3.add(settings, "leftPanelC3X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
-    leftC3.add(settings, "leftPanelC3Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
-    const leftC4 = leftPanelFolder.addFolder("Corner 4 (bottom-left)");
-    leftC4.add(settings, "leftPanelC4X", -15, 15, 0.01).name("X").onChange(updateLeftPanel);
-    leftC4.add(settings, "leftPanelC4Z", -15, 15, 0.01).name("Z").onChange(updateLeftPanel);
-    leftPanelFolder.close();
-
-    // Right Panel (iframe) - 4 independent corners for skewing
-    const rightPanelFolder = panelsFolder.addFolder("Right Panel");
-    rightPanelFolder.add(settings, "rightPanelEnabled").name("Enabled").onChange((v) => {
-      if (rightPanel) rightPanel.visible = v;
-    });
-    const rightC1 = rightPanelFolder.addFolder("Corner 1 (top-left)");
-    rightC1.add(settings, "rightPanelC1X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
-    rightC1.add(settings, "rightPanelC1Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
-    const rightC2 = rightPanelFolder.addFolder("Corner 2 (top-right)");
-    rightC2.add(settings, "rightPanelC2X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
-    rightC2.add(settings, "rightPanelC2Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
-    const rightC3 = rightPanelFolder.addFolder("Corner 3 (bottom-right)");
-    rightC3.add(settings, "rightPanelC3X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
-    rightC3.add(settings, "rightPanelC3Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
-    const rightC4 = rightPanelFolder.addFolder("Corner 4 (bottom-left)");
-    rightC4.add(settings, "rightPanelC4X", -15, 15, 0.01).name("X").onChange(updateRightPanel);
-    rightC4.add(settings, "rightPanelC4Z", -15, 15, 0.01).name("Z").onChange(updateRightPanel);
-    rightPanelFolder.close();
-
-    panelsFolder.close();
 
     addonsFolder.close();
 
@@ -3629,261 +3547,6 @@ const loadingProgress = {
     `
   };
 
-  // ============================================
-  // IFRAME PANELS (Skewable WebGL Mesh)
-  // ============================================
-
-  function createPanelGeometry(c1x, c1z, c2x, c2z, c3x, c3z, c4x, c4z, y, subdivisions = 20) {
-    // Create a subdivided geometry for better texture mapping on skewed quads
-    // Corners: C1 (top-left), C2 (top-right), C3 (bottom-right), C4 (bottom-left)
-    const geometry = new THREE.BufferGeometry();
-
-    const segments = subdivisions;
-    const vertexCount = (segments + 1) * (segments + 1);
-    const vertices = new Float32Array(vertexCount * 3);
-    const uvs = new Float32Array(vertexCount * 2);
-    const indices = [];
-
-    // Generate vertices by bilinear interpolation
-    for (let j = 0; j <= segments; j++) {
-      const v = j / segments;
-      for (let i = 0; i <= segments; i++) {
-        const u = i / segments;
-        const idx = j * (segments + 1) + i;
-
-        // Bilinear interpolation of corner positions
-        const topX = c1x + (c2x - c1x) * u;
-        const topZ = c1z + (c2z - c1z) * u;
-        const bottomX = c4x + (c3x - c4x) * u;
-        const bottomZ = c4z + (c3z - c4z) * u;
-
-        const x = topX + (bottomX - topX) * v;
-        const z = topZ + (bottomZ - topZ) * v;
-
-        vertices[idx * 3] = x;
-        vertices[idx * 3 + 1] = y;
-        vertices[idx * 3 + 2] = z;
-
-        uvs[idx * 2] = u;
-        uvs[idx * 2 + 1] = 1 - v;
-      }
-    }
-
-    // Generate indices
-    for (let j = 0; j < segments; j++) {
-      for (let i = 0; i < segments; i++) {
-        const a = j * (segments + 1) + i;
-        const b = a + 1;
-        const c = a + (segments + 1);
-        const d = c + 1;
-        indices.push(a, b, d, a, d, c);
-      }
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-
-    // Store subdivisions for later updates
-    geometry.userData.subdivisions = segments;
-
-    return geometry;
-  }
-
-  function updatePanelGeometry(panel, c1x, c1z, c2x, c2z, c3x, c3z, c4x, c4z, y) {
-    const geometry = panel.geometry;
-    const segments = geometry.userData.subdivisions || 20;
-    const positions = geometry.attributes.position.array;
-
-    // Regenerate vertices by bilinear interpolation
-    for (let j = 0; j <= segments; j++) {
-      const v = j / segments;
-      for (let i = 0; i <= segments; i++) {
-        const u = i / segments;
-        const idx = j * (segments + 1) + i;
-
-        const topX = c1x + (c2x - c1x) * u;
-        const topZ = c1z + (c2z - c1z) * u;
-        const bottomX = c4x + (c3x - c4x) * u;
-        const bottomZ = c4z + (c3z - c4z) * u;
-
-        positions[idx * 3] = topX + (bottomX - topX) * v;
-        positions[idx * 3 + 1] = y;
-        positions[idx * 3 + 2] = topZ + (bottomZ - topZ) * v;
-      }
-    }
-
-    geometry.attributes.position.needsUpdate = true;
-    geometry.computeVertexNormals();
-  }
-
-  function calcPanelDimensions(c1x, c1z, c2x, c2z, c3x, c3z, c4x, c4z) {
-    // Calculate approximate width and height of the panel
-    const topWidth = Math.sqrt((c2x - c1x) ** 2 + (c2z - c1z) ** 2);
-    const bottomWidth = Math.sqrt((c3x - c4x) ** 2 + (c3z - c4z) ** 2);
-    const leftHeight = Math.sqrt((c4x - c1x) ** 2 + (c4z - c1z) ** 2);
-    const rightHeight = Math.sqrt((c3x - c2x) ** 2 + (c3z - c2z) ** 2);
-    const avgWidth = (topWidth + bottomWidth) / 2;
-    const avgHeight = (leftHeight + rightHeight) / 2;
-    return { width: avgWidth, height: avgHeight };
-  }
-
-  function initIframePanels() {
-    // Calculate panel dimensions for proper aspect ratio
-    const leftDims = calcPanelDimensions(
-      settings.leftPanelC1X, settings.leftPanelC1Z,
-      settings.leftPanelC2X, settings.leftPanelC2Z,
-      settings.leftPanelC3X, settings.leftPanelC3Z,
-      settings.leftPanelC4X, settings.leftPanelC4Z
-    );
-    const rightDims = calcPanelDimensions(
-      settings.rightPanelC1X, settings.rightPanelC1Z,
-      settings.rightPanelC2X, settings.rightPanelC2Z,
-      settings.rightPanelC3X, settings.rightPanelC3Z,
-      settings.rightPanelC4X, settings.rightPanelC4Z
-    );
-
-    // Base size and calculate dimensions matching aspect ratio
-    const baseSize = 512;
-    const leftAspect = leftDims.width / leftDims.height;
-    const leftCanvasW = leftAspect >= 1 ? baseSize : Math.round(baseSize * leftAspect);
-    const leftCanvasH = leftAspect >= 1 ? Math.round(baseSize / leftAspect) : baseSize;
-
-    const rightAspect = rightDims.width / rightDims.height;
-    const rightCanvasW = rightAspect >= 1 ? baseSize : Math.round(baseSize * rightAspect);
-    const rightCanvasH = rightAspect >= 1 ? Math.round(baseSize / rightAspect) : baseSize;
-
-    // Create hidden iframes for content with proper aspect ratio
-    leftPanelIframe = document.createElement('iframe');
-    leftPanelIframe.src = 'left.html';
-    leftPanelIframe.style.cssText = `position:absolute;left:-9999px;width:${leftCanvasW}px;height:${leftCanvasH}px;border:none;`;
-    document.body.appendChild(leftPanelIframe);
-
-    rightPanelIframe = document.createElement('iframe');
-    rightPanelIframe.src = 'right.html';
-    rightPanelIframe.style.cssText = `position:absolute;left:-9999px;width:${rightCanvasW}px;height:${rightCanvasH}px;border:none;`;
-    document.body.appendChild(rightPanelIframe);
-
-    // Create canvases for rendering with proper aspect ratio
-    const leftCanvas = document.createElement('canvas');
-    leftCanvas.width = leftCanvasW;
-    leftCanvas.height = leftCanvasH;
-
-    const leftTexture = new THREE.CanvasTexture(leftCanvas);
-    leftTexture.minFilter = THREE.LinearFilter;
-
-    const rightCanvas = document.createElement('canvas');
-    rightCanvas.width = rightCanvasW;
-    rightCanvas.height = rightCanvasH;
-
-    const rightTexture = new THREE.CanvasTexture(rightCanvas);
-    rightTexture.minFilter = THREE.LinearFilter;
-
-    // Create left panel with skewable geometry
-    const leftGeo = createPanelGeometry(
-      settings.leftPanelC1X, settings.leftPanelC1Z,
-      settings.leftPanelC2X, settings.leftPanelC2Z,
-      settings.leftPanelC3X, settings.leftPanelC3Z,
-      settings.leftPanelC4X, settings.leftPanelC4Z,
-      settings.panelsY
-    );
-    const leftMat = new THREE.MeshBasicMaterial({
-      map: leftTexture,
-      side: THREE.DoubleSide,
-      transparent: true
-    });
-    leftPanel = new THREE.Mesh(leftGeo, leftMat);
-    leftPanel.visible = settings.leftPanelEnabled;
-    leftPanel.userData = { canvas: leftCanvas, texture: leftTexture, iframe: leftPanelIframe };
-    scene.add(leftPanel);
-
-    // Create right panel with skewable geometry
-    const rightGeo = createPanelGeometry(
-      settings.rightPanelC1X, settings.rightPanelC1Z,
-      settings.rightPanelC2X, settings.rightPanelC2Z,
-      settings.rightPanelC3X, settings.rightPanelC3Z,
-      settings.rightPanelC4X, settings.rightPanelC4Z,
-      settings.panelsY
-    );
-    const rightMat = new THREE.MeshBasicMaterial({
-      map: rightTexture,
-      side: THREE.DoubleSide,
-      transparent: true
-    });
-    rightPanel = new THREE.Mesh(rightGeo, rightMat);
-    rightPanel.visible = settings.rightPanelEnabled;
-    rightPanel.userData = { canvas: rightCanvas, texture: rightTexture, iframe: rightPanelIframe };
-    scene.add(rightPanel);
-
-    // Set up periodic texture updates from iframe
-    setInterval(() => {
-      updatePanelTexture(leftPanel);
-      updatePanelTexture(rightPanel);
-    }, 100);
-
-    console.log('Skewable iframe panels initialized', { leftDims, rightDims });
-  }
-
-  function updatePanelTexture(panel) {
-    if (!panel || !panel.visible || !panel.userData.iframe) return;
-
-    try {
-      const iframe = panel.userData.iframe;
-      const canvas = panel.userData.canvas;
-      const ctx = canvas.getContext('2d');
-
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
-
-      if (doc && doc.body) {
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Draw iframe body background color
-        const bgColor = window.getComputedStyle(doc.body).backgroundColor;
-        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)') {
-          ctx.fillStyle = bgColor;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        // Draw text content centered
-        ctx.fillStyle = window.getComputedStyle(doc.body).color || '#fff';
-        ctx.font = 'bold 48px "BankGothic", "BankGothic Md BT", "Bank Gothic", Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const text = doc.body.innerText || '';
-        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-        panel.userData.texture.needsUpdate = true;
-      }
-    } catch (e) {
-      // Cross-origin restriction - keep existing content
-    }
-  }
-
-  function updateLeftPanel() {
-    if (!leftPanel) return;
-    updatePanelGeometry(leftPanel,
-      settings.leftPanelC1X, settings.leftPanelC1Z,
-      settings.leftPanelC2X, settings.leftPanelC2Z,
-      settings.leftPanelC3X, settings.leftPanelC3Z,
-      settings.leftPanelC4X, settings.leftPanelC4Z,
-      settings.panelsY
-    );
-    leftPanel.visible = settings.leftPanelEnabled;
-  }
-
-  function updateRightPanel() {
-    if (!rightPanel) return;
-    updatePanelGeometry(rightPanel,
-      settings.rightPanelC1X, settings.rightPanelC1Z,
-      settings.rightPanelC2X, settings.rightPanelC2Z,
-      settings.rightPanelC3X, settings.rightPanelC3Z,
-      settings.rightPanelC4X, settings.rightPanelC4Z,
-      settings.panelsY
-    );
-    rightPanel.visible = settings.rightPanelEnabled;
-  }
 
   // ============================================
   // ATMOSPHERE SYSTEMS
@@ -4441,12 +4104,12 @@ const loadingProgress = {
       this.billboard.position.set(billboardX, actorPos.y + totalHeight, billboardZ);
 
       // Update billboard light position and settings
+      // Use intensity=0 instead of visible=false to avoid shader recompilation
       if (this.billboardLight) {
         this.billboardLight.position.copy(this.billboard.position);
-        // Fugitives use fugitiveLightIntensity, chasers use billboardLightIntensity
-        this.billboardLight.intensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
+        const baseIntensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
+        this.billboardLight.intensity = this.billboard.visible ? baseIntensity : 0;
         this.billboardLight.distance = settings.billboardLightDistance;
-        this.billboardLight.visible = this.billboard.visible;
       }
     }
 
@@ -4540,22 +4203,17 @@ const loadingProgress = {
 
     // Clear any active capture effects
     for (const effect of captureEffects) {
-      for (const gl of effect.gridLines) {
-        scene.remove(gl.line);
-        gl.geometry.dispose();
-        gl.material.dispose();
-        if (gl.glow) {
-          scene.remove(gl.glow);
-          gl.glowGeometry.dispose();
-          gl.glowMaterial.dispose();
-        }
-      }
+      if (effect.coreMesh) { scene.remove(effect.coreMesh); effect.coreMat.dispose(); }
+      if (effect.glowMesh) { scene.remove(effect.glowMesh); effect.glowMat.dispose(); }
+      // Dispose alpha attribute buffers only (positions are shared from cache)
+      if (effect.coreGeo) { effect.coreGeo.deleteAttribute('alpha'); effect.coreGeo.dispose(); }
+      if (effect.glowGeo) { effect.glowGeo.deleteAttribute('alpha'); effect.glowGeo.dispose(); }
       scene.remove(effect.particles);
       effect.particles.geometry.dispose();
       effect.particleMat.dispose();
       if (effect.flash) {
         scene.remove(effect.flash);
-        effect.flash.geometry.dispose();
+        // Don't dispose flash geometry — it's shared (_sharedFlashGeo)
         effect.flashMat.dispose();
       }
     }
@@ -4582,7 +4240,8 @@ const loadingProgress = {
       const wire = fugitiveWires[f.index];
       if (wire) {
         if (wire.billboard) wire.billboard.visible = true;
-        if (wire.billboardLight) wire.billboardLight.visible = true;
+        // Intensity is managed per-frame based on billboard visibility; just ensure billboard is shown
+        if (wire.billboardLight) wire.billboardLight.intensity = settings.fugitiveLightIntensity;
       }
     }
 
@@ -4621,6 +4280,88 @@ const loadingProgress = {
 
   const captureEffects = [];
 
+  // Pre-built tube geometry cache — built once when path graph is ready
+  let _tubeCache = null;
+
+  function buildTubeCache() {
+    if (!STATE.pathGraph || !STATE.pathGraph.edges) return null;
+    const tubeHeight = settings.pulseWaveTubeHeight || 0.15;
+    const tubeRadius = tubeHeight * 0.4;
+    const glowScale = settings.pulseWaveGlow || 3.0;
+    const edges = STATE.pathGraph.edges;
+    const segs = 6;
+
+    const templateCore = new THREE.CylinderGeometry(tubeRadius, tubeRadius, 1, segs, 1, true);
+    const templateGlow = new THREE.CylinderGeometry(tubeRadius * glowScale, tubeRadius * glowScale, 1, segs, 1, true);
+    templateCore.rotateX(Math.PI / 2);
+    templateGlow.rotateX(Math.PI / 2);
+
+    const vertsPerTube = templateCore.attributes.position.count;
+
+    // Pre-calculate per-edge geometry data
+    const edgeCenters = []; // {x, z} per edge
+    const corePositions = [];
+    const glowPositions = [];
+
+    for (const edge of edges) {
+      const dx = edge.x2 - edge.x1;
+      const dz = edge.z2 - edge.z1;
+      const length = Math.sqrt(dx * dx + dz * dz);
+      const angle = Math.atan2(dx, dz);
+      const centerX = (edge.x1 + edge.x2) / 2;
+      const centerZ = (edge.z1 + edge.z2) / 2;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      edgeCenters.push({ x: centerX, z: centerZ });
+
+      for (let v = 0; v < vertsPerTube; v++) {
+        let lx = templateCore.attributes.position.getX(v);
+        let ly = templateCore.attributes.position.getY(v);
+        let lz = templateCore.attributes.position.getZ(v) * length;
+        const rx = lx * cosA + lz * sinA;
+        const rz = -lx * sinA + lz * cosA;
+        corePositions.push(rx + centerX, ly + tubeHeight / 2, rz + centerZ);
+
+        lx = templateGlow.attributes.position.getX(v);
+        ly = templateGlow.attributes.position.getY(v);
+        lz = templateGlow.attributes.position.getZ(v) * length;
+        const grx = lx * cosA + lz * sinA;
+        const grz = -lx * sinA + lz * cosA;
+        glowPositions.push(grx + centerX, ly + tubeHeight / 2, grz + centerZ);
+      }
+    }
+
+    // Build shared index buffer
+    const templateIndex = templateCore.index.array;
+    const indices = [];
+    for (let e = 0; e < edges.length; e++) {
+      const offset = e * vertsPerTube;
+      for (let j = 0; j < templateIndex.length; j++) {
+        indices.push(templateIndex[j] + offset);
+      }
+    }
+
+    templateCore.dispose();
+    templateGlow.dispose();
+
+    return {
+      corePositions: new Float32Array(corePositions),
+      glowPositions: new Float32Array(glowPositions),
+      indices,
+      edgeCenters,
+      vertsPerTube,
+      edgeCount: edges.length
+    };
+  }
+
+  function getTubeCache() {
+    if (!_tubeCache) _tubeCache = buildTubeCache();
+    return _tubeCache;
+  }
+
+  // Shared flash + particle geometry (created once, reused)
+  let _sharedFlashGeo = null;
+
   function createCaptureEffect(position, chaserColor, billboard) {
     if (!settings.pulseWaveEnabled) return;
 
@@ -4628,89 +4369,84 @@ const loadingProgress = {
     const originX = position.x;
     const originZ = position.z;
 
-    // Create grid pulse - glowing tubes along each edge that light up based on distance
-    const gridLines = [];
-    if (STATE.pathGraph && STATE.pathGraph.edges) {
-      const tubeHeight = settings.pulseWaveTubeHeight || 0.15;
-      const tubeRadius = tubeHeight * 0.4;
-      const glowScale = settings.pulseWaveGlow || 3.0; // How much larger the glow is
+    let coreMesh = null, glowMesh = null;
+    let coreGeo = null, glowGeo = null;
+    let coreMat = null, glowMat = null;
+    let edgeDistances = [];
+    let vertsPerTube = 0;
 
-      for (const edge of STATE.pathGraph.edges) {
-        // Calculate edge length and direction
-        const dx = edge.x2 - edge.x1;
-        const dz = edge.z2 - edge.z1;
-        const length = Math.sqrt(dx * dx + dz * dz);
-        const angle = Math.atan2(dx, dz);
-
-        const centerX = (edge.x1 + edge.x2) / 2;
-        const centerZ = (edge.z1 + edge.z2) / 2;
-
-        // Create outer glow layer (larger, softer)
-        const glowGeo = new THREE.CylinderGeometry(tubeRadius * glowScale, tubeRadius * glowScale, length, 8, 1, true);
-        const glowMat = new THREE.MeshBasicMaterial({
-          color: color,
-          transparent: true,
-          opacity: 0,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          depthTest: false,
-          side: THREE.DoubleSide
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.position.set(centerX, tubeHeight / 2, centerZ);
-        glow.rotation.x = Math.PI / 2;
-        glow.rotation.z = angle;
-        scene.add(glow);
-
-        // Create inner core (brighter, smaller)
-        const coreGeo = new THREE.CylinderGeometry(tubeRadius, tubeRadius, length, 8, 1, true);
-        const coreMat = new THREE.MeshBasicMaterial({
-          color: 0xffffff, // White core for brightness
-          transparent: true,
-          opacity: 0,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          depthTest: false,
-          side: THREE.DoubleSide
-        });
-        const core = new THREE.Mesh(coreGeo, coreMat);
-        core.position.set(centerX, tubeHeight / 2, centerZ);
-        core.rotation.x = Math.PI / 2;
-        core.rotation.z = angle;
-        scene.add(core);
-
-        // Calculate distance from capture origin to edge center
-        const dist = Math.sqrt((centerX - originX) ** 2 + (centerZ - originZ) ** 2);
-
-        gridLines.push({
-          line: core,
-          glow: glow,
-          material: coreMat,
-          glowMaterial: glowMat,
-          geometry: coreGeo,
-          glowGeometry: glowGeo,
-          distance: dist
-        });
+    const cache = getTubeCache();
+    if (cache) {
+      // Compute per-edge distances from this capture origin
+      for (let e = 0; e < cache.edgeCount; e++) {
+        const ec = cache.edgeCenters[e];
+        edgeDistances.push(Math.sqrt((ec.x - originX) ** 2 + (ec.z - originZ) ** 2));
       }
+      vertsPerTube = cache.vertsPerTube;
+
+      // Reuse shared position/index data, only create fresh alpha attributes
+      const totalVerts = cache.edgeCount * vertsPerTube;
+
+      coreGeo = new THREE.BufferGeometry();
+      coreGeo.setAttribute('position', new THREE.Float32BufferAttribute(cache.corePositions, 3));
+      coreGeo.setAttribute('alpha', new THREE.Float32BufferAttribute(new Float32Array(totalVerts), 1));
+      coreGeo.setIndex(cache.indices);
+
+      glowGeo = new THREE.BufferGeometry();
+      glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(cache.glowPositions, 3));
+      glowGeo.setAttribute('alpha', new THREE.Float32BufferAttribute(new Float32Array(totalVerts), 1));
+      glowGeo.setIndex(cache.indices);
+
+      const shaderVert = `
+        attribute float alpha;
+        varying float vAlpha;
+        void main() {
+          vAlpha = alpha;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `;
+      const shaderFrag = `
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        varying float vAlpha;
+        void main() {
+          gl_FragColor = vec4(uColor, vAlpha * uOpacity);
+        }
+      `;
+
+      coreMat = new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: new THREE.Color(0xffffff) }, uOpacity: { value: 1.0 } },
+        vertexShader: shaderVert, fragmentShader: shaderFrag,
+        transparent: true, depthWrite: false, depthTest: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+      });
+      coreMesh = new THREE.Mesh(coreGeo, coreMat);
+      scene.add(coreMesh);
+
+      glowMat = new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: color.clone() }, uOpacity: { value: 1.0 } },
+        vertexShader: shaderVert, fragmentShader: shaderFrag,
+        transparent: true, depthWrite: false, depthTest: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+      });
+      glowMesh = new THREE.Mesh(glowGeo, glowMat);
+      scene.add(glowMesh);
     }
 
-    // Create intense particle burst from billboard position
-    const particleCount = settings.pulseWaveParticles ? 120 : 0;
+    // Create particle burst from billboard position
+    const particleCount = settings.pulseWaveParticles ? 60 : 0;
     const particlePositions = new Float32Array(particleCount * 3);
     const particleVelocities = [];
     const particleColors = new Float32Array(particleCount * 3);
-    const particleSizes = new Float32Array(particleCount);
 
     const billboardPos = billboard ? billboard.position.clone() : position.clone();
     billboardPos.y = position.y + 2;
 
     for (let i = 0; i < particleCount; i++) {
-      // Start at billboard position with some random spread
       particlePositions[i * 3] = billboardPos.x + (Math.random() - 0.5) * 0.3;
       particlePositions[i * 3 + 1] = billboardPos.y + (Math.random() - 0.5) * 0.3;
       particlePositions[i * 3 + 2] = billboardPos.z + (Math.random() - 0.5) * 0.3;
 
-      // Small radius burst
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 1.5 + 0.5;
       const upSpeed = Math.random() * 2 + 0.5;
@@ -4720,15 +4456,11 @@ const loadingProgress = {
         z: Math.sin(angle) * speed
       });
 
-      // Bright colors - white core fading to chaser color
       const t = Math.random();
       const brightness = 1 + Math.random() * 0.5;
       particleColors[i * 3] = Math.min(1, brightness * (1 * (1 - t) + color.r * t));
       particleColors[i * 3 + 1] = Math.min(1, brightness * (1 * (1 - t) + color.g * t));
       particleColors[i * 3 + 2] = Math.min(1, brightness * (1 * (1 - t) + color.b * t));
-
-      // Varied sizes
-      particleSizes[i] = Math.random() * 0.25 + 0.1;
     }
 
     const particleGeo = new THREE.BufferGeometry();
@@ -4736,45 +4468,33 @@ const loadingProgress = {
     particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
 
     const particleMat = new THREE.PointsMaterial({
-      size: 0.25,
-      vertexColors: true,
-      transparent: true,
-      opacity: 1.0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      sizeAttenuation: true
+      size: 0.25, vertexColors: true, transparent: true, opacity: 1.0,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
     });
 
     const particles = new THREE.Points(particleGeo, particleMat);
     scene.add(particles);
 
-    // Create a flash at the capture point
+    // Flash at capture point (reuse shared geometry)
     let flash = null;
     let flashMat = null;
     if (settings.pulseWaveFlash !== false) {
-      const flashGeo = new THREE.SphereGeometry(0.5, 16, 16);
+      if (!_sharedFlashGeo) _sharedFlashGeo = new THREE.SphereGeometry(0.5, 16, 16);
       flashMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 1.0,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
+        color: 0xffffff, transparent: true, opacity: 1.0,
+        blending: THREE.AdditiveBlending, depthWrite: false
       });
-      flash = new THREE.Mesh(flashGeo, flashMat);
+      flash = new THREE.Mesh(_sharedFlashGeo, flashMat);
       flash.position.copy(billboardPos);
       scene.add(flash);
     }
 
     captureEffects.push({
-      gridLines,
-      particles,
-      particleMat,
-      particleVelocities,
-      particleSizes,
-      flash,
-      flashMat,
-      originX,
-      originZ,
+      coreMesh, glowMesh, coreGeo, glowGeo, coreMat, glowMat,
+      edgeDistances, vertsPerTube,
+      particles, particleMat, particleVelocities,
+      flash, flashMat,
+      originX, originZ,
       time: 0,
       duration: settings.pulseWaveDuration || 5.0,
       pulseSpeed: settings.pulseWaveSpeed || 3.5,
@@ -4806,23 +4526,16 @@ const loadingProgress = {
       const t = effect.time / effect.duration;
 
       if (t >= 1) {
-        // Remove effect
-        for (const gl of effect.gridLines) {
-          scene.remove(gl.line);
-          gl.geometry.dispose();
-          gl.material.dispose();
-          if (gl.glow) {
-            scene.remove(gl.glow);
-            gl.glowGeometry.dispose();
-            gl.glowMaterial.dispose();
-          }
-        }
+        // Remove effect — positions are cached, only dispose alpha + materials
+        if (effect.coreMesh) { scene.remove(effect.coreMesh); effect.coreMat.dispose(); }
+        if (effect.glowMesh) { scene.remove(effect.glowMesh); effect.glowMat.dispose(); }
+        if (effect.coreGeo) { effect.coreGeo.deleteAttribute('alpha'); effect.coreGeo.dispose(); }
+        if (effect.glowGeo) { effect.glowGeo.deleteAttribute('alpha'); effect.glowGeo.dispose(); }
         scene.remove(effect.particles);
         effect.particles.geometry.dispose();
         effect.particleMat.dispose();
         if (effect.flash) {
           scene.remove(effect.flash);
-          effect.flash.geometry.dispose();
           effect.flashMat.dispose();
         }
         captureEffects.splice(i, 1);
@@ -4831,35 +4544,34 @@ const loadingProgress = {
 
       // Apply easing to the animation progress
       const easedT = applyEasing(t, effect.easing);
-      // Calculate max radius based on speed and duration
       const maxRadius = effect.pulseSpeed * effect.duration;
       const pulseRadius = easedT * maxRadius;
-
-      // Fade out in the last 30% of duration
       const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
 
-      for (const gl of effect.gridLines) {
-        const distFromPulse = Math.abs(gl.distance - pulseRadius);
+      // Update per-vertex alpha on the batched meshes
+      if (effect.coreGeo && effect.edgeDistances.length > 0) {
+        const coreAlphas = effect.coreGeo.attributes.alpha.array;
+        const glowAlphas = effect.glowGeo.attributes.alpha.array;
+        const vpte = effect.vertsPerTube;
 
-        if (distFromPulse < effect.pulseWidth) {
-          // Smooth gaussian-like falloff for feathered edges
-          const normalizedDist = distFromPulse / effect.pulseWidth;
-          const smoothFalloff = Math.exp(-normalizedDist * normalizedDist * 4); // Gaussian falloff
-          const opacity = smoothFalloff * effect.intensity * (1 - fadeOut);
-
-          // Core is brighter
-          gl.material.opacity = Math.min(1, opacity);
-
-          // Glow is softer, wider, and more transparent
-          if (gl.glowMaterial) {
-            gl.glowMaterial.opacity = Math.min(0.4, opacity * 0.4);
+        for (let e = 0; e < effect.edgeDistances.length; e++) {
+          const distFromPulse = Math.abs(effect.edgeDistances[e] - pulseRadius);
+          let coreA = 0, glowA = 0;
+          if (distFromPulse < effect.pulseWidth) {
+            const normalizedDist = distFromPulse / effect.pulseWidth;
+            const smoothFalloff = Math.exp(-normalizedDist * normalizedDist * 4);
+            const opacity = smoothFalloff * effect.intensity * (1 - fadeOut);
+            coreA = Math.min(1, opacity);
+            glowA = Math.min(0.4, opacity * 0.4);
           }
-        } else {
-          gl.material.opacity = 0;
-          if (gl.glowMaterial) {
-            gl.glowMaterial.opacity = 0;
+          const base = e * vpte;
+          for (let v = 0; v < vpte; v++) {
+            coreAlphas[base + v] = coreA;
+            glowAlphas[base + v] = glowA;
           }
         }
+        effect.coreGeo.attributes.alpha.needsUpdate = true;
+        effect.glowGeo.attributes.alpha.needsUpdate = true;
       }
 
       // Animate particles with physics
@@ -5546,6 +5258,7 @@ const loadingProgress = {
         const isPath = nameUpper.includes("PATH");
         const isLeaf = nameUpper.includes("LEAF") || nameUpper.includes("LEAVES");
         obj.castShadow = !isGlass;
+        obj.receiveShadow = !isGlass;
         if (isLeaf && obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
           for (const mat of mats) {
@@ -5554,7 +5267,6 @@ const loadingProgress = {
             mat.opacity = 0.95;
           }
         }
-        obj.receiveShadow = true;
 
         const globalMult = settings.globalEmissiveMultiplier || 1.0;
 
@@ -5685,10 +5397,14 @@ const loadingProgress = {
     // Find all GLASS meshes for HTML overlay
     let foundGlassMeshes = [];
     levelContainer.traverse((obj) => {
-      if (obj.isMesh && obj.name && obj.name.toUpperCase().includes("GLASS")) {
-        foundGlassMeshes.push(obj);
+      if (obj.isMesh && obj.name) {
+        console.log("[GLB mesh]", obj.name);
+        if (obj.name.toUpperCase().includes("GLASS")) {
+          foundGlassMeshes.push(obj);
+        }
       }
     });
+    console.log("[Glass overlay] matched meshes:", foundGlassMeshes.map(m => m.name));
 
     if (foundGlassMeshes.length > 0) {
       setupGlassMeshes(foundGlassMeshes);
@@ -6494,7 +6210,7 @@ const loadingProgress = {
     loadHelicopter();
     updateHelicopterBoundsHelper();
     setupSearchlights();
-    initIframePanels();
+
 
     // Load path graph from GLB and initialize actors
     rebuildPathGraph();
