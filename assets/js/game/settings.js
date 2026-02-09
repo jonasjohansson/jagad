@@ -32,6 +32,8 @@ export const defaultSettings = {
   perspPosX: 0.04,
   perspPosY: 33,
   perspPosZ: 10,
+  perspPanX: 0,
+  perspPanZ: 0.5,
   // Lighting
   toneMapping: "Neutral",
   exposure: 0.67,
@@ -51,9 +53,6 @@ export const defaultSettings = {
   billboardMaxDistance: 0,
   billboardLightIntensity: 20,
   billboardLightDistance: 10,
-  boardOffsetX: 0,
-  boardOffsetY: 0,
-  boardOffsetZ: -1,
   showNavmesh: false,
   buildingEnabled: false,
   buildingScaleX: 1.15,
@@ -247,7 +246,7 @@ export const defaultSettings = {
   projectionScale: 0.2,
   projectionOffsetX: 0,
   projectionOffsetY: 0.02,
-  projectionOffsetZ: -0.5,
+  projectionOffsetZ: 0.1,
 
   // GLB Parts - per-mesh material overrides (partName -> settings)
   // Only non-default values need to be stored

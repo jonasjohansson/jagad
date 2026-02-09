@@ -13,7 +13,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=14";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=15";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=7";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=4";
 
@@ -2426,8 +2426,8 @@ const loadingProgress = {
     const aspect = window.innerWidth / window.innerHeight;
 
     perspCamera = new THREE.PerspectiveCamera(settings.perspFov, aspect, settings.perspNear, settings.perspFar);
-    perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
-    perspCamera.lookAt(levelCenter);
+    perspCamera.position.set(settings.perspPosX + (settings.perspPanX || 0), settings.perspPosY, settings.perspPosZ + (settings.perspPanZ || 0));
+    perspCamera.lookAt(levelCenter.x + (settings.perspPanX || 0), levelCenter.y, levelCenter.z + (settings.perspPanZ || 0));
 
     const frustumSize = horizontalSize * 1.5;
     const orthoDistance = horizontalSize * 1.2;
@@ -2667,6 +2667,9 @@ const loadingProgress = {
     guiLeft.domElement.style.position = "absolute";
     guiLeft.domElement.style.left = "10px";
     guiLeft.domElement.style.top = "0px";
+
+    // Auto-save all settings on any GUI change
+    guiLeft.onChange(() => saveSettings(settings));
 
     // Settings controls at the top
     guiLeft.add(settings, "exportSettings").name("💾 Export Settings");
@@ -3132,8 +3135,10 @@ const loadingProgress = {
 
     function updatePerspCameraPos() {
       if (perspCamera) {
-        perspCamera.position.set(settings.perspPosX, settings.perspPosY, settings.perspPosZ);
-        perspCamera.lookAt(STATE.levelCenter);
+        const panX = settings.perspPanX || 0;
+        const panZ = settings.perspPanZ || 0;
+        perspCamera.position.set(settings.perspPosX + panX, settings.perspPosY, settings.perspPosZ + panZ);
+        perspCamera.lookAt(STATE.levelCenter.x + panX, STATE.levelCenter.y, STATE.levelCenter.z + panZ);
       }
     }
     cameraFolder.add(settings, "orthoZoom", 0.1, 3, 0.1).name("Ortho Zoom").onChange((v) => {
@@ -3144,6 +3149,8 @@ const loadingProgress = {
     });
     cameraFolder.add(settings, "perspPosY", 0, 500, 0.1).name("Persp Height").onChange(updatePerspCameraPos);
     cameraFolder.add(settings, "perspPosZ", -50, 50, 0.1).name("Persp Distance").onChange(updatePerspCameraPos);
+    cameraFolder.add(settings, "perspPanX", -5, 5, 0.01).name("Pan X").onChange(updatePerspCameraPos);
+    cameraFolder.add(settings, "perspPanZ", -5, 5, 0.01).name("Pan Y").onChange(updatePerspCameraPos);
     cameraFolder.add(settings, "renderScale", 0.5, 2, 0.25).name("Render Scale").onChange((v) => {
       renderer.setPixelRatio(window.devicePixelRatio * v);
       if (composer) {
@@ -3152,17 +3159,6 @@ const loadingProgress = {
       }
     });
     cameraFolder.close();
-
-    function updateBoardOffset() {
-      if (STATE.levelContainer) {
-        STATE.levelContainer.position.set(settings.boardOffsetX, settings.boardOffsetY, settings.boardOffsetZ);
-      }
-    }
-    const boardFolder = sceneFolder.addFolder("Board Offset");
-    boardFolder.add(settings, "boardOffsetX", -10, 10, 0.01).name("X").onChange(updateBoardOffset);
-    boardFolder.add(settings, "boardOffsetY", -10, 10, 0.01).name("Y").onChange(updateBoardOffset);
-    boardFolder.add(settings, "boardOffsetZ", -10, 10, 0.01).name("Z").onChange(updateBoardOffset);
-    boardFolder.close();
 
     const lightsFolder = sceneFolder.addFolder("Lighting");
     lightsFolder.add(settings, "toneMapping", Object.keys(toneMappingOptions)).name("Tone Mapping").onChange((v) => {
@@ -5379,7 +5375,6 @@ const loadingProgress = {
 
     const levelContainer = new THREE.Group();
     levelContainer.add(root);
-    levelContainer.position.set(settings.boardOffsetX, settings.boardOffsetY, settings.boardOffsetZ);
     scene.add(levelContainer);
     STATE.levelContainer = levelContainer;
 
