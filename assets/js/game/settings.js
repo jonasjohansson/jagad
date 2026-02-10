@@ -238,8 +238,8 @@ export const defaultSettings = {
   gameOverTextRow4: "${s3}",
 
   // State projection images
-  preGameImage: "pre-game.png",
-  startingImage: "starting-game.png",
+  preGameImage: "",
+  startingImage: "",
   playingImage: "",
   gameOverImage: "",
   projectionOpacity: 0.55,
