@@ -78,6 +78,13 @@ body {
   transform: scaleX(-1);
 }
 
+#mobile-overlay .top-svg {
+  position: absolute;
+  height: 3vh;
+  width: auto;
+  transform: translateX(-50%);
+}
+
 #mobile-overlay .bottom-svg {
   position: absolute;
   bottom: 5vh;

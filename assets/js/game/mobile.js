@@ -145,6 +145,11 @@ export function createMobileOverlay() {
   rightImg.src = "assets/images/mobile/jagad-left.svg";
   rightImg.className = "side-svg right";
 
+  // Top center SVG
+  const topLogo = document.createElement("img");
+  topLogo.src = "assets/images/mobile/jagad-fanga-alla.svg";
+  topLogo.className = "top-svg";
+
   // Bottom SVGs (resting at viewport bottom, aligned to board)
   const bumper = document.createElement("img");
   bumper.src = "assets/images/mobile/jagad-kanal5-bumper.svg";
@@ -154,6 +159,7 @@ export function createMobileOverlay() {
   instruktioner.src = "assets/images/mobile/jagad-kanal5-instruktioner.svg";
   instruktioner.className = "bottom-svg bottom-right";
 
+  overlay.appendChild(topLogo);
   overlay.appendChild(leftImg);
   overlay.appendChild(rightImg);
   overlay.appendChild(bumper);
@@ -172,6 +178,14 @@ export function updateMobileOverlay(bounds, offset) {
   if (!overlay) return;
 
   const vw = window.innerWidth;
+
+  // Top SVG: centered horizontally above the board
+  const topSvg = overlay.querySelector(".top-svg");
+  if (topSvg) {
+    const boardCenterX = (bounds.left + bounds.right) / 2;
+    topSvg.style.left = boardCenterX + "px";
+    topSvg.style.bottom = (window.innerHeight - bounds.top + offset * 0.5) + "px";
+  }
 
   // Side SVGs: match board top/height, pushed out from board left/right edges
   const leftSvg = overlay.querySelector(".side-svg.left");

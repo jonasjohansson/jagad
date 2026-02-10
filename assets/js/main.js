@@ -177,6 +177,7 @@ const loadingProgress = {
       lineHeight: "1.5",
       pointerEvents: "none",
       minWidth: "140px",
+      display: "none",
     });
     document.body.appendChild(el);
 
@@ -1668,19 +1669,14 @@ const loadingProgress = {
   window.addEventListener("keydown", (e) => {
     const keyLower = e.key.toLowerCase();
 
-    // Toggle GUI with CMD/CTRL+G
+    // Toggle GUI + stats panel with CMD/CTRL+G
     if (keyLower === "g" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       if (guiLeft) {
-        guiLeft.domElement.style.display = guiLeft.domElement.style.display === "none" ? "" : "none";
+        const show = guiLeft.domElement.style.display === "none";
+        guiLeft.domElement.style.display = show ? "" : "none";
+        statsPanel.el.style.display = show ? "" : "none";
       }
-      return;
-    }
-
-    // Toggle stats panel with CMD/CTRL+F
-    if (keyLower === "f" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      statsPanel.el.style.display = statsPanel.el.style.display === "none" ? "" : "none";
       return;
     }
 
@@ -1778,8 +1774,7 @@ const loadingProgress = {
     if (f.light) f.light.intensity = 0;
 
     if (wire) {
-      if (wire.billboard) wire.billboard.visible = false;
-      // Set intensity to 0 instead of visible=false to avoid shader recompilation
+      if (wire.billboard) wire.billboard.scale.setScalar(0);
       if (wire.billboardLight) wire.billboardLight.intensity = 0;
     }
 
@@ -1976,6 +1971,22 @@ const loadingProgress = {
       case "STARTING":
         settings.gameStarted = true; // Mark as started but input blocked
         setChasersOpacity(0.1);
+        // Pre-set non-ready chaser materials to transparent to avoid shader recompilation at PLAYING
+        for (const c of chasers) {
+          if (!c.ready) {
+            if (c.isCarModel && c.mesh) {
+              c.mesh.traverse((child) => {
+                if (child.isMesh && child.material) {
+                  child.material.transparent = true;
+                  child.material.needsUpdate = true;
+                }
+              });
+            } else if (c.material) {
+              c.material.transparent = true;
+              c.material.needsUpdate = true;
+            }
+          }
+        }
         playAudio();
         // Start intro video from beginning — game starts on video end
         if (projectionVideo) {
@@ -1996,23 +2007,18 @@ const loadingProgress = {
         STATE.fugitiveValue = 250; // Reset fugitive value
         STATE.playerScore = 0;
         STATE.capturedCount = 0;
-        // Make non-ready chasers fully transparent (not hidden, to avoid shader recompilation lag)
+        // Make non-ready chasers fully transparent (shaders pre-warmed in STARTING)
         for (const c of chasers) {
           if (!c.ready) {
             if (c.light) c.light.visible = false;
-            // Set opacity to 0 instead of hiding mesh
             if (c.isCarModel && c.mesh) {
               c.mesh.traverse((child) => {
                 if (child.isMesh && child.material) {
-                  child.material.transparent = true;
                   child.material.opacity = 0;
-                  child.material.needsUpdate = true;
                 }
               });
             } else if (c.material) {
-              c.material.transparent = true;
               c.material.opacity = 0;
-              c.material.needsUpdate = true;
             }
           }
         }
@@ -3091,6 +3097,9 @@ const loadingProgress = {
 
     // ==================== TEXT ====================
     const textFolder = guiLeft.addFolder("📝 Text");
+    textFolder.add(settings, "glassEnabled").name("Glass Enabled").onChange((v) => {
+      for (const mesh of glassMeshes) mesh.visible = v;
+    });
     textFolder.add(settings, "glassTextEnabled").name("Show Text").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
     if (settings.glassMaterialOpacity === undefined) settings.glassMaterialOpacity = 1.0;
@@ -4207,12 +4216,12 @@ const loadingProgress = {
       }
 
       if (!this.isVisible()) {
-        if (this.billboard) this.billboard.visible = false;
+        // Keep visible at scale 0 to avoid shader recompilation on show
+        if (this.billboard) this.billboard.scale.setScalar(0);
         return;
       }
 
       if (this.billboard) {
-        this.billboard.visible = true;
         // Apply pop scale
         this.billboard.scale.setScalar(this.popScale);
       }
@@ -4292,7 +4301,7 @@ const loadingProgress = {
       if (this.billboardLight) {
         this.billboardLight.position.copy(this.billboard.position);
         const baseIntensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
-        this.billboardLight.intensity = this.billboard.visible ? baseIntensity : 0;
+        this.billboardLight.intensity = this.showWireAndBillboard ? baseIntensity : 0;
         this.billboardLight.distance = settings.billboardLightDistance;
       }
     }
@@ -4360,7 +4369,9 @@ const loadingProgress = {
         }
       }, 1500);
     } else {
-      // No high score - just display and reset
+      // No high score - show GAME OVER instead of initials entry
+      settings.glassTextRow1 = "GAME OVER";
+      updateGlassCanvas();
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;
     }
@@ -5238,7 +5249,7 @@ const loadingProgress = {
       updateAtmosphere(dt);
 
       // Update glass canvas for video/marquee/shuffle animation/high score entry
-      if (glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive() || STATE.enteringHighScore)) {
+      if (settings.glassEnabled && glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive() || STATE.enteringHighScore)) {
         updateGlassCanvas(timestamp);
       }
     }
@@ -6194,15 +6205,7 @@ const loadingProgress = {
       mesh.castShadow = false;
       mesh.receiveShadow = false;
 
-      const light = new THREE.PointLight(fugitiveColor, settings.fugitiveLightIntensity, 100);
-      light.position.set(0, 0, 0);
-      light.castShadow = true;
-      light.shadow.mapSize.width = 1024;
-      light.shadow.mapSize.height = 1024;
-      light.shadow.camera.near = 0.1;
-      light.shadow.camera.far = 50;
-      light.shadow.bias = -0.001;
-      mesh.add(light);
+      const light = null; // Fugitive lights disabled for performance
 
       const spawnPos = fugitiveSpawns[i];
       const roadPoint = findNearestRoadPoint(spawnPos.x, spawnPos.z);
@@ -6416,12 +6419,23 @@ const loadingProgress = {
     // Initialize projection plane
     initProjectionPlane();
 
+    // Pre-warm shaders: temporarily render all billboards to force GPU compilation
+    // This avoids lag spikes when fugitives first appear during gameplay
+    for (const wire of fugitiveWires) {
+      if (wire.billboard) wire.billboard.scale.setScalar(0.001);
+    }
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
+    for (const wire of fugitiveWires) {
+      if (wire.billboard) wire.billboard.scale.setScalar(0);
+    }
+
     // Initialize game state to PRE_GAME
     setGameState("PRE_GAME");
 
     // Auto-detect mobile/touch device and apply mobile mode
     // Don't auto-ready the chaser — let the first touch do it (which also unlocks audio)
-    if (settings.mobileEnabled && isMobileDevice()) {
+    if (isMobileDevice()) {
       applyMobileMode(true);
     }
 
