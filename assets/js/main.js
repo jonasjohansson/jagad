@@ -5116,9 +5116,8 @@ const loadingProgress = {
     const dt = STATE.lastTime ? Math.min(t - STATE.lastTime, 0.05) : 0;
     STATE.lastTime = t;
 
-    // Handle countdown during STARTING state
+    // Handle projection pump during STARTING state
     if (STATE.loaded && STATE.gameState === "STARTING") {
-      updateCountdown(dt);
       updateProjectionPump(dt);
     }
 
