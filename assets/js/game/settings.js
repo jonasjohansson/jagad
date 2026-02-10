@@ -228,7 +228,7 @@ export const defaultSettings = {
   // Playing state text (supports ${score}, ${time}, ${caught}, ${total}, ${status})
   playingTextRow1: "",
   playingTextRow2: "TIME:${time}",
-  playingTextRow3: " SCORE:${score}",
+  playingTextRow3: "SCORE:${score}",
   playingTextRow4: "",
 
   // Game Over state text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3}, ${hs1i}, ${hs1s}, ${hs2i}, ${hs2s}, ${hs3i}, ${hs3s})
