@@ -4488,11 +4488,10 @@ const loadingProgress = {
       }, 1500);
     } else {
       // No high score - show GAME OVER with score and high score list
-      const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
-      settings.glassTextRow1 = "GAME OVER";
-      settings.glassTextRow2 = getHighScoreString(0);
-      settings.glassTextRow3 = getHighScoreString(1);
-      settings.glassTextRow4 = getHighScoreString(2);
+      settings.glassTextRow1 = " GAME OVER";
+      settings.glassTextRow2 = " " + getHighScoreString(0);
+      settings.glassTextRow3 = " " + getHighScoreString(1);
+      settings.glassTextRow4 = " " + getHighScoreString(2);
       updateGlassCanvas();
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;

@@ -236,10 +236,10 @@ export const defaultSettings = {
   playingTextRow4: "",
 
   // Game Over state text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3}, ${hs1i}, ${hs1s}, ${hs2i}, ${hs2s}, ${hs3i}, ${hs3s})
-  gameOverTextRow1: "${initials}${score}",
-  gameOverTextRow2: "${s1}",
-  gameOverTextRow3: "${s2}",
-  gameOverTextRow4: "${s3}",
+  gameOverTextRow1: " ${initials}${score}",
+  gameOverTextRow2: " ${s1}",
+  gameOverTextRow3: " ${s2}",
+  gameOverTextRow4: " ${s3}",
 
   // State projection images
   preGameImage: "",
@@ -256,25 +256,25 @@ export const defaultSettings = {
   // Only non-default values need to be stored
   glbParts: {
     // Default overrides for specific part types
-    "_defaults": {
-      "lamp": { color: "#111111", metalness: 0.54 },
-      "window": { metalness: 0 },
-      "path": { metalness: 0 },
-      "road": { metalness: 0, roughness: 0.84 },
-      "glass": { opacity: 0.5 },
+    _defaults: {
+      lamp: { color: "#111111", metalness: 0.54 },
+      window: { metalness: 0 },
+      path: { metalness: 0 },
+      road: { metalness: 0, roughness: 0.84 },
+      glass: { opacity: 0.5 },
       "building-building": { opacity: 0 },
-      "pavement-paths": { opacity: 0 }
+      "pavement-paths": { opacity: 0 },
     },
-    "Lamps": { color: "#7a7a7a", roughness: 0.82 },
+    Lamps: { color: "#7a7a7a", roughness: 0.82 },
     "Windows-Windows": { roughness: 0.86 },
-    "Leaves": { metalness: 0, roughness: 0.85, opacity: 0.95, wireframe: false }
+    Leaves: { metalness: 0, roughness: 0.85, opacity: 0.95, wireframe: false },
   },
 
   // High Scores (array of {initials: "AAA", score: 0})
   highScores: [
     { initials: "AAA", score: 999 },
     { initials: "BBB", score: 500 },
-    { initials: "CCC", score: 100 }
+    { initials: "CCC", score: 100 },
   ],
 };
 
@@ -294,7 +294,7 @@ export function loadSettings() {
       if (parsed.glbParts) {
         result.glbParts = {
           _defaults: { ...defaultSettings.glbParts._defaults },
-          ...parsed.glbParts
+          ...parsed.glbParts,
         };
       }
       return result;
@@ -362,7 +362,7 @@ export function importSettings(callback) {
         if (imported.glbParts) {
           merged.glbParts = {
             _defaults: { ...defaultSettings.glbParts._defaults },
-            ...imported.glbParts
+            ...imported.glbParts,
           };
         }
         callback(merged);
