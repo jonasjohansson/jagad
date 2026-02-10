@@ -2094,7 +2094,7 @@ const loadingProgress = {
       initials = "___";
     }
     // Pad score to 4 characters so "SCORE:" doesn't shift
-    const paddedScore = String(STATE.playerScore || 0).padStart(3, " ");
+    const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
     return text
       .replace(/\$\{score\}/g, paddedScore)
       .replace(/\$\{time\}/g, String(Math.floor(STATE.gameTimerRemaining || 0)))
