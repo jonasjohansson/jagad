@@ -13,7 +13,7 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=15";
+import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=16";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=7";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=4";
 
