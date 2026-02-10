@@ -7,6 +7,9 @@
     <meta name="screen-orientation" content="landscape" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <link rel="stylesheet" href="assets/css/style.css" />
     <link rel="stylesheet" href="assets/fonts/stylesheet.css" />
     <link rel="icon" href="data:," />
@@ -27,11 +30,13 @@
     </script>
 
     <script type="module">
+      // Cache-bust: append build timestamp to all dynamic imports
+      const v = "v=132";
       // Load lil-gui as a global for compatibility
-      import("./assets/js/lib/lil-gui.esm.js").then(module => {
+      import(`./assets/js/lib/lil-gui.esm.js?${v}`).then(module => {
         window.lil = module;
         // Load main game after lil-gui is available
-        import("./assets/js/main.js?v=131");
+        import(`./assets/js/main.js?${v}`);
       });
     </script>
   </body>
