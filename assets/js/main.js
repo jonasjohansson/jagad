@@ -116,6 +116,8 @@ const loadingProgress = {
   let helicopterBoundsHelper = null;
   let searchlights = null;
   let searchlightHelpers = [];
+  let helicopterLightHelper = null;
+  let chaserLightHelpers = [];
 
   // Reusable temp objects to avoid per-frame allocations
   const _tempVec3A = new THREE.Vector3();
@@ -693,7 +695,15 @@ const loadingProgress = {
       helicopter.light.color.set(settings.helicopterLightColor);
       helicopter.light.angle = (settings.helicopterLightAngle * Math.PI) / 180;
       helicopter.light.distance = settings.helicopterLightDistance || 50;
+      helicopter.light.position.set(
+        settings.helicopterLightOffsetX || 0,
+        settings.helicopterLightOffsetY || 0,
+        settings.helicopterLightOffsetZ || 0
+      );
     }
+
+    // Update helicopter spotlight helper
+    if (helicopterLightHelper) helicopterLightHelper.update();
 
     // Animate searchlight sway
     const swayAmount = settings.helicopterSearchlightSway || 0;
@@ -1997,16 +2007,13 @@ const loadingProgress = {
         break;
 
       case "PLAYING":
-        // Set playing text and start timer
-        applyPlayingText();
-        playSFX("gameStart");
-        playAudio(); // Ensure music is playing
-        playHelicopterSound(); // Start helicopter loop
+        // Frame 0: minimal state setup only
         STATE.gameTimerStarted = true;
         STATE.gameTimerRemaining = 90;
-        STATE.fugitiveValue = 250; // Reset fugitive value
+        STATE.fugitiveValue = 250;
         STATE.playerScore = 0;
         STATE.capturedCount = 0;
+
         // Make non-ready chasers fully transparent (shaders pre-warmed in STARTING)
         for (const c of chasers) {
           if (!c.ready) {
@@ -2022,18 +2029,33 @@ const loadingProgress = {
             }
           }
         }
+
         // Start fugitive light fade-in
         for (const f of fugitives) {
           if (f.light) f.light.intensity = 0;
         }
         STATE.fugitiveLightFadeStart = performance.now();
 
-        // Trigger fugitive billboard pop-in animation
+        // Spread remaining work across frames to avoid single-frame stutter
+        // Frame 1: text + projection swap
+        requestAnimationFrame(() => {
+          applyPlayingText();
+          updateProjectionForState("PLAYING");
+        });
+        // Frame 2: audio
+        setTimeout(() => {
+          playSFX("gameStart");
+          playAudio();
+          playHelicopterSound();
+        }, 50);
+        // Frame 3+: stagger billboard pop-ins
+        { let popDelay = 200;
         for (const wire of fugitiveWires) {
           if (!wire.isChaser) {
-            wire.startPopIn();
+            setTimeout(() => wire.startPopIn(), popDelay);
+            popDelay += 200;
           }
-        }
+        } }
         break;
 
       case "GAME_OVER":
@@ -2064,13 +2086,13 @@ const loadingProgress = {
         break;
     }
 
-    // Update the glass canvas to reflect text changes
-    if (typeof updateGlassCanvas === "function") {
-      updateGlassCanvas();
+    // Update the glass canvas and projection (deferred for PLAYING to avoid frame stutter)
+    if (newState !== "PLAYING") {
+      if (typeof updateGlassCanvas === "function") {
+        updateGlassCanvas();
+      }
+      updateProjectionForState(newState);
     }
-
-    // Update projection image for this state
-    updateProjectionForState(newState);
 
     // Update GUI state display
     if (STATE.updateStateDisplay) STATE.updateStateDisplay();
@@ -2209,7 +2231,8 @@ const loadingProgress = {
       STATE.levelCenter.z + settings.projectionOffsetZ
     );
     projectionPlane.renderOrder = 10;
-    projectionPlane.visible = false;
+    projectionPlane.visible = true;
+    projectionPlane.material.opacity = 0;
 
     scene.add(projectionPlane);
     console.log("Projection plane initialized at:", projectionPlane.position);
@@ -2291,9 +2314,11 @@ const loadingProgress = {
     const useVideo = state === "STARTING" && projectionVideoTexture;
 
     if (useVideo) {
-      projectionPlane.material.map = projectionVideoTexture;
-      projectionPlane.material.needsUpdate = true;
-      projectionPlane.visible = true;
+      if (projectionPlane.material.map !== projectionVideoTexture) {
+        projectionPlane.material.map = projectionVideoTexture;
+        projectionPlane.material.needsUpdate = true;
+      }
+      projectionPlane.material.opacity = settings.projectionOpacity;
       projectionVideo.play().catch(() => {});
 
       // Use actual video dimensions for aspect ratio
@@ -2325,9 +2350,11 @@ const loadingProgress = {
       }
 
       if (texture) {
-        projectionPlane.material.map = texture;
-        projectionPlane.material.needsUpdate = true;
-        projectionPlane.visible = true;
+        if (projectionPlane.material.map !== texture) {
+          projectionPlane.material.map = texture;
+          projectionPlane.material.needsUpdate = true;
+        }
+        projectionPlane.material.opacity = settings.projectionOpacity;
 
         const img = texture.image;
         if (img && img.width && img.height) {
@@ -2341,12 +2368,12 @@ const loadingProgress = {
           projectionPlane.scale.setScalar(settings.projectionScale);
         }
       } else {
-        projectionPlane.visible = false;
+        // Hide by setting opacity to 0 instead of toggling visible (avoids shader recompilation)
+        projectionPlane.material.opacity = 0;
       }
     }
 
-    // Update projection properties
-    projectionPlane.material.opacity = settings.projectionOpacity;
+    // Update projection position
     projectionPlane.position.x = STATE.levelCenter.x + settings.projectionOffsetX;
     projectionPlane.position.y = STATE.levelCenter.y + settings.projectionOffsetY;
     projectionPlane.position.z = STATE.levelCenter.z + settings.projectionOffsetZ;
@@ -3134,8 +3161,33 @@ const loadingProgress = {
     headlightsFolder.add(settings, "chaserLightDistance", 1, 100, 1).name("Distance").onChange(updateChaserLights);
     headlightsFolder.add(settings, "chaserLightAngle", 1, 90, 1).name("Angle (deg)").onChange(updateChaserLights);
     headlightsFolder.add(settings, "chaserLightPenumbra", 0, 1, 0.05).name("Penumbra").onChange(updateChaserLights);
-    headlightsFolder.add(settings, "chaserLightHeight", -1, 1, 0.01).name("Height").onChange(updateChaserLights);
-    headlightsFolder.add(settings, "chaserLightOffset", -1, 1, 0.01).name("Offset").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightHeight", -1, 1, 0.01).name("Height (Y)").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightOffset", -1, 1, 0.01).name("Offset (Z)").onChange(updateChaserLights);
+    if (settings.chaserLightOffsetX === undefined) settings.chaserLightOffsetX = 0;
+    headlightsFolder.add(settings, "chaserLightOffsetX", -1, 1, 0.01).name("Offset (X)").onChange(updateChaserLights);
+    if (settings.chaserLightTargetX === undefined) settings.chaserLightTargetX = 0;
+    if (settings.chaserLightTargetY === undefined) settings.chaserLightTargetY = 0;
+    if (settings.chaserLightTargetZ === undefined) settings.chaserLightTargetZ = -5;
+    headlightsFolder.add(settings, "chaserLightTargetX", -10, 10, 0.1).name("Aim X").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightTargetY", -10, 10, 0.1).name("Aim Y").onChange(updateChaserLights);
+    headlightsFolder.add(settings, "chaserLightTargetZ", -10, 10, 0.1).name("Aim Z").onChange(updateChaserLights);
+    headlightsFolder.add({ debug: false }, "debug").name("Show Helpers").onChange((v) => {
+      // Remove existing helpers
+      for (const h of chaserLightHelpers) {
+        scene.remove(h);
+        h.dispose();
+      }
+      chaserLightHelpers = [];
+      if (v) {
+        for (const c of chasers) {
+          if (c.light) {
+            const helper = new THREE.SpotLightHelper(c.light);
+            scene.add(helper);
+            chaserLightHelpers.push(helper);
+          }
+        }
+      }
+    });
     headlightsFolder.close();
 
     // Glass Overlay (video background)
@@ -3168,6 +3220,23 @@ const loadingProgress = {
     helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
     if (settings.helicopterLightDistance === undefined) settings.helicopterLightDistance = 50;
     helicopterFolder.add(settings, "helicopterLightDistance", 10, 200, 5).name("Spotlight Distance");
+    if (settings.helicopterLightOffsetX === undefined) settings.helicopterLightOffsetX = 0;
+    if (settings.helicopterLightOffsetY === undefined) settings.helicopterLightOffsetY = 0;
+    if (settings.helicopterLightOffsetZ === undefined) settings.helicopterLightOffsetZ = 0;
+    helicopterFolder.add(settings, "helicopterLightOffsetX", -5, 5, 0.1).name("Light X");
+    helicopterFolder.add(settings, "helicopterLightOffsetY", -5, 5, 0.1).name("Light Y");
+    helicopterFolder.add(settings, "helicopterLightOffsetZ", -5, 5, 0.1).name("Light Z");
+    helicopterFolder.add({ debug: false }, "debug").name("Show Light Helper").onChange((v) => {
+      if (helicopterLightHelper) {
+        scene.remove(helicopterLightHelper);
+        helicopterLightHelper.dispose();
+        helicopterLightHelper = null;
+      }
+      if (v && helicopter && helicopter.light) {
+        helicopterLightHelper = new THREE.SpotLightHelper(helicopter.light);
+        scene.add(helicopterLightHelper);
+      }
+    });
     helicopterFolder.add(settings, "helicopterSearchlightSway", 0, 5, 0.1).name("Searchlight Sway");
     helicopterFolder.add(settings, "helicopterSearchlightSpeed", 0.1, 2, 0.1).name("Sway Speed");
     helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
@@ -3892,8 +3961,17 @@ const loadingProgress = {
         c.light.shadow.camera.far = settings.chaserLightDistance || 50;
         // Account for mesh scale when setting light position
         const meshScale = c.mesh.scale.y || 1;
+        c.light.position.x = (settings.chaserLightOffsetX || 0) / meshScale;
         c.light.position.y = settings.chaserLightHeight / meshScale;
         c.light.position.z = -settings.chaserLightOffset / meshScale; // Front offset (negative due to car flip)
+        // Update light target direction
+        if (c.lightTarget) {
+          c.lightTarget.position.set(
+            (settings.chaserLightTargetX || 0) / meshScale,
+            (settings.chaserLightTargetY || 0) / meshScale,
+            (settings.chaserLightTargetZ !== undefined ? settings.chaserLightTargetZ : -5) / meshScale
+          );
+        }
       }
       // Update materials (handle both box and car models)
       if (c.isCarModel) {
@@ -3910,6 +3988,8 @@ const loadingProgress = {
         c.mesh.material.emissiveIntensity = c.active ? 0.3 : 0.05;
       }
     }
+    // Update debug helpers
+    for (const h of chaserLightHelpers) h.update();
   }
 
   // ============================================
@@ -4078,16 +4158,18 @@ const loadingProgress = {
       this.billboard.renderOrder = 100; // Render above wire but respect depth
       scene.add(this.billboard);
 
-      // Add point light for billboard emission
-      // Fugitives use fugitiveLightIntensity, chasers use billboardLightIntensity
-      const lightIntensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
-      this.billboardLight = new THREE.PointLight(
-        this.color,
-        lightIntensity,
-        settings.billboardLightDistance
-      );
-      this.billboardLight.castShadow = false;
-      scene.add(this.billboardLight);
+      // Add point light for billboard emission (chasers only, fugitive lights disabled for performance)
+      if (this.isChaser) {
+        this.billboardLight = new THREE.PointLight(
+          this.color,
+          settings.billboardLightIntensity,
+          settings.billboardLightDistance
+        );
+        this.billboardLight.castShadow = false;
+        scene.add(this.billboardLight);
+      } else {
+        this.billboardLight = null;
+      }
 
       if (!this.isChaser) {
         const textureLoader = new THREE.TextureLoader();
@@ -4101,6 +4183,8 @@ const loadingProgress = {
             this.textures[0] = texture;
             this.billboard.material.map = texture;
             this.billboard.material.needsUpdate = true;
+            // Pre-upload texture to GPU to avoid stall on first render
+            renderer.initTexture(texture);
           },
           undefined,
           () => this.billboard.material.color.set(this.color)
@@ -4108,6 +4192,7 @@ const loadingProgress = {
         textureLoader.load(facePath + pair[1],
           (texture) => {
             this.textures[1] = texture;
+            renderer.initTexture(texture);
           }
         );
       } else {
@@ -4634,8 +4719,8 @@ const loadingProgress = {
     const particleVelocities = [];
     const particleColors = new Float32Array(particleCount * 3);
 
-    const billboardPos = billboard ? billboard.position.clone() : position.clone();
-    billboardPos.y = position.y + 2;
+    const billboardPos = position.clone();
+    billboardPos.y = position.y + 0.3;
 
     for (let i = 0; i < particleCount; i++) {
       particlePositions[i * 3] = billboardPos.x + (Math.random() - 0.5) * 0.3;
@@ -5253,6 +5338,9 @@ const loadingProgress = {
         updateGlassCanvas(timestamp);
       }
     }
+
+    // Update chaser light debug helpers
+    for (const h of chaserLightHelpers) h.update();
 
     // Render with post-processing (EffectComposer)
     if (composer) {
@@ -6322,7 +6410,7 @@ const loadingProgress = {
         const light = new THREE.SpotLight(color, 0, settings.chaserLightDistance, angleRad, settings.chaserLightPenumbra, 1);
         const meshScale = mesh.scale.y || 1;
         // Position at front of car (local Z-) and at set height (negative due to car flip)
-        light.position.set(0, settings.chaserLightHeight / meshScale, -settings.chaserLightOffset / meshScale);
+        light.position.set((settings.chaserLightOffsetX || 0) / meshScale, settings.chaserLightHeight / meshScale, -settings.chaserLightOffset / meshScale);
         light.castShadow = true;
         light.shadow.mapSize.width = 1024;
         light.shadow.mapSize.height = 1024;
@@ -6332,7 +6420,11 @@ const loadingProgress = {
 
         // Create target for spotlight - point forward from the car (negative Z due to car flip)
         const lightTarget = new THREE.Object3D();
-        lightTarget.position.set(0, 0, -5 / meshScale); // Point far ahead in local -Z
+        lightTarget.position.set(
+          (settings.chaserLightTargetX || 0) / meshScale,
+          (settings.chaserLightTargetY || 0) / meshScale,
+          (settings.chaserLightTargetZ !== undefined ? settings.chaserLightTargetZ : -5) / meshScale
+        );
         mesh.add(lightTarget);
         light.target = lightTarget;
         mesh.add(light);
