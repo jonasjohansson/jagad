@@ -1674,7 +1674,7 @@ const loadingProgress = {
   ];
 
   // Character set for high score initials
-  const HIGH_SCORE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
+  const HIGH_SCORE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
   // Blocked words for high score initials
   let blockedWords = [];
