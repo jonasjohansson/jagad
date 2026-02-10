@@ -127,7 +127,7 @@ const loadingProgress = {
 
   const settings = {
     gameStarted: false,
-    ...loadSettings(),
+    ...defaultSettings,
     startGame: function() {
       if (!STATE.loaded) return;
       settings.gameStarted = true;
@@ -1906,29 +1906,13 @@ const loadingProgress = {
   // GAME STATE MANAGEMENT
   // ============================================
 
-  const HIGH_SCORES_KEY = "jagadHighScores";
-
   function loadHighScores() {
-    try {
-      const saved = localStorage.getItem(HIGH_SCORES_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Failed to load high scores:", e);
-    }
     return settings.highScores.slice(); // Return copy of defaults
   }
 
   function saveHighScores(scores) {
-    try {
-      localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(scores));
-      settings.highScores = scores;
-      // Update GUI display
-      if (STATE.updateStateDisplay) STATE.updateStateDisplay();
-    } catch (e) {
-      console.error("Failed to save high scores:", e);
-    }
+    settings.highScores = scores;
+    if (STATE.updateStateDisplay) STATE.updateStateDisplay();
   }
 
   // Set all chasers to low or full opacity
@@ -2859,19 +2843,12 @@ const loadingProgress = {
     guiLeft.domElement.style.left = "10px";
     guiLeft.domElement.style.top = "0px";
 
-    // Auto-save all settings on any GUI change
-    guiLeft.onChange(() => saveSettings(settings));
-
     // Settings controls at the top
     guiLeft.add(settings, "exportSettings").name("💾 Export Settings");
     guiLeft.add(settings, "importSettings").name("📂 Import Settings");
     guiLeft.add({ clearCache: async function() {
       if (confirm("Clear all browser cache, storage, and reload?")) {
         try {
-          // Clear localStorage (settings, high scores, etc.)
-          localStorage.clear();
-          // Clear sessionStorage
-          sessionStorage.clear();
           // Clear Cache Storage
           if ('caches' in window) {
             const cacheNames = await caches.keys();
@@ -3588,7 +3565,6 @@ const loadingProgress = {
       settings.glbParts[name] = {};
     }
     settings.glbParts[name][key] = value;
-    saveSettings(settings);
   }
 
   function setupGLBPartsGUI() {
