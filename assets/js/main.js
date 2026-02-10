@@ -1320,9 +1320,9 @@ const loadingProgress = {
   function updateGlassCanvas(timestamp = 0) {
     if (!glassContext) return;
 
-    // Re-apply game over text each frame during high score entry for blinking initials
+    // Re-apply high score text each frame during high score entry for blinking initials
     if (STATE.enteringHighScore) {
-      applyGameOverText();
+      applyHighScoreText();
     }
 
     const ctx = glassContext;
@@ -2084,7 +2084,6 @@ const loadingProgress = {
             wire.hideWireAndBillboard();
           }
         }
-        applyGameOverText();
         showGameScore();
         // Play win/lose SFX based on high score
         const isHighScore = checkHighScore(STATE.playerScore) >= 0;
@@ -2208,6 +2207,13 @@ const loadingProgress = {
     settings.glassTextRow2 = replaceTemplateVars(settings.playingTextRow2);
     settings.glassTextRow3 = replaceTemplateVars(settings.playingTextRow3);
     settings.glassTextRow4 = replaceTemplateVars(settings.playingTextRow4);
+  }
+
+  function applyHighScoreText() {
+    settings.glassTextRow1 = replaceTemplateVars(settings.highScoreTextRow1);
+    settings.glassTextRow2 = replaceTemplateVars(settings.highScoreTextRow2);
+    settings.glassTextRow3 = replaceTemplateVars(settings.highScoreTextRow3);
+    settings.glassTextRow4 = replaceTemplateVars(settings.highScoreTextRow4);
   }
 
   function applyGameOverText() {
@@ -2487,8 +2493,8 @@ const loadingProgress = {
   }
 
   function updateHighScoreDisplay() {
-    // Use configured game over text with template variables
-    applyGameOverText();
+    // Use configured high score text with template variables
+    applyHighScoreText();
     updateGlassCanvas();
   }
 
@@ -2512,8 +2518,8 @@ const loadingProgress = {
   }
 
   function displayHighScores() {
-    // Use configured game over text with template variables
-    applyGameOverText();
+    // Use configured high score text with template variables
+    applyHighScoreText();
     updateGlassCanvas();
 
     // Start reset timer
@@ -3015,10 +3021,24 @@ const loadingProgress = {
     });
     playingFolder.close();
 
-    // Game Over settings (text supports ${score}, ${time}, ${caught})
+    // High Score entry settings
+    const highScoreFolder = statesFolder.addFolder("High Score");
+    const updateHighScoreTextGUI = () => {
+      if (STATE.gameState === "GAME_OVER" && STATE.enteringHighScore) {
+        applyHighScoreText();
+        updateGlassCanvas();
+      }
+    };
+    highScoreFolder.add(settings, "highScoreTextRow1").name("Text Row 1").onChange(updateHighScoreTextGUI);
+    highScoreFolder.add(settings, "highScoreTextRow2").name("Text Row 2").onChange(updateHighScoreTextGUI);
+    highScoreFolder.add(settings, "highScoreTextRow3").name("Text Row 3").onChange(updateHighScoreTextGUI);
+    highScoreFolder.add(settings, "highScoreTextRow4").name("Text Row 4").onChange(updateHighScoreTextGUI);
+    highScoreFolder.close();
+
+    // Game Over settings (no high score)
     const gameOverFolder = statesFolder.addFolder("Game Over");
     const updateGameOverText = () => {
-      if (STATE.gameState === "GAME_OVER") {
+      if (STATE.gameState === "GAME_OVER" && !STATE.enteringHighScore) {
         applyGameOverText();
         updateGlassCanvas();
       }
@@ -4449,25 +4469,20 @@ const loadingProgress = {
   }
 
   function showGameScore() {
-    // Apply the configured game over text (with template variables)
-    applyGameOverText();
-    updateGlassCanvas();
-
     // Check for high score
     const highScorePosition = checkHighScore(STATE.playerScore);
     if (highScorePosition >= 0) {
-      // Player made the high score list - start entry mode
+      // Player made the high score list - show high score text, then start entry
+      applyHighScoreText();
+      updateGlassCanvas();
       setTimeout(() => {
         if (STATE.gameState === "GAME_OVER") {
           startHighScoreEntry(highScorePosition);
         }
       }, 1500);
     } else {
-      // No high score - show GAME OVER with score and high score list
-      settings.glassTextRow1 = " GAME OVER";
-      settings.glassTextRow2 = " " + getHighScoreString(0);
-      settings.glassTextRow3 = " " + getHighScoreString(1);
-      settings.glassTextRow4 = " " + getHighScoreString(2);
+      // No high score - use game over text templates
+      applyGameOverText();
       updateGlassCanvas();
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;
