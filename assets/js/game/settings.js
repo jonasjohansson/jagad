@@ -242,7 +242,7 @@ export const defaultSettings = {
   startingImage: "",
   playingImage: "",
   gameOverImage: "",
-  projectionOpacity: 0.55,
+  projectionOpacity: 1,
   projectionScale: 0.2,
   projectionOffsetX: 0,
   projectionOffsetY: 0.75,
