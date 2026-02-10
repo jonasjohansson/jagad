@@ -1952,6 +1952,7 @@ const loadingProgress = {
         playAudio();
         // Start intro video from beginning — game starts on video end
         if (projectionVideo) {
+          projectionVideo.muted = false;
           projectionVideo.currentTime = 0;
           projectionVideo.play().catch(() => {});
         }

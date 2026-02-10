@@ -31,7 +31,7 @@ export const PATHS = {
   },
   video: {
     windowAmbience: "assets/video/Jagad_Window_Ambience_v1.mp4",
-    countdownIntro: "assets/video/Jagad_Countdown_Intro_16x9.mp4",
+    countdownIntro: "assets/video/Jagad_Countdown_Intro_16x9_Audio.mp4",
   },
 };
 
