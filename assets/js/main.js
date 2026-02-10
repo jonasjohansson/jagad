@@ -1744,9 +1744,9 @@ const loadingProgress = {
       triggerCapture(index, index);
     }
 
-    // Force timer to run out
+    // Force timer to run out (use near-zero so next frame triggers GAME_OVER)
     if (e.key === "5" && STATE.gameState === "PLAYING" && STATE.gameTimerStarted) {
-      STATE.gameTimerRemaining = 0;
+      STATE.gameTimerRemaining = 0.001;
     }
 
     keys.add(keyLower);
