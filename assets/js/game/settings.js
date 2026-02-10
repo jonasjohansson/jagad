@@ -276,6 +276,12 @@ export function loadSettings() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
+      // Don't let saved empty strings override non-empty defaults
+      for (const key of Object.keys(parsed)) {
+        if (parsed[key] === "" && defaultSettings[key] !== "") {
+          delete parsed[key];
+        }
+      }
       // Deep merge glbParts to preserve _defaults while adding saved per-part settings
       const result = { ...defaultSettings, ...parsed };
       if (parsed.glbParts) {
