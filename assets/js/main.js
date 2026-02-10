@@ -2247,8 +2247,10 @@ const loadingProgress = {
       projectionPlane.visible = true;
       projectionVideo.play().catch(() => {});
 
-      // 16:9 aspect
-      const aspect = 16 / 9;
+      // Use actual video dimensions for aspect ratio
+      const vw = projectionVideo.videoWidth;
+      const vh = projectionVideo.videoHeight;
+      const aspect = (vw && vh) ? vw / vh : 1;
       projectionPlane.scale.set(
         settings.projectionScale * aspect,
         settings.projectionScale,
