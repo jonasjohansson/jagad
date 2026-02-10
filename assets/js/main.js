@@ -2634,6 +2634,11 @@ const loadingProgress = {
 
   const portraitOverlay = document.getElementById("portrait-overlay");
 
+  // Show portrait overlay immediately on mobile if in portrait mode
+  if (portraitOverlay && isMobileDevice() && window.innerHeight > window.innerWidth) {
+    portraitOverlay.style.display = "flex";
+  }
+
   /** Project board corners to screen-space pixel bounds using ortho camera */
   function getBoardScreenBounds() {
     if (!orthoCamera) return null;
@@ -2761,7 +2766,7 @@ const loadingProgress = {
   }
 
   function checkPortraitMode() {
-    if (!settings.mobileEnabled || !portraitOverlay || !isMobileDevice()) return;
+    if (!portraitOverlay || !isMobileDevice()) return;
 
     const isPortrait = window.innerHeight > window.innerWidth;
     portraitOverlay.style.display = isPortrait ? "flex" : "none";
