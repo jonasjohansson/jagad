@@ -5465,8 +5465,10 @@ const loadingProgress = {
           lampMeshes.push(obj);
           const mat = obj.material;
           if (mat.emissive) {
-            const lampColor = (settings.glbParts._defaults && settings.glbParts._defaults.lamp && settings.glbParts._defaults.lamp.color) || "#ffffaa";
-            mat.emissive.set(lampColor);
+            // Resolve lamp color through full glbParts chain (defaults + per-part overrides)
+            const resolved = getGLBPartDefaults(obj.name, { color: "#ffffaa" });
+            mat.emissive.set(resolved.color);
+            if (mat.color) mat.color.set(resolved.color);
             mat.emissiveIntensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
           }
         } else if (isRoad && obj.material) {
