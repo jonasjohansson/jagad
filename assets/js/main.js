@@ -1947,15 +1947,14 @@ const loadingProgress = {
         break;
 
       case "STARTING":
-        // Begin countdown
-        STATE.countdownValue = settings.countdownDuration || 10;
-        STATE.countdownTimer = 0;
-        applyStartingText();
         settings.gameStarted = true; // Mark as started but input blocked
         setChasersOpacity(0.1);
-        playSFX("countdown");
         playAudio();
-        triggerProjectionPump();
+        // Start intro video from beginning — game starts on video end
+        if (projectionVideo) {
+          projectionVideo.currentTime = 0;
+          projectionVideo.play().catch(() => {});
+        }
         break;
 
       case "PLAYING":
@@ -2179,20 +2178,23 @@ const loadingProgress = {
     if (PATHS.video && PATHS.video.countdownIntro) {
       projectionVideo = document.createElement("video");
       projectionVideo.src = PATHS.video.countdownIntro;
-      projectionVideo.loop = true;
+      projectionVideo.loop = false;
       projectionVideo.muted = true;
       projectionVideo.playsInline = true;
       projectionVideo.crossOrigin = "anonymous";
       projectionVideo.addEventListener("canplaythrough", () => {
-        projectionVideoTexture = new THREE.VideoTexture(projectionVideo);
-        projectionVideoTexture.colorSpace = THREE.SRGBColorSpace;
-        // Show video immediately if in PRE_GAME
-        if (STATE.gameState === "PRE_GAME") {
-          updateProjectionForState("PRE_GAME");
+        if (!projectionVideoTexture) {
+          projectionVideoTexture = new THREE.VideoTexture(projectionVideo);
+          projectionVideoTexture.colorSpace = THREE.SRGBColorSpace;
+        }
+      }, { once: true });
+      // When video ends, transition to PLAYING
+      projectionVideo.addEventListener("ended", () => {
+        if (STATE.gameState === "STARTING") {
+          setGameState("PLAYING");
         }
       });
       projectionVideo.load();
-      projectionVideo.play().catch(() => {});
     }
   }
 
@@ -2236,8 +2238,8 @@ const loadingProgress = {
       return;
     }
 
-    // Use video for PRE_GAME and STARTING states
-    const useVideo = (state === "PRE_GAME" || state === "STARTING") && projectionVideoTexture;
+    // Use video for STARTING state (intro plays until video ends)
+    const useVideo = state === "STARTING" && projectionVideoTexture;
 
     if (useVideo) {
       projectionPlane.material.map = projectionVideoTexture;
