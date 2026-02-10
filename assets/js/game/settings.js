@@ -239,7 +239,7 @@ export const defaultSettings = {
 
   // State projection images
   preGameImage: "pre-game.png",
-  startingImage: "",
+  startingImage: "starting-game.png",
   playingImage: "",
   gameOverImage: "",
   projectionOpacity: 0.55,

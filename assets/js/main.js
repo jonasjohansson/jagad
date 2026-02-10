@@ -1953,6 +1953,7 @@ const loadingProgress = {
         setChasersOpacity(0.1);
         playSFX("countdown");
         playAudio();
+        triggerProjectionPump();
         break;
 
       case "PLAYING":
@@ -2178,7 +2179,7 @@ const loadingProgress = {
 
     const stateImages = {
       PRE_GAME: settings.preGameImage,
-      STARTING: settings.startingImage,
+      STARTING: settings.startingImage || settings.preGameImage,
       PLAYING: settings.playingImage,
       GAME_OVER: settings.gameOverImage,
     };
@@ -2214,16 +2215,20 @@ const loadingProgress = {
 
     const stateImageSettings = {
       PRE_GAME: settings.preGameImage,
-      STARTING: settings.startingImage,
+      STARTING: settings.startingImage || settings.preGameImage,
       PLAYING: settings.playingImage,
       GAME_OVER: settings.gameOverImage,
     };
 
     const imageName = stateImageSettings[state];
-    console.log(`updateProjectionForState(${state}): image=${imageName}, texture=${!!projectionTextures[state]}`);
+    // Fall back to PRE_GAME texture during STARTING if its own texture isn't ready
+    let texture = projectionTextures[state];
+    if (!texture && state === "STARTING") {
+      texture = projectionTextures["PRE_GAME"];
+    }
+    console.log(`updateProjectionForState(${state}): image=${imageName}, texture=${!!texture}`);
 
-    if (imageName && imageName.trim() !== "" && projectionTextures[state]) {
-      const texture = projectionTextures[state];
+    if (texture) {
       projectionPlane.material.map = texture;
       projectionPlane.material.needsUpdate = true;
       projectionPlane.visible = true;
@@ -2279,6 +2284,35 @@ const loadingProgress = {
     );
   }
 
+  // Projection pump effect for countdown beats
+  let projectionPumpTime = 0;
+  const PROJECTION_PUMP_DURATION = 0.3; // seconds for pump to decay
+  const PROJECTION_PUMP_STRENGTH = 0.15; // scale boost (fraction of projectionScale)
+
+  function triggerProjectionPump() {
+    projectionPumpTime = PROJECTION_PUMP_DURATION;
+  }
+
+  function updateProjectionPump(dt) {
+    if (projectionPumpTime <= 0 || !projectionPlane || !projectionPlane.visible) return;
+
+    projectionPumpTime = Math.max(0, projectionPumpTime - dt);
+    const t = projectionPumpTime / PROJECTION_PUMP_DURATION; // 1 -> 0
+    const ease = t * t; // quadratic ease-out (fast attack, smooth decay)
+    const boost = 1 + PROJECTION_PUMP_STRENGTH * ease;
+
+    const baseScale = settings.projectionScale;
+    const texture = projectionPlane.material.map;
+    const img = texture && texture.image;
+    const aspect = (img && img.width && img.height) ? img.width / img.height : 1;
+
+    projectionPlane.scale.set(
+      baseScale * aspect * boost,
+      baseScale * boost,
+      1
+    );
+  }
+
   function updateCountdown(dt) {
     if (STATE.gameState !== "STARTING") return;
 
@@ -2292,6 +2326,7 @@ const loadingProgress = {
         // Show 3, 2, 1, GO!
         applyStartingText();
         updateGlassCanvas();
+        triggerProjectionPump();
       } else {
         // Countdown finished, start playing
         setGameState("PLAYING");
@@ -5039,6 +5074,7 @@ const loadingProgress = {
     // Handle countdown during STARTING state
     if (STATE.loaded && STATE.gameState === "STARTING") {
       updateCountdown(dt);
+      updateProjectionPump(dt);
     }
 
     // Fugitive light fade-in during PLAYING
