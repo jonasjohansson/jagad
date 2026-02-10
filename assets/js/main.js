@@ -1744,9 +1744,9 @@ const loadingProgress = {
       triggerCapture(index, index);
     }
 
-    // Deduct 10 seconds from timer
+    // Force timer to run out
     if (e.key === "5" && STATE.gameState === "PLAYING" && STATE.gameTimerStarted) {
-      STATE.gameTimerRemaining = Math.max(0, STATE.gameTimerRemaining - 10);
+      STATE.gameTimerRemaining = 0;
     }
 
     keys.add(keyLower);
