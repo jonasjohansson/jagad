@@ -1676,6 +1676,35 @@ const loadingProgress = {
   // Character set for high score initials
   const HIGH_SCORE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
 
+  // Blocked words for high score initials
+  let blockedWords = [];
+  fetch("assets/data/blocked-words.txt")
+    .then(r => r.text())
+    .then(text => {
+      blockedWords = text.split("\n").map(w => w.trim().toUpperCase()).filter(w => w.length > 0);
+    })
+    .catch(() => {});
+
+  function wouldFormBlockedWord(initials, position, char) {
+    const test = [...initials];
+    test[position] = char;
+    const word = test.join("").toUpperCase();
+    return blockedWords.some(blocked => word.includes(blocked));
+  }
+
+  function cycleChar(direction) {
+    let attempts = 0;
+    do {
+      STATE.highScoreCharIndex = (STATE.highScoreCharIndex + direction + HIGH_SCORE_CHARS.length) % HIGH_SCORE_CHARS.length;
+      attempts++;
+    } while (
+      attempts < HIGH_SCORE_CHARS.length &&
+      wouldFormBlockedWord(STATE.highScoreInitials, STATE.highScorePosition, HIGH_SCORE_CHARS[STATE.highScoreCharIndex])
+    );
+    STATE.highScoreInitials[STATE.highScorePosition] = HIGH_SCORE_CHARS[STATE.highScoreCharIndex];
+    updateHighScoreDisplay();
+  }
+
   window.addEventListener("keydown", (e) => {
     const keyLower = e.key.toLowerCase();
 
@@ -1694,15 +1723,9 @@ const loadingProgress = {
     if (STATE.enteringHighScore) {
       e.preventDefault();
       if (keyLower === "w" || keyLower === "arrowup") {
-        // Cycle character up
-        STATE.highScoreCharIndex = (STATE.highScoreCharIndex + 1) % HIGH_SCORE_CHARS.length;
-        STATE.highScoreInitials[STATE.highScorePosition] = HIGH_SCORE_CHARS[STATE.highScoreCharIndex];
-        updateHighScoreDisplay();
+        cycleChar(1);
       } else if (keyLower === "s" || keyLower === "arrowdown") {
-        // Cycle character down
-        STATE.highScoreCharIndex = (STATE.highScoreCharIndex - 1 + HIGH_SCORE_CHARS.length) % HIGH_SCORE_CHARS.length;
-        STATE.highScoreInitials[STATE.highScorePosition] = HIGH_SCORE_CHARS[STATE.highScoreCharIndex];
-        updateHighScoreDisplay();
+        cycleChar(-1);
       } else if (keyLower === "d" || keyLower === "arrowright") {
         // Move to next initial
         if (STATE.highScorePosition < 2) {
@@ -4464,8 +4487,12 @@ const loadingProgress = {
         }
       }, 1500);
     } else {
-      // No high score - show GAME OVER instead of initials entry
+      // No high score - show GAME OVER with score and high score list
+      const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
       settings.glassTextRow1 = "GAME OVER";
+      settings.glassTextRow2 = getHighScoreString(0);
+      settings.glassTextRow3 = getHighScoreString(1);
+      settings.glassTextRow4 = getHighScoreString(2);
       updateGlassCanvas();
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;
