@@ -99,6 +99,8 @@ const loadingProgress = {
   let buildingPlane = null;
   let projectionPlane = null;
   let projectionTextures = {};
+  let projectionVideo = null;
+  let projectionVideoTexture = null;
   let camera;
   let orthoCamera;
   let perspCamera;
@@ -2049,7 +2051,8 @@ const loadingProgress = {
       const hs = highScores[position];
       // Ensure initials are exactly 3 characters
       const initials = (hs.initials || "???").substring(0, 3).padEnd(3, "?");
-      return `${initials} ${hs.score}`;
+      const score = String(hs.score).padStart(3, "0");
+      return `${initials}${score}`;
     }
     return "";
   }
@@ -2171,6 +2174,26 @@ const loadingProgress = {
 
     // Preload textures for each state
     preloadProjectionTextures();
+
+    // Create countdown intro video for projection
+    if (PATHS.video && PATHS.video.countdownIntro) {
+      projectionVideo = document.createElement("video");
+      projectionVideo.src = PATHS.video.countdownIntro;
+      projectionVideo.loop = true;
+      projectionVideo.muted = true;
+      projectionVideo.playsInline = true;
+      projectionVideo.crossOrigin = "anonymous";
+      projectionVideo.addEventListener("canplaythrough", () => {
+        projectionVideoTexture = new THREE.VideoTexture(projectionVideo);
+        projectionVideoTexture.colorSpace = THREE.SRGBColorSpace;
+        // Show video immediately if in PRE_GAME
+        if (STATE.gameState === "PRE_GAME") {
+          updateProjectionForState("PRE_GAME");
+        }
+      });
+      projectionVideo.load();
+      projectionVideo.play().catch(() => {});
+    }
   }
 
   function preloadProjectionTextures() {
@@ -2213,42 +2236,60 @@ const loadingProgress = {
       return;
     }
 
-    const stateImageSettings = {
-      PRE_GAME: settings.preGameImage,
-      STARTING: settings.startingImage || settings.preGameImage,
-      PLAYING: settings.playingImage,
-      GAME_OVER: settings.gameOverImage,
-    };
+    // Use video for PRE_GAME and STARTING states
+    const useVideo = (state === "PRE_GAME" || state === "STARTING") && projectionVideoTexture;
 
-    const imageName = stateImageSettings[state];
-    // Fall back to PRE_GAME texture during STARTING if its own texture isn't ready
-    let texture = projectionTextures[state];
-    if (!texture && state === "STARTING") {
-      texture = projectionTextures["PRE_GAME"];
-    }
-    console.log(`updateProjectionForState(${state}): image=${imageName}, texture=${!!texture}`);
-
-    if (texture) {
-      projectionPlane.material.map = texture;
+    if (useVideo) {
+      projectionPlane.material.map = projectionVideoTexture;
       projectionPlane.material.needsUpdate = true;
       projectionPlane.visible = true;
+      projectionVideo.play().catch(() => {});
 
-      // Adjust scale based on image aspect ratio
-      const img = texture.image;
-      if (img && img.width && img.height) {
-        const aspect = img.width / img.height;
-        projectionPlane.scale.set(
-          settings.projectionScale * aspect,
-          settings.projectionScale,
-          1
-        );
-        console.log(`Projection plane visible, aspect=${aspect.toFixed(2)}, position:`, projectionPlane.position);
-      } else {
-        projectionPlane.scale.setScalar(settings.projectionScale);
-      }
+      // 16:9 aspect
+      const aspect = 16 / 9;
+      projectionPlane.scale.set(
+        settings.projectionScale * aspect,
+        settings.projectionScale,
+        1
+      );
     } else {
-      projectionPlane.visible = false;
-      console.log("Projection plane hidden - no image or texture");
+      // Pause video when leaving PRE_GAME/STARTING
+      if (projectionVideo) {
+        projectionVideo.pause();
+      }
+
+      const stateImageSettings = {
+        PRE_GAME: settings.preGameImage,
+        STARTING: settings.startingImage || settings.preGameImage,
+        PLAYING: settings.playingImage,
+        GAME_OVER: settings.gameOverImage,
+      };
+
+      const imageName = stateImageSettings[state];
+      let texture = projectionTextures[state];
+      if (!texture && state === "STARTING") {
+        texture = projectionTextures["PRE_GAME"];
+      }
+
+      if (texture) {
+        projectionPlane.material.map = texture;
+        projectionPlane.material.needsUpdate = true;
+        projectionPlane.visible = true;
+
+        const img = texture.image;
+        if (img && img.width && img.height) {
+          const aspect = img.width / img.height;
+          projectionPlane.scale.set(
+            settings.projectionScale * aspect,
+            settings.projectionScale,
+            1
+          );
+        } else {
+          projectionPlane.scale.setScalar(settings.projectionScale);
+        }
+      } else {
+        projectionPlane.visible = false;
+      }
     }
 
     // Update projection properties
