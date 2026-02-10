@@ -245,7 +245,7 @@ export const defaultSettings = {
   projectionOpacity: 0.55,
   projectionScale: 0.2,
   projectionOffsetX: 0,
-  projectionOffsetY: 0.02,
+  projectionOffsetY: 0.75,
   projectionOffsetZ: 0.1,
 
   // GLB Parts - per-mesh material overrides (partName -> settings)
