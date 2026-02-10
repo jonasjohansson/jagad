@@ -115,6 +115,7 @@ const loadingProgress = {
   let helicopter = null;
   let helicopterBoundsHelper = null;
   let searchlights = null;
+  let searchlightHelpers = [];
 
   // Reusable temp objects to avoid per-frame allocations
   const _tempVec3A = new THREE.Vector3();
@@ -477,6 +478,8 @@ const loadingProgress = {
       light.castShadow = true;
       light.shadow.mapSize.width = 2048;
       light.shadow.mapSize.height = 2048;
+      light.shadow.bias = -0.002;
+      light.shadow.normalBias = 0.05;
 
       // Create target below helicopter
       const lightTarget = new THREE.Object3D();
@@ -846,6 +849,8 @@ const loadingProgress = {
       spot.castShadow = true;
       spot.shadow.mapSize.width = 1024;
       spot.shadow.mapSize.height = 1024;
+      spot.shadow.bias = -0.002;
+      spot.shadow.normalBias = 0.05;
 
       const target = new THREE.Object3D();
       target.position.copy(center);
@@ -897,6 +902,28 @@ const loadingProgress = {
       if (dx * dx + dz * dz < 0.5) {
         sl.goalX = center.x + (Math.random() - 0.5) * sway * 2;
         sl.goalZ = center.z + (Math.random() - 0.5) * sway * 2;
+      }
+    }
+
+    // Update debug helpers
+    for (const helper of searchlightHelpers) {
+      helper.update();
+    }
+  }
+
+  function toggleSearchlightHelpers(show) {
+    // Remove existing helpers
+    for (const helper of searchlightHelpers) {
+      scene.remove(helper);
+      helper.dispose();
+    }
+    searchlightHelpers = [];
+
+    if (show && searchlights) {
+      for (const sl of searchlights) {
+        const helper = new THREE.SpotLightHelper(sl.spot);
+        scene.add(helper);
+        searchlightHelpers.push(helper);
       }
     }
   }
@@ -2008,6 +2035,15 @@ const loadingProgress = {
         STATE.gameOver = true;
         STATE.gameTimerStarted = false;
         setChasersOpacity(0.1);
+        // Turn off fugitive lights and billboards
+        for (const f of fugitives) {
+          if (f.light) f.light.intensity = 0;
+        }
+        for (const wire of fugitiveWires) {
+          if (!wire.isChaser) {
+            wire.hideWireAndBillboard();
+          }
+        }
         applyGameOverText();
         showGameScore();
         // Play win/lose SFX based on high score
@@ -2190,6 +2226,12 @@ const loadingProgress = {
         }
       }, { once: true });
       // When video ends, transition to PLAYING
+      // Use timeupdate to detect near-end and avoid browser delay on "ended" event
+      projectionVideo.addEventListener("timeupdate", () => {
+        if (STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 0.1) {
+          setGameState("PLAYING");
+        }
+      });
       projectionVideo.addEventListener("ended", () => {
         if (STATE.gameState === "STARTING") {
           setGameState("PLAYING");
@@ -2452,6 +2494,8 @@ const loadingProgress = {
   directionalLight.shadow.camera.right = 15;
   directionalLight.shadow.camera.top = 15;
   directionalLight.shadow.camera.bottom = -15;
+  directionalLight.shadow.bias = -0.002;
+  directionalLight.shadow.normalBias = 0.05;
   scene.add(directionalLight);
 
   // Apply initial tone mapping settings
@@ -3057,7 +3101,7 @@ const loadingProgress = {
     textFolder.add(settings, "glassRotX", -90, 90, 1).name("Glass Rot X").onChange(() => updateGlassPosition());
     textFolder.add(settings, "glassTextFont", ["BankGothic", "BankGothic Md BT", "Bank Gothic", "Arial", "Impact", "Georgia"]).name("Font").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextFontSize", 20, 200, 5).name("Font Size").onChange(() => updateGlassCanvas());
-    textFolder.add(settings, "glassTextLineHeight", 1, 3, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
+    textFolder.add(settings, "glassTextLineHeight", 1, 5, 0.1).name("Line Height").onChange(() => updateGlassCanvas());
     textFolder.addColor(settings, "glassTextColor").name("Color").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassTextBrightness", 1, 10, 0.5).name("Brightness").onChange(() => updateGlassBrightness());
     textFolder.add(settings, "glassTextAlign", ["left", "center", "right"]).name("Align").onChange(() => updateGlassCanvas());
@@ -3153,6 +3197,7 @@ const loadingProgress = {
     searchlightsFolder.add(settings, "searchlightHeight", 3, 30, 0.5).name("Height");
     searchlightsFolder.add(settings, "searchlightSpeed", 0.05, 1, 0.05).name("Speed");
     searchlightsFolder.add(settings, "searchlightSway", 1, 15, 0.5).name("Sway Range");
+    searchlightsFolder.add({ debug: false }, "debug").name("Show Helpers").onChange(toggleSearchlightHelpers);
     searchlightsFolder.close();
 
     // Pulse Wave (capture effect)
@@ -3489,6 +3534,7 @@ const loadingProgress = {
       // Apply settings to material
       if (mat.color && partDefaults.color) {
         mat.color.set(partDefaults.color);
+        if (mat.emissive) mat.emissive.set(partDefaults.color);
       }
       if (partDefaults.opacity !== undefined) {
         mat.transparent = partDefaults.opacity < 1;
@@ -5419,7 +5465,8 @@ const loadingProgress = {
           lampMeshes.push(obj);
           const mat = obj.material;
           if (mat.emissive) {
-            mat.emissive.set(0xffffaa); // Warm light color
+            const lampColor = (settings.glbParts._defaults && settings.glbParts._defaults.lamp && settings.glbParts._defaults.lamp.color) || "#ffffaa";
+            mat.emissive.set(lampColor);
             mat.emissiveIntensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
           }
         } else if (isRoad && obj.material) {
@@ -5430,6 +5477,7 @@ const loadingProgress = {
           }
         } else if (isPath && obj.material) {
           pathMeshes.push(obj);
+          obj.receiveShadow = false;
           const mat = obj.material;
           mat.side = THREE.DoubleSide;
           if (mat.emissive) {

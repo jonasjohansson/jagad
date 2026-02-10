@@ -4,7 +4,7 @@ export const STORAGE_KEY = "jagadSettings";
 
 export const defaultSettings = {
   fugitiveSpeed: 1,
-  chaserSpeed: 1,
+  chaserSpeed: 1.2,
   actorScale: 1,
   fugitiveIntelligence: 0.85,
   fugitiveColor: "#ffffff",
@@ -28,7 +28,7 @@ export const defaultSettings = {
   perspFov: 13,
   perspNear: 0.1,
   perspFar: 5000,
-  renderScale: 2,
+  renderScale: 1,
   perspPosX: 0.04,
   perspPosY: 33,
   perspPosZ: 10,
@@ -37,11 +37,11 @@ export const defaultSettings = {
   // Lighting
   toneMapping: "Neutral",
   exposure: 0.67,
-  environmentIntensity: 1.7,
+  environmentIntensity: 0,
   punctualLights: true,
   ambientIntensity: 0,
   ambientColor: "#ffffff",
-  directIntensity: 11.2,
+  directIntensity: 7.1,
   directColor: "#ffffff",
   directPosX: -5,
   directPosY: 11,
@@ -63,7 +63,7 @@ export const defaultSettings = {
   buildingOpacity: 1,
   bloomEnabled: true,
   bloomThreshold: 1,
-  bloomStrength: 0.3,
+  bloomStrength: 0.4,
   bloomRadius: 0,
   // Pixelation
   pixelationEnabled: false,
@@ -102,10 +102,10 @@ export const defaultSettings = {
   motionTrailsLength: 5,
   motionTrailsOpacity: 0.3,
   motionTrailsSize: 0.15,
-  windowEmissiveIntensity: 50,
+  windowEmissiveIntensity: 22.5,
   lampEmissiveIntensity: 0,
   roadEmissiveIntensity: 4,
-  pathEmissiveIntensity: 14,
+  pathEmissiveIntensity: 7,
   otherEmissiveIntensity: 0,
   globalEmissiveMultiplier: 0.1,
   lampAudioReactive: false,
@@ -127,12 +127,12 @@ export const defaultSettings = {
   glassVideoBrightness: 1,
   // Glass text builder
   glassTextEnabled: true,
-  glassTextRow1: "JAGAD",
-  glassTextRow2: "THE CHASE IS ON",
-  glassTextRow3: "CATCH THEM ALL",
-  glassTextRow4: "LIVE NOW",
-  glassTextFontSize: 60,
-  glassTextLineHeight: 2.4,
+  glassTextRow1: "AAA236",
+  glassTextRow2: "AAA999",
+  glassTextRow3: "BBB500",
+  glassTextRow4: "CCC100",
+  glassTextFontSize: 50,
+  glassTextLineHeight: 3,
   glassTextFont: "BankGothic",
   glassTextColor: "#ffffff",
   glassTextBrightness: 2,
@@ -141,7 +141,7 @@ export const defaultSettings = {
   glassTextOffsetY: -254.1,
   glassTextLetterSpacing: 0,
   glassTextMonospace: true,
-  glassTextCharWidth: 90,
+  glassTextCharWidth: 91,
   glassTextMarquee: false,
   glassTextMarqueeSpeed: 10,
   glassTextRowDelay: 200,
@@ -182,12 +182,12 @@ export const defaultSettings = {
   // Searchlights
   searchlightsEnabled: true,
   searchlightIntensity: 1000,
-  searchlightColor: "#ffffff",
-  searchlightAngle: 10,
-  searchlightDistance: 40,
+  searchlightColor: "#495e88",
+  searchlightAngle: 12,
+  searchlightDistance: 30,
   searchlightPenumbra: 0.5,
   searchlightHeight: 8,
-  searchlightSpeed: 0.3,
+  searchlightSpeed: 0.75,
   searchlightSway: 9.5,
 
   // Pulse Wave (capture effect)
@@ -203,14 +203,14 @@ export const defaultSettings = {
   pulseWaveFlash: true,
 
   // Mobile
-  mobileEnabled: true,
+  mobileEnabled: false,
   mobileOrthoZoom: 0.5,
   mobileOrthoOffsetZ: 0.6,
   mobileSvgOffset: 20,
   mobileBoardScale: 1.3,
 
   // Game States
-  gameState: "PRE_GAME", // PRE_GAME, STARTING, PLAYING, GAME_OVER
+  gameState: "GAME_OVER", // PRE_GAME, STARTING, PLAYING, GAME_OVER
   countdownDuration: 3, // Seconds for countdown before game starts
 
   // Pre-game state text
@@ -260,7 +260,10 @@ export const defaultSettings = {
       "glass": { opacity: 0.5 },
       "building-building": { opacity: 0 },
       "pavement-paths": { opacity: 0 }
-    }
+    },
+    "Lamps": { color: "#7a7a7a", roughness: 0.82 },
+    "Windows-Windows": { roughness: 0.86 },
+    "Leaves": { metalness: 0, roughness: 0.85, opacity: 0.95, wireframe: false }
   },
 
   // High Scores (array of {initials: "AAA", score: 0})
