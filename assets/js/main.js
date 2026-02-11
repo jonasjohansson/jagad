@@ -5567,7 +5567,7 @@ const loadingProgress = {
         const isRoad = nameUpper.includes("ROAD");
         const isPath = nameUpper.includes("PATH");
         const isLeaf = nameUpper.includes("LEAF") || nameUpper.includes("LEAVES");
-        obj.castShadow = !isGlass;
+        obj.castShadow = true;
         obj.receiveShadow = !isGlass;
         if (isLeaf && obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -5605,9 +5605,7 @@ const loadingProgress = {
           }
         } else if (isPath && obj.material) {
           pathMeshes.push(obj);
-          obj.receiveShadow = false;
           const mat = obj.material;
-          mat.side = THREE.DoubleSide;
           if (mat.emissive) {
             mat.emissiveIntensity = (settings.pathEmissiveIntensity || 1.0) * globalMult;
           }

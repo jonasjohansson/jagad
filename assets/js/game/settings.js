@@ -21,7 +21,7 @@ export const defaultSettings = {
   chaserLightDistance: 3,
   chaserLightAngle: 19,
   chaserLightPenumbra: 1,
-  chaserLightOffset: 0.16,
+  chaserLightOffset: 0.05,
   chaserLightOffsetX: 0,
   chaserLightTargetX: 0,
   chaserLightTargetY: -0.5,
