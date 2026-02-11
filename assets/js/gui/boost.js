@@ -1,8 +1,9 @@
 // Boost system — per-player momentary speed boost
 
-export function createBoostState(chaserCount) {
+export function createBoostState(chaserCount, settings) {
+  const maxCount = (settings && settings.boostMaxCount) || 1;
   return Array.from({ length: chaserCount }, () => ({
-    remaining: 3,
+    remaining: maxCount,
     active: false,
     timer: 0,
   }));

@@ -121,7 +121,7 @@ const loadingProgress = {
 
   const fugitives = [];
   const chasers = [];
-  const boostStates = createBoostState(4);
+  const boostStates = createBoostState(4, settings);
   let helicopter = null;
   let helicopterBoundsHelper = null;
   let searchlights = null;
@@ -366,7 +366,7 @@ const loadingProgress = {
 
   // Tone.js modulated SFX: per-player pitch variation
   const MODULATED_SFX = ["playerSelect", "honk", "capture", "nitro"]; // SFX that get pitch modulation
-  const PLAYER_PITCH_OFFSETS = [0, 3, 5, 7]; // root, minor 3rd, 4th, 5th (semitones)
+  const PLAYER_PITCH_OFFSETS = [0, 4, 7, 12]; // root, major 3rd, 5th, octave (semitones)
   const tonePlayers = {}; // "sfxName_playerIndex" -> pre-created Tone.Player
 
   function initToneSFX() {
