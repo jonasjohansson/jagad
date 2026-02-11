@@ -2,54 +2,54 @@
 
 export const PATHS = {
   models: {
-    level: "assets/models/BuildingV23.glb",
+    level: "assets/models/buildingV23.glb",
     roads: "assets/models/roads.glb",
     cars: [
-      "assets/models/car-Red Car.glb",
-      "assets/models/car-Jeep.glb",
-      "assets/models/car-Mazda RX-7.glb",
-      "assets/models/car-cartoon banana car.glb",
+      "assets/models/carRedCar.glb",
+      "assets/models/carJeep.glb",
     ],
-    helicopter: "assets/models/bell_huey_helicopter.glb",
+    helicopter: "assets/models/bellHueyHelicopter.glb",
   },
   images: {
     building: "assets/images/building.png",
     faces: "assets/images/faces/",
-    cloud: "assets/images/cloud.png",
   },
   audio: {
-    "triumph-hill": "assets/audio/triumph-hill.mp3",
+    triumphHill: "assets/audio/triumphHill.mp3",
   },
   sfx: {
-    capture: "assets/sounds/SFX_5_CaptureEnemy.wav",
-    helicopter: "assets/sounds/SFX_6_Helicopter.mp3",
-    countdown: "assets/sounds/SFX_3_3-2-1-GO!.wav",
-    playerSelect: "assets/sounds/SFX_1_PlayerSelect.wav",
-    gameStart: "assets/sounds/SFX_4_GamePlayStarts.wav",
-    gameWin: "assets/sounds/SFX_7_GameEnd(Win).wav",
-    gameLose: "assets/sounds/SFX_8_GameEnd(Loose).wav",
+    capture: "assets/sounds/capture.mp3",
+    helicopter: "assets/sounds/helicopter.mp3",
+    countdown: "assets/sounds/countdown.mp3",
+    playerSelect: "assets/sounds/playerSelect.mp3",
+    gameStart: "assets/sounds/gameStart.mp3",
+    gameWin: "assets/sounds/gameWin.mp3",
+    gameLose: "assets/sounds/gameLose.mp3",
+    nitro: "assets/sounds/nitro.mp3",
+    honk: "assets/sounds/honk.mp3",
   },
   video: {
-    windowAmbience: "assets/video/Jagad_Window_Ambience_v1.mp4",
-    countdownIntro: "assets/video/Jagad_Countdown_Intro_16x9_Audio.mp4",
+    windowAmbience: "assets/video/windowAmbience.mp4",
+    countdownIntro: "assets/video/countdownIntro.mp4",
+    gameAnimation: "assets/video/gameAnimation.mp4",
   },
 };
 
 // Face texture pairs for each fugitive [primary, alternate]
 export const FACE_TEXTURES = [
-  ["F1-Samir.png", "F1-Viktor.png"],
-  ["F2-Maria.png", "F2-Sara.png"],
-  ["F3-Glenn.png", "F3-Hasse.png"],
-  ["F4-Anja.png", "F4-Filippa.png"],
+  ["f1Samir.png", "f1Viktor.png"],
+  ["f2Maria.png", "f2Sara.png"],
+  ["f3Glenn.png", "f3Hasse.png"],
+  ["f4Anja.png", "f4Filippa.png"],
 ];
 
 // Keyboard controls for each chaser
 // C1: WASD, C2: TFGH, C3: IJKL, C4: Arrow keys
 export const CHASER_CONTROLS = [
-  { up: "w", down: "s", left: "a", right: "d" },
-  { up: "t", down: "g", left: "f", right: "h" },
-  { up: "i", down: "k", left: "j", right: "l" },
-  { up: "arrowup", down: "arrowdown", left: "arrowleft", right: "arrowright" },
+  { up: "w", down: "s", left: "a", right: "d", enter: "e" },
+  { up: "t", down: "g", left: "f", right: "h", enter: "y" },
+  { up: "i", down: "k", left: "j", right: "l", enter: "o" },
+  { up: "arrowup", down: "arrowdown", left: "arrowleft", right: "arrowright", enter: "enter" },
 ];
 
 // Cardinal directions for pathfinding

@@ -155,7 +155,7 @@ export const defaultSettings = {
   glassTextShuffleCharDelay: 500,
   // Audio
   audioVolume: 0.5,
-  audioTrack: "triumph-hill",
+  audioTrack: "triumphHill",
   // Helicopter
   helicopterEnabled: true,
   helicopterColor: "#ff9a57",
@@ -213,6 +213,16 @@ export const defaultSettings = {
   mobileSvgOffset: 20,
   mobileBoardScale: 1.3,
 
+  // Difficulty scaling (3-4 players)
+  multiPlayerFugitiveIntelligence: 1.0, // Fugitive AI when 3-4 players (max skill)
+  multiPlayerChaserSpeedPenalty: 0.15, // Chasers slower by this amount when 3-4 players
+  multiPlayerThreshold: 3, // Player count at which difficulty scaling kicks in
+
+  // Boost
+  boostMultiplier: 2.5,
+  boostDuration: 1.5,
+  boostMaxCount: 1,
+
   // Game States
   gameState: "GAME_OVER", // PRE_GAME, STARTING, PLAYING, GAME_OVER
   countdownDuration: 3, // Seconds for countdown before game starts
@@ -236,16 +246,16 @@ export const defaultSettings = {
   playingTextRow4: "",
 
   // High score entry text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3}, ${hs1i}, ${hs1s}, ${hs2i}, ${hs2s}, ${hs3i}, ${hs3s})
-  highScoreTextRow1: " ${initials}${score}",
-  highScoreTextRow2: " ${s1}",
-  highScoreTextRow3: " ${s2}",
-  highScoreTextRow4: " ${s3}",
+  highScoreTextRow1: "",
+  highScoreTextRow2: "${initials}",
+  highScoreTextRow3: "",
+  highScoreTextRow4: "",
 
   // Game Over text - no high score (same template variables available)
-  gameOverTextRow1: " GAMEOVER",
-  gameOverTextRow2: " ${s1}",
-  gameOverTextRow3: " ${s2}",
-  gameOverTextRow4: " ${s3}",
+  gameOverTextRow1: "",
+  gameOverTextRow2: "GAMEOVER",
+  gameOverTextRow3: "",
+  gameOverTextRow4: "",
 
   // State projection images
   preGameImage: "",

@@ -13,8 +13,10 @@ import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
 import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
+import { KTX2Loader } from "./lib/three/addons/loaders/KTX2Loader.js";
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=17";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=7";
+import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=8";
+import { createBoostState, triggerBoost, updateBoosts, getBoostMultiplier, resetBoosts, addBoostGUI } from "./gui/index.js?v=1";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=4";
 
 // lil-gui loaded via script tag in index.html
@@ -89,6 +91,11 @@ const loadingProgress = {
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;
 
+  // KTX2 texture loader (GPU-compressed textures in GLB)
+  const ktx2Loader = new KTX2Loader();
+  ktx2Loader.setTranscoderPath("assets/js/lib/three/addons/libs/basis/");
+  ktx2Loader.detectSupport(renderer);
+
   // Post-processing (WebGL EffectComposer)
   let composer = null;
 
@@ -101,6 +108,8 @@ const loadingProgress = {
   let projectionTextures = {};
   let projectionVideo = null;
   let projectionVideoTexture = null;
+  let gameAnimationVideo = null;
+  let gameAnimationVideoTexture = null;
   let camera;
   let orthoCamera;
   let perspCamera;
@@ -112,6 +121,7 @@ const loadingProgress = {
 
   const fugitives = [];
   const chasers = [];
+  const boostStates = createBoostState(4);
   let helicopter = null;
   let helicopterBoundsHelper = null;
   let searchlights = null;
@@ -244,6 +254,8 @@ const loadingProgress = {
     highScorePosition: 0,  // Which initial being edited (0-2)
     highScoreCharIndex: 0, // Current character A-Z, 0-9
     newHighScoreRank: -1,  // Position in high scores list (0, 1, or 2)
+    firstPlayerIndex: -1,  // Index of the first player who joined
+    highScoreInitialsColor: null, // Color for high score initials (first player's color)
   };
 
   // Helper to get level center (avoids creating new Vector3)
@@ -352,10 +364,45 @@ const loadingProgress = {
     }
   }
 
-  function playSFX(sfxName) {
+  // Tone.js modulated SFX: per-player pitch variation
+  const MODULATED_SFX = ["playerSelect", "honk", "capture", "nitro"]; // SFX that get pitch modulation
+  const PLAYER_PITCH_OFFSETS = [0, 3, 5, 7]; // root, minor 3rd, 4th, 5th (semitones)
+  const tonePlayers = {}; // "sfxName_playerIndex" -> pre-created Tone.Player
+
+  function initToneSFX() {
+    if (typeof Tone === "undefined") return;
+    // Pre-create a player for each SFX + player combination
+    for (const name of MODULATED_SFX) {
+      const path = PATHS.sfx[name];
+      if (!path) continue;
+      for (let i = 0; i < 4; i++) {
+        const semitones = PLAYER_PITCH_OFFSETS[i % PLAYER_PITCH_OFFSETS.length] || 0;
+        const rate = Math.pow(2, semitones / 12);
+        const player = new Tone.Player(path).toDestination();
+        player.playbackRate = rate;
+        player.volume.value = -6;
+        tonePlayers[`${name}_${i}`] = player;
+      }
+    }
+  }
+
+  function playSFX(sfxName, playerIndex) {
+    // Try pre-created Tone.js player first (instant playback)
+    if (playerIndex != null) {
+      const player = tonePlayers[`${sfxName}_${playerIndex}`];
+      if (player && player.loaded) {
+        try {
+          player.stop();
+          player.start();
+          return;
+        } catch (e) {
+          // Fall through to standard playback
+        }
+      }
+    }
+    // Standard playback (no modulation)
     if (!preloadedSFX[sfxName]) return;
     const sfx = preloadedSFX[sfxName];
-    // Reset to start and play immediately
     sfx.currentTime = 0;
     sfx.play().catch(() => {});
   }
@@ -443,6 +490,7 @@ const loadingProgress = {
     if (!PATHS.models.helicopter) return;
 
     const loader = new GLTFLoader();
+    loader.setKTX2Loader(ktx2Loader);
     loader.load(PATHS.models.helicopter, (gltf) => {
       loadingProgress.complete();
       const mesh = gltf.scene;
@@ -985,8 +1033,10 @@ const loadingProgress = {
       const chaser = chasers[i];
       if (chaser.isCarModel && chaser.cachedMaterials) {
         const chaserColor = chaserColors[i] || "#ffffff";
-        const baseEmissive = chaser.ready || chaser.active ? 0.3 : 0.05;
-        const intensity = baseEmissive + audioBoost;
+        const isSelected = chaser.ready || chaser.active;
+        const baseEmissive = isSelected ? 0.3 : 0.05;
+        // Only selected/ready chasers pulsate to the beat
+        const intensity = isSelected ? baseEmissive + audioBoost : baseEmissive;
 
         for (const mat of chaser.cachedMaterials) {
           // Initialize emissive color once
@@ -1555,7 +1605,14 @@ const loadingProgress = {
         const text = rows[i];
         if (!text) continue; // Skip empty rows but keep position
         const y = startY + i * lineHeight;
-        drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
+        // Color initials row in first player's color during high score entry
+        if (STATE.enteringHighScore && STATE.highScoreInitialsColor && i === 1) {
+          ctx.fillStyle = STATE.highScoreInitialsColor;
+          drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
+          ctx.fillStyle = settings.glassTextColor;
+        } else {
+          drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
+        }
       }
     }
 
@@ -1670,7 +1727,7 @@ const loadingProgress = {
   const keys = new Set();
   const chaserControlKeys = [
     "arrowup", "arrowdown", "arrowleft", "arrowright",
-    "w", "a", "s", "d", "t", "f", "g", "h", "i", "j", "k", "l"
+    "w", "a", "s", "d", "e", "t", "f", "g", "h", "y", "i", "j", "k", "l", "o", "enter"
   ];
 
   // Character set for high score initials
@@ -1719,14 +1776,16 @@ const loadingProgress = {
       return;
     }
 
-    // High score entry mode
+    // High score entry mode — only first player controls the initials
     if (STATE.enteringHighScore) {
+      const fpIdx = STATE.firstPlayerIndex >= 0 ? STATE.firstPlayerIndex : 0;
+      const fpCtrl = CHASER_CONTROLS[fpIdx];
       e.preventDefault();
-      if (keyLower === "w" || keyLower === "arrowup") {
+      if (keyLower === fpCtrl.up) {
         cycleChar(1);
-      } else if (keyLower === "s" || keyLower === "arrowdown") {
+      } else if (keyLower === fpCtrl.down) {
         cycleChar(-1);
-      } else if (keyLower === "d" || keyLower === "arrowright") {
+      } else if (keyLower === fpCtrl.right) {
         // Move to next initial
         if (STATE.highScorePosition < 2) {
           STATE.highScorePosition++;
@@ -1734,7 +1793,7 @@ const loadingProgress = {
           if (STATE.highScoreCharIndex < 0) STATE.highScoreCharIndex = 0;
           updateHighScoreDisplay();
         }
-      } else if (keyLower === "a" || keyLower === "arrowleft") {
+      } else if (keyLower === fpCtrl.left) {
         // Move to previous initial
         if (STATE.highScorePosition > 0) {
           STATE.highScorePosition--;
@@ -1742,8 +1801,8 @@ const loadingProgress = {
           if (STATE.highScoreCharIndex < 0) STATE.highScoreCharIndex = 0;
           updateHighScoreDisplay();
         }
-      } else if (keyLower === "enter" || keyLower === " ") {
-        // Confirm high score entry
+      } else if (keyLower === fpCtrl.enter) {
+        // Confirm high score entry (first player's enter key only)
         confirmHighScoreEntry();
       }
       keys.add(keyLower);
@@ -1757,6 +1816,20 @@ const loadingProgress = {
         const chaserIndex = getChaserIndexForKey(keyLower);
         if (chaserIndex >= 0) {
           markChaserReady(chaserIndex);
+        }
+      }
+      // Boost: trigger on player's enter key during gameplay
+      if (STATE.gameState === "PLAYING") {
+        for (let i = 0; i < CHASER_CONTROLS.length; i++) {
+          if (keyLower === CHASER_CONTROLS[i].enter) {
+            const boosted = triggerBoost(boostStates, i, settings);
+            if (boosted) {
+              playSFX("nitro", i);
+            } else {
+              playSFX("honk", i);
+            }
+            break;
+          }
         }
       }
     }
@@ -1790,7 +1863,7 @@ const loadingProgress = {
     // Mark as captured
     f.captured = true;
     STATE.capturedCount = (STATE.capturedCount || 0) + 1;
-    playSFX("capture");
+    playSFX("capture", chaserIndex);
 
     // Add score based on current fugitive value
     const points = Math.max(0, Math.floor(STATE.fugitiveValue));
@@ -1843,7 +1916,7 @@ const loadingProgress = {
   function getChaserIndexForKey(key) {
     for (let i = 0; i < CHASER_CONTROLS.length; i++) {
       const ctrl = CHASER_CONTROLS[i];
-      if (key === ctrl.up || key === ctrl.down || key === ctrl.left || key === ctrl.right) {
+      if (key === ctrl.up || key === ctrl.down || key === ctrl.left || key === ctrl.right || key === ctrl.enter) {
         return i;
       }
     }
@@ -1856,7 +1929,13 @@ const loadingProgress = {
     if (chaser.ready) return; // Already ready
 
     chaser.ready = true;
-    playSFX("playerSelect");
+
+    // Track first player to join
+    if (STATE.firstPlayerIndex < 0) {
+      STATE.firstPlayerIndex = chaserIndex;
+    }
+
+    playSFX("playerSelect", chaserIndex);
 
     // Create pulse wave from chaser position in their color
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
@@ -1967,6 +2046,22 @@ const loadingProgress = {
     switch (newState) {
       case "PRE_GAME":
         stopHelicopterSound(); // Stop helicopter loop
+        // Play game animation video when restarting (coming from GAME_OVER)
+        if (oldState === "GAME_OVER" && gameAnimationVideo && gameAnimationVideoTexture) {
+          gameAnimationVideo.currentTime = 0;
+          gameAnimationVideo.play().catch(() => {});
+          if (projectionPlane && projectionPlane.material) {
+            projectionPlane.material.map = gameAnimationVideoTexture;
+            projectionPlane.material.needsUpdate = true;
+            projectionPlane.visible = true;
+          }
+          // Hide projection when animation ends
+          const hideProjection = () => {
+            if (projectionPlane) projectionPlane.visible = false;
+            gameAnimationVideo.removeEventListener("ended", hideProjection);
+          };
+          gameAnimationVideo.addEventListener("ended", hideProjection);
+        }
         // Display pre-game text
         settings.glassTextRow1 = settings.preGameTextRow1;
         settings.glassTextRow2 = settings.preGameTextRow2;
@@ -1974,6 +2069,7 @@ const loadingProgress = {
         settings.glassTextRow4 = settings.preGameTextRow4;
         settings.gameStarted = false;
         STATE.gameOver = false;
+        STATE.firstPlayerIndex = -1;
         // Reset all chasers to visible but dimmed
         for (const c of chasers) {
           if (c.mesh) c.mesh.visible = true;
@@ -2286,6 +2382,23 @@ const loadingProgress = {
       });
       projectionVideo.load();
     }
+
+    // Create game animation video (plays when returning to PRE_GAME after a game)
+    if (PATHS.video && PATHS.video.gameAnimation) {
+      gameAnimationVideo = document.createElement("video");
+      gameAnimationVideo.src = PATHS.video.gameAnimation;
+      gameAnimationVideo.loop = false;
+      gameAnimationVideo.muted = true;
+      gameAnimationVideo.playsInline = true;
+      gameAnimationVideo.crossOrigin = "anonymous";
+      gameAnimationVideo.addEventListener("canplaythrough", () => {
+        if (!gameAnimationVideoTexture) {
+          gameAnimationVideoTexture = new THREE.VideoTexture(gameAnimationVideo);
+          gameAnimationVideoTexture.colorSpace = THREE.SRGBColorSpace;
+        }
+      }, { once: true });
+      gameAnimationVideo.load();
+    }
   }
 
   function preloadProjectionTextures() {
@@ -2489,6 +2602,9 @@ const loadingProgress = {
     STATE.highScoreInitials = ["A", "A", "A"];
     STATE.highScoreCharIndex = 0;
     STATE.newHighScoreRank = position;
+    // Set initials color to first player's color
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    STATE.highScoreInitialsColor = STATE.firstPlayerIndex >= 0 ? chaserColors[STATE.firstPlayerIndex] : null;
     updateHighScoreDisplay();
   }
 
@@ -2882,6 +2998,12 @@ const loadingProgress = {
       for (const c of chasers) c.speed = v;
     });
     gameFolder.add(settings, "fugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI");
+    const difficultyFolder = gameFolder.addFolder("Multi-Player Difficulty");
+    difficultyFolder.add(settings, "multiPlayerThreshold", 2, 4, 1).name("Player Threshold");
+    difficultyFolder.add(settings, "multiPlayerFugitiveIntelligence", 0.5, 1, 0.05).name("Fugitive AI Override");
+    difficultyFolder.add(settings, "multiPlayerChaserSpeedPenalty", 0, 0.5, 0.05).name("Chaser Speed Penalty");
+    difficultyFolder.close();
+    addBoostGUI(gameFolder, settings);
 
     // ==================== MOBILE ====================
     const mobileFolder = guiLeft.addFolder("📱 Mobile");
@@ -4504,9 +4626,11 @@ const loadingProgress = {
     STATE.highScoreInitials = ["A", "A", "A"];
     STATE.highScorePosition = 0;
     STATE.highScoreCharIndex = 0;
+    STATE.highScoreInitialsColor = null;
     STATE.countdownValue = 3;
     STATE.countdownTimer = 0;
     settings.gameStarted = false;
+    resetBoosts(boostStates, settings);
 
     // Clear any active capture effects
     for (const effect of captureEffects) {
@@ -5058,7 +5182,7 @@ const loadingProgress = {
   }
 
   function handleFugitiveAtNode(actor, node, pathGraph) {
-    const intelligence = settings.fugitiveIntelligence;
+    const intelligence = STATE.fugitiveIntelligenceOverride != null ? STATE.fugitiveIntelligenceOverride : settings.fugitiveIntelligence;
     const available = getAvailableDirectionsAtNode(node, pathGraph);
 
     if (available.length === 0) return;
@@ -5321,6 +5445,7 @@ const loadingProgress = {
         }
       }
 
+      updateBoosts(boostStates, dt);
       updateGame(dt);
     }
 
@@ -5383,8 +5508,10 @@ const loadingProgress = {
     if (!STATE.loaded) return;
 
     const activeChaserCount = STATE.activeChaserCount;
+    const readyCount = chasers.filter(c => c.ready).length;
     let chaserSpeedBonus = 0;
     let fugitiveSpeedBonus = 0;
+    let fugitiveIntelligenceOverride = null;
 
     if (activeChaserCount === 1) {
       chaserSpeedBonus = 0.1;
@@ -5395,6 +5522,13 @@ const loadingProgress = {
     } else if (activeChaserCount >= 4) {
       fugitiveSpeedBonus = 0.2;
     }
+
+    // Multi-player difficulty scaling: when enough players, max out fugitive AI and slow chasers
+    if (readyCount >= settings.multiPlayerThreshold) {
+      fugitiveIntelligenceOverride = settings.multiPlayerFugitiveIntelligence;
+      chaserSpeedBonus -= settings.multiPlayerChaserSpeedPenalty;
+    }
+    STATE.fugitiveIntelligenceOverride = fugitiveIntelligenceOverride;
 
     for (const f of fugitives) {
       if (f.captured) continue;
@@ -5454,9 +5588,8 @@ const loadingProgress = {
 
       if (!chaser.active) continue;
 
-      // Triple speed when holding space
-      const spaceBoost = keys.has(" ") ? 3 : 1;
-      chaser.speed = (settings.chaserSpeed + chaserSpeedBonus) * spaceBoost;
+      const boostMul = getBoostMultiplier(boostStates, i, settings);
+      chaser.speed = (settings.chaserSpeed + chaserSpeedBonus) * boostMul;
 
       // Handle input for path-based movement
       if (inputDir.hasInput && chaser.currentEdge) {
@@ -5498,7 +5631,7 @@ const loadingProgress = {
           // Mark as captured
           f.captured = true;
           STATE.capturedCount = (STATE.capturedCount || 0) + 1;
-          playSFX("capture");
+          playSFX("capture", i);
 
           // Add score based on current fugitive value
           const points = Math.max(0, Math.floor(STATE.fugitiveValue));
@@ -5537,6 +5670,7 @@ const loadingProgress = {
   // ============================================
 
   const loader = new GLTFLoader();
+  loader.setKTX2Loader(ktx2Loader);
 
   // Register loading items: level, building texture, 4 cars, helicopter
   loadingProgress.register(7);
@@ -6265,6 +6399,25 @@ const loadingProgress = {
     }
 
     setupCameras(levelCenter, horizontalSize);
+
+    // If GLB contains cameras, add them to the GUI dropdown and use MainCamera if found
+    if (glbCameras.length > 0) {
+      const cameraOptions = ["orthographic", "perspective", ...glbCameras.map(c => c.name)];
+      // Update GUI dropdown if it exists
+      if (guiLeft) {
+        const ctrl = guiLeft.controllersRecursive().find(c => c.property === "cameraType");
+        if (ctrl) {
+          ctrl._values = cameraOptions;
+          ctrl.options(cameraOptions);
+        }
+      }
+      // Default to MainCamera if available
+      const mainCam = glbCameras.find(c => c.name === "MainCamera");
+      if (mainCam) {
+        switchCamera("MainCamera");
+      }
+    }
+
     onResize();
 
     STATE.streetY = streetY;
@@ -6377,8 +6530,8 @@ const loadingProgress = {
         const color = chaserColors[i] || chaserColors[0];
 
         let mesh;
-        // Use the first car model for all chasers
-        const carModel = carModels.length > 0 ? carModels[0] : null;
+        // Use a different car model for each chaser, cycling if fewer models than chasers
+        const carModel = carModels.length > 0 ? carModels[i % carModels.length] : null;
 
         if (carModel) {
           mesh = carModel.clone();
@@ -6515,6 +6668,7 @@ const loadingProgress = {
     initAtmosphere();
     initAudio();
     initSFX();
+    initToneSFX();
     loadHelicopter();
     updateHelicopterBoundsHelper();
     setupSearchlights();
