@@ -17,7 +17,7 @@
   "chaserLightDistance": 3,
   "chaserLightAngle": 40,
   "chaserLightPenumbra": 1,
-  "chaserLightOffset": 0.15,
+  "chaserLightOffset": 0.05,
   "chaserHeightOffset": -0.03,
   "cameraType": "perspective",
   "orthoZoom": 1,
