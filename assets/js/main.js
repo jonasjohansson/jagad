@@ -121,7 +121,6 @@ const loadingProgress = {
 
   const fugitives = [];
   const chasers = [];
-  const boostStates = createBoostState(4, settings);
   let helicopter = null;
   let helicopterBoundsHelper = null;
   let searchlights = null;
@@ -165,6 +164,8 @@ const loadingProgress = {
       });
     },
   };
+
+  const boostStates = createBoostState(4, settings);
 
   let guiLeft = null;
 
@@ -1605,10 +1606,18 @@ const loadingProgress = {
         const text = rows[i];
         if (!text) continue; // Skip empty rows but keep position
         const y = startY + i * lineHeight;
-        // Color initials row in first player's color during high score entry
+        // Initials row: white text with colored glow during high score entry
         if (STATE.enteringHighScore && STATE.highScoreInitialsColor && i === 1) {
-          ctx.fillStyle = STATE.highScoreInitialsColor;
+          ctx.save();
+          ctx.shadowColor = STATE.highScoreInitialsColor;
+          ctx.shadowBlur = 20;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.fillStyle = "#ffffff";
+          // Draw multiple times to intensify the glow
           drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
+          drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
+          ctx.restore();
           ctx.fillStyle = settings.glassTextColor;
         } else {
           drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
@@ -2048,16 +2057,18 @@ const loadingProgress = {
         stopHelicopterSound(); // Stop helicopter loop
         // Play game animation video when restarting (coming from GAME_OVER)
         if (oldState === "GAME_OVER" && gameAnimationVideo && gameAnimationVideoTexture) {
+          STATE.gameAnimationPlaying = true;
           gameAnimationVideo.currentTime = 0;
           gameAnimationVideo.play().catch(() => {});
           if (projectionPlane && projectionPlane.material) {
             projectionPlane.material.map = gameAnimationVideoTexture;
+            projectionPlane.material.opacity = settings.projectionOpacity;
             projectionPlane.material.needsUpdate = true;
-            projectionPlane.visible = true;
           }
           // Hide projection when animation ends
           const hideProjection = () => {
-            if (projectionPlane) projectionPlane.visible = false;
+            STATE.gameAnimationPlaying = false;
+            if (projectionPlane) projectionPlane.material.opacity = 0;
             gameAnimationVideo.removeEventListener("ended", hideProjection);
           };
           gameAnimationVideo.addEventListener("ended", hideProjection);
@@ -2194,7 +2205,7 @@ const loadingProgress = {
     }
 
     // Update the glass canvas and projection (deferred for PLAYING to avoid frame stutter)
-    if (newState !== "PLAYING") {
+    if (newState !== "PLAYING" && !STATE.gameAnimationPlaying) {
       if (typeof updateGlassCanvas === "function") {
         updateGlassCanvas();
       }
@@ -5158,6 +5169,24 @@ const loadingProgress = {
     const pos = actor.mesh.position;
     const moveDistance = actor.speed * dt;
 
+    // Mid-edge juke: small chance of reversing direction when a chaser is close
+    const midEdgeJukeChance = settings.fugitiveMidEdgeJukeChance || 0.03;
+    if (midEdgeJukeChance > 0 && actor.edgeT > 0.1 && actor.edgeT < 0.9) {
+      let nearestChaserDist = Infinity;
+      for (const c of chasers) {
+        if (!c.active) continue;
+        const dx = pos.x - c.mesh.position.x;
+        const dz = pos.z - c.mesh.position.z;
+        nearestChaserDist = Math.min(nearestChaserDist, Math.sqrt(dx * dx + dz * dz));
+      }
+      const dangerRadius = settings.fugitiveDangerRadius || 4;
+      if (nearestChaserDist < dangerRadius && Math.random() < midEdgeJukeChance * dt) {
+        actor.edgeDir *= -1;
+        actor.dirX *= -1;
+        actor.dirZ *= -1;
+      }
+    }
+
     // Move along current edge
     const edgeLength = actor.currentEdge.length;
     const tDelta = (moveDistance / edgeLength) * actor.edgeDir;
@@ -5255,6 +5284,16 @@ const loadingProgress = {
           bestScore = score;
           chosen = dir;
         }
+      }
+      // Unpredictable juke: occasionally pick a random non-worst direction
+      const jukeChance = settings.fugitiveJukeChance || 0.15;
+      if (available.length > 1 && Math.random() < jukeChance) {
+        const scored = available.map(dir => ({
+          dir,
+          score: dir.dirX * threatX + dir.dirZ * threatZ
+        })).sort((a, b) => b.score - a.score);
+        const jukeOptions = scored.slice(0, -1);
+        chosen = jukeOptions[Math.floor(Math.random() * jukeOptions.length)].dir;
       }
     } else if (hasSeparation && Math.random() < 0.6) {
       // No chaser threat but fugitives nearby: move away from them
@@ -5533,6 +5572,17 @@ const loadingProgress = {
     for (const f of fugitives) {
       if (f.captured) continue;
       f.speed = settings.fugitiveSpeed + fugitiveSpeedBonus;
+      // Proximity speed boost when a chaser is within danger radius
+      let nearestChaserDist = Infinity;
+      for (const c of chasers) {
+        if (!c.active) continue;
+        const dx = f.mesh.position.x - c.mesh.position.x;
+        const dz = f.mesh.position.z - c.mesh.position.z;
+        nearestChaserDist = Math.min(nearestChaserDist, Math.sqrt(dx * dx + dz * dz));
+      }
+      if (nearestChaserDist < (settings.fugitiveDangerRadius || 4)) {
+        f.speed *= settings.fugitiveDangerSpeedMultiplier || 1.4;
+      }
       if (f.currentEdge) {
         updateFugitiveMovementPath(f, dt);
       }
@@ -5672,8 +5722,9 @@ const loadingProgress = {
   const loader = new GLTFLoader();
   loader.setKTX2Loader(ktx2Loader);
 
-  // Register loading items: level, building texture, 4 cars, helicopter
-  loadingProgress.register(7);
+  // Register loading items: level, building texture, cars, helicopter
+  const carPaths = PATHS.models.cars || [];
+  loadingProgress.register(3 + carPaths.length);
 
   // Load level GLB - use ROADS mesh from within it for navmesh
   new Promise((resolve, reject) => {

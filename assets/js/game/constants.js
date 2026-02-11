@@ -2,7 +2,7 @@
 
 export const PATHS = {
   models: {
-    level: "assets/models/buildingV23.glb",
+    level: "assets/models/buildingV25.glb",
     roads: "assets/models/roads.glb",
     cars: [
       "assets/models/carRedCar.glb",
