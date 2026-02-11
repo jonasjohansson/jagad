@@ -287,7 +287,9 @@ export const defaultSettings = {
     },
     Lamps: { color: "#7a7a7a", roughness: 0.82 },
     "Windows-Windows": { roughness: 0.86 },
-    Leaves: { metalness: 0, roughness: 0.85, opacity: 0.95, wireframe: false },
+    "Trees-Leaves03": { color: "#c56a20", opacity: 0.95, roughness: 1, metalness: 1 },
+    "Trees-Leaves02": { color: "#a3452e", opacity: 0.95, roughness: 1, metalness: 1 },
+    "Trees-Leaves01": { color: "#dba100", opacity: 0.9, roughness: 1 },
   },
 
   // High Scores (array of {initials: "AAA", score: 0})

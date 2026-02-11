@@ -61,8 +61,7 @@ const loadingProgress = {
   console.warn = function(...args) {
     const msg = args[0];
     if (typeof msg === "string" && msg.includes("texture units")) {
-      if (warnedMessages.has(msg)) return;
-      warnedMessages.add(msg);
+      return;
     }
     originalWarn.apply(console, args);
   };
@@ -5734,6 +5733,12 @@ const loadingProgress = {
     const gltf = levelGltf;
     const root = gltf.scene;
 
+    // Debug: inspect GLB contents for cameras
+    console.log("GLB gltf.cameras:", gltf.cameras);
+    const allObjects = [];
+    root.traverse((obj) => allObjects.push({ name: obj.name, type: obj.type, isCamera: obj.isCamera }));
+    console.log("GLB scene objects:", allObjects.filter(o => o.isCamera || o.type.includes("Camera") || o.name.toLowerCase().includes("camera")));
+
     // Store window and lamp meshes for emissive control
     const windowMeshes = [];
     const lampMeshes = [];
@@ -5804,6 +5809,15 @@ const loadingProgress = {
         glbCameras.push({ name: obj.name || `GLB Camera ${glbCameras.length + 1}`, camera: obj });
       }
     });
+
+    // Also check gltf.cameras (GLTFLoader may not add cameras to the scene graph)
+    if (gltf.cameras) {
+      for (const cam of gltf.cameras) {
+        if (!glbCameras.find(c => c.camera === cam)) {
+          glbCameras.push({ name: cam.name || `GLB Camera ${glbCameras.length + 1}`, camera: cam });
+        }
+      }
+    }
 
     STATE.windowMeshes = windowMeshes;
     STATE.lampMeshes = lampMeshes;
@@ -5895,7 +5909,6 @@ const loadingProgress = {
     let foundGlassMeshes = [];
     levelContainer.traverse((obj) => {
       if (obj.isMesh && obj.name) {
-        console.log("[GLB mesh]", obj.name);
         if (obj.name.toUpperCase().includes("GLASS")) {
           foundGlassMeshes.push(obj);
         }
@@ -6463,9 +6476,18 @@ const loadingProgress = {
         }
       }
       // Default to MainCamera if available
-      const mainCam = glbCameras.find(c => c.name === "MainCamera");
+      const mainCam = glbCameras.find(c => c.name.toUpperCase() === "MAINCAMERA");
       if (mainCam) {
-        switchCamera("MainCamera");
+        const cam = mainCam.camera;
+        console.log("GLB MainCamera:", {
+          type: cam.isPerspectiveCamera ? "perspective" : "orthographic",
+          fov: cam.fov,
+          near: cam.near,
+          far: cam.far,
+          position: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+          rotation: { x: cam.rotation.x, y: cam.rotation.y, z: cam.rotation.z },
+        });
+        switchCamera(mainCam.name);
       }
     }
 
