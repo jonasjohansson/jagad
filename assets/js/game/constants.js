@@ -6,7 +6,6 @@ export const PATHS = {
     roads: "assets/models/roads.glb",
     cars: [
       "assets/models/carRedCar.glb",
-      "assets/models/carJeep.glb",
     ],
     helicopter: "assets/models/bellHueyHelicopter.glb",
   },
