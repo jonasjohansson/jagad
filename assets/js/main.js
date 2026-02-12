@@ -2758,7 +2758,7 @@ const loadingProgress = {
       settings.glassTextRow4 = "";
       updateGlassCanvas();
       resetGame();
-    }, delay + 500);
+    }, delay + 2000);
   }
 
   function displayHighScores() {
