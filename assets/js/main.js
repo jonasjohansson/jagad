@@ -29,6 +29,13 @@ const LAYERS = {
 };
 
 // Loading progress tracker
+const loadingOverlay = document.getElementById("loading-overlay");
+const loadingText = document.getElementById("loading-text");
+// Hide loading overlay immediately for facade mode
+if (new URLSearchParams(window.location.search).has("facade") && loadingOverlay) {
+  loadingOverlay.style.display = "none";
+}
+
 const loadingProgress = {
   total: 0,
   loaded: 0,
@@ -43,6 +50,7 @@ const loadingProgress = {
   update() {
     if (this.total === 0) return;
     const percent = Math.round((this.loaded / this.total) * 100);
+    if (loadingText) loadingText.textContent = `${percent}%`;
     if (percent < 100) {
       document.title = `Jagad ${percent}%`;
     } else {
@@ -51,6 +59,10 @@ const loadingProgress = {
   },
   finish() {
     document.title = "Jagad";
+    if (loadingOverlay) {
+      loadingOverlay.classList.add("hidden");
+      setTimeout(() => loadingOverlay.remove(), 600);
+    }
   }
 };
 

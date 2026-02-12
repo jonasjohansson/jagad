@@ -61,3 +61,31 @@ body {
   letter-spacing: 0.1em;
 }
 
+/* Loading overlay */
+#loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #191928;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease;
+}
+
+#loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#loading-text {
+  font-family: "BankGothic", "BankGothic Md BT", "Bank Gothic", system-ui, sans-serif;
+  font-size: 2rem;
+  color: #e5e7eb;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
