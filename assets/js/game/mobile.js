@@ -63,22 +63,20 @@ export function restoreDesktopSettings(settings) {
  * Initialize touch input — swipe-to-WASD for Chaser 1
  * Extracted from main.js inline touch handlers
  */
-export function initTouchInput(canvas, keys, STATE, markChaserReady) {
+export function initTouchInput(canvas, keys, STATE, markChaserReady, onUserGesture) {
   const TOUCH_DEAD_ZONE = 20;
+  const DOUBLE_TAP_MS = 300;
   let touchStartX = 0;
   let touchStartY = 0;
   let touchActiveKey = null;
+  let lastTapTime = 0;
+  let gestureUnlocked = false;
 
   canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
     const touch = e.touches[0];
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
-
-    // First touch readies Chaser 1 in PRE_GAME/STARTING
-    if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
-      markChaserReady(0);
-    }
   }, { passive: false });
 
   canvas.addEventListener("touchmove", (e) => {
@@ -104,12 +102,36 @@ export function initTouchInput(canvas, keys, STATE, markChaserReady) {
       newKey = dx < 0 ? "a" : "d";
     }
 
+    // Dispatch keydown for high score entry (fires once per direction change)
+    if (newKey !== touchActiveKey && STATE.enteringHighScore) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: newKey, bubbles: true }));
+    }
+
     touchActiveKey = newKey;
     keys.add(newKey);
   }, { passive: false });
 
   canvas.addEventListener("touchend", (e) => {
     e.preventDefault();
+
+    // Unlock audio/video on first tap (touchend is a user activation event)
+    if (!gestureUnlocked && onUserGesture) {
+      gestureUnlocked = true;
+      onUserGesture();
+    }
+
+    // Double-tap → boost (dispatch Chaser 1 enter key "e")
+    const now = Date.now();
+    if (now - lastTapTime < DOUBLE_TAP_MS) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
+    }
+    lastTapTime = now;
+
+    // Tap readies Chaser 1 in PRE_GAME/STARTING
+    if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
+      markChaserReady(0);
+    }
+
     if (touchActiveKey) {
       keys.delete(touchActiveKey);
       touchActiveKey = null;

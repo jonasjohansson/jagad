@@ -436,8 +436,8 @@ const loadingProgress = {
   }
 
   function playSFX(sfxName, playerIndex) {
-    // Try pre-created Tone.js player first (instant playback)
-    if (playerIndex != null) {
+    // Try Tone.js player first (pitch-modulated), only if context is running
+    if (playerIndex != null && typeof Tone !== "undefined" && Tone.context.state === "running") {
       const player = tonePlayers[`${sfxName}_${playerIndex}`];
       if (player && player.loaded) {
         try {
@@ -449,7 +449,7 @@ const loadingProgress = {
         }
       }
     }
-    // Standard playback (no modulation)
+    // Standard HTML Audio playback (works in user gesture even before Tone is ready)
     if (!preloadedSFX[sfxName]) return;
     const sfx = preloadedSFX[sfxName];
     sfx.currentTime = 0;
@@ -487,9 +487,21 @@ const loadingProgress = {
     } else {
       setupAudioAnalyser();
     }
+    // Load Tone.js dynamically on first gesture (avoids AudioContext warning at page load)
+    if (typeof Tone === "undefined") {
+      const script = document.createElement("script");
+      script.src = "./assets/js/lib/Tone.js";
+      script.onload = () => {
+        Tone.start().then(() => initToneSFX()).catch(() => {});
+      };
+      document.head.appendChild(script);
+    } else {
+      Tone.start().then(() => initToneSFX()).catch(() => {});
+    }
   }
   document.addEventListener("touchstart", unlockAudio, { once: true });
   document.addEventListener("click", unlockAudio, { once: true });
+  document.addEventListener("keydown", unlockAudio, { once: true });
 
   // ============================================
   // VOLUMETRIC FOG (3D Noise Texture)
@@ -1907,7 +1919,9 @@ const loadingProgress = {
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
   // Touch input (mobile swipe controls for Chaser 1)
-  initTouchInput(canvas, keys, STATE, markChaserReady);
+  initTouchInput(canvas, keys, STATE, markChaserReady, () => {
+    unlockAudio(); // Unlock audio/Tone.js on first touch
+  });
 
   function triggerCapture(fugitiveIndex, chaserIndex) {
     if (!STATE.loaded) return;
@@ -2060,14 +2074,10 @@ const loadingProgress = {
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
           // Map server format (playerName) to local format (initials)
-          settings.highScores = data.slice(0, 3).map(e => ({
+          settings.highScores = data.map(e => ({
             initials: (e.playerName || "???").substring(0, 3),
             score: e.score,
           }));
-          // Pad to 3 entries
-          while (settings.highScores.length < 3) {
-            settings.highScores.push({ initials: "???", score: 0 });
-          }
           if (STATE.updateStateDisplay) STATE.updateStateDisplay();
         }
       })
@@ -2438,7 +2448,6 @@ const loadingProgress = {
     projectionPlane.material.opacity = 0;
 
     scene.add(projectionPlane);
-    console.log("Projection plane initialized at:", projectionPlane.position);
 
     // Preload textures for each state
     preloadProjectionTextures();
@@ -2503,11 +2512,9 @@ const loadingProgress = {
 
     for (const [state, imageName] of Object.entries(stateImages)) {
       if (imageName && imageName.trim() !== "") {
-        console.log(`Loading projection image for ${state}:`, imagePath + imageName);
         textureLoader.load(
           imagePath + imageName,
           (texture) => {
-            console.log(`Loaded projection texture for ${state}:`, texture);
             texture.colorSpace = THREE.SRGBColorSpace;
             projectionTextures[state] = texture;
             // If this is the current state, update the projection
@@ -2724,7 +2731,7 @@ const loadingProgress = {
     // Update local cache optimistically
     const highScores = loadHighScores();
     highScores.splice(position, 0, { initials, score });
-    highScores.length = 3;
+    if (highScores.length > 10) highScores.length = 10;
     saveHighScores(highScores);
 
     // Post to server and refresh cache from response
@@ -4714,8 +4721,11 @@ const loadingProgress = {
         }
       }, 1500);
     } else {
-      // No high score - use game over text templates
-      applyGameOverText();
+      // No high score - show GAMEOVER
+      settings.glassTextRow1 = "";
+      settings.glassTextRow2 = "GAMEOVER";
+      settings.glassTextRow3 = "";
+      settings.glassTextRow4 = "";
       updateGlassCanvas();
       postHighScore({ score: STATE.playerScore, playerName: "???", capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) })
         .then(() => fetchServerHighScores());
@@ -5991,8 +6001,6 @@ const loadingProgress = {
         console.warn(`Missing chaser spawn marker C${i} in GLB!`);
       }
     }
-    console.log(`Total chaser spawns found: ${chaserSpawns.length}`);
-
     // Find ROADS mesh within level GLB (same scale as markers)
     let roadsMeshes = [];
     levelContainer.traverse((obj) => {
@@ -6010,7 +6018,7 @@ const loadingProgress = {
         }
       }
     });
-    console.log("[Glass overlay] matched meshes:", foundGlassMeshes.map(m => m.name));
+
 
     if (foundGlassMeshes.length > 0) {
       setupGlassMeshes(foundGlassMeshes);
@@ -6828,7 +6836,6 @@ const loadingProgress = {
     initAtmosphere();
     initAudio();
     initSFX();
-    initToneSFX();
     loadHelicopter();
     updateHelicopterBoundsHelper();
     setupSearchlights();

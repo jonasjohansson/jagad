@@ -270,7 +270,7 @@ export const defaultSettings = {
   projectionScale: 0.2,
   projectionOffsetX: 0,
   projectionOffsetY: 0.75,
-  projectionOffsetZ: 0.5,
+  projectionOffsetZ: 1,
 
   // GLB Parts - per-mesh material overrides (partName -> settings)
   // Only non-default values need to be stored
