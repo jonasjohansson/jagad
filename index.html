@@ -7,8 +7,8 @@
     <meta name="screen-orientation" content="landscape" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="stylesheet" href="assets/css/style.css?v=139" />
-    <link rel="stylesheet" href="assets/fonts/stylesheet.css?v=139" />
+    <link rel="stylesheet" href="assets/css/style.css?v=140" />
+    <link rel="stylesheet" href="assets/fonts/stylesheet.css?v=140" />
     <link rel="icon" type="image/png" href="assets/favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
     <link rel="shortcut icon" href="assets/favicon/favicon.ico" />
@@ -18,7 +18,7 @@
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
-    <div id="loading-overlay"><div id="loading-text">0%</div></div>
+    <div id="loading-overlay"><div id="loading-text">Loading..</div></div>
     <div id="portrait-overlay">
       <div class="rotate-text">Please rotate your device to landscape mode</div>
     </div>
@@ -35,7 +35,7 @@
     <!-- Tone.js loaded dynamically on first user gesture to avoid AudioContext warning -->
     <script type="module">
       // Cache-bust: append build timestamp to all dynamic imports
-      const v = "v=139";
+      const v = "v=140";
       // Load lil-gui as a global for compatibility
       import(`./assets/js/lib/lil-gui.esm.js?${v}`).then(module => {
         window.lil = module;

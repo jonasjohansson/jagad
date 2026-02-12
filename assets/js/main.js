@@ -2102,8 +2102,7 @@ const loadingProgress = {
       chaser.light.intensity = settings.chaserLightIntensity;
     }
     if (DEBUG) console.log(`Chaser ${chaserIndex} is ready!`);
-    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
-    sendServerEvent({ type: "chaserSelected", chaserIndex, color: chaserColors[chaserIndex], playerName: `Player ${chaserIndex + 1}` });
+    sendServerEvent({ type: "chaserSelected", chaserIndex, color: chaserColor, playerName: `Player ${chaserIndex + 1}` });
 
     // Check if this is the first ready chaser - start countdown
     const readyCount = chasers.filter(c => c.ready).length;
