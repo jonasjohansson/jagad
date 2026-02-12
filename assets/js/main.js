@@ -1954,16 +1954,21 @@ const loadingProgress = {
       STATE.gameTimerRemaining = 0.001;
     }
 
-    // Toggle glass opacity between default and 1 (facade mode only)
+    // Toggle Glass-Glass GLB part opacity between current and 1 (facade mode only)
     if (e.key === "6" && isFacadeMode) {
-      const defaultOpacity = settings.glassMaterialOpacity;
-      if (defaultOpacity < 1) {
-        STATE._savedGlassOpacity = defaultOpacity;
-        settings.glassMaterialOpacity = 1;
-      } else {
-        settings.glassMaterialOpacity = STATE._savedGlassOpacity ?? 0;
+      const glassData = glbParts.get("Glass-Glass");
+      if (glassData && glassData.mesh.material) {
+        const mat = glassData.mesh.material;
+        if (mat.opacity < 1) {
+          STATE._savedGlassPartOpacity = mat.opacity;
+          mat.opacity = 1;
+          mat.transparent = false;
+        } else {
+          mat.opacity = STATE._savedGlassPartOpacity ?? 0.5;
+          mat.transparent = mat.opacity < 1;
+        }
+        mat.needsUpdate = true;
       }
-      updateGlassMaterialOpacity();
     }
 
     keys.add(keyLower);
