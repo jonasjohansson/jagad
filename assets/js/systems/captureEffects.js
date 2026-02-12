@@ -1,170 +1,349 @@
-// Capture Effects module
-// Visual effects when a fugitive is captured
+// Capture Effects — pulse wave, particles, flash on fugitive capture
+// Extracted from main.js
 
-const activeEffects = [];
+import * as THREE from "../lib/three/three.module.js";
 
-export function createCaptureEffect(THREE, scene, position, chaserColor) {
-  const effects = [];
+const captureEffects = [];
 
-  // Grid pulse effect
-  const gridSize = 2;
-  const gridGeometry = new THREE.PlaneGeometry(gridSize, gridSize, 10, 10);
-  const gridMaterial = new THREE.MeshBasicMaterial({
-    color: chaserColor,
-    wireframe: true,
-    transparent: true,
-    opacity: 1,
-    side: THREE.DoubleSide,
-  });
-  const grid = new THREE.Mesh(gridGeometry, gridMaterial);
-  grid.rotation.x = -Math.PI / 2;
-  grid.position.copy(position);
-  grid.position.y += 0.01;
-  scene.add(grid);
+// Pre-built tube geometry cache — built once when path graph is ready
+let _tubeCache = null;
 
-  effects.push({
-    type: "grid",
-    mesh: grid,
-    startTime: performance.now(),
-    duration: 800,
-    startScale: 0.1,
-    endScale: 3,
-  });
+function buildTubeCache(STATE, settings) {
+  if (!STATE.pathGraph || !STATE.pathGraph.edges) return null;
+  const tubeHeight = settings.pulseWaveTubeHeight || 0.15;
+  const tubeRadius = tubeHeight * 0.4;
+  const glowScale = settings.pulseWaveGlow || 3.0;
+  const edges = STATE.pathGraph.edges;
+  const segs = 6;
 
-  // Particle burst
-  const particleCount = 20;
-  const particleGeometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(particleCount * 3);
-  const velocities = [];
+  const templateCore = new THREE.CylinderGeometry(tubeRadius, tubeRadius, 1, segs, 1, true);
+  const templateGlow = new THREE.CylinderGeometry(tubeRadius * glowScale, tubeRadius * glowScale, 1, segs, 1, true);
+  templateCore.rotateX(Math.PI / 2);
+  templateGlow.rotateX(Math.PI / 2);
 
-  for (let i = 0; i < particleCount; i++) {
-    positions[i * 3] = position.x;
-    positions[i * 3 + 1] = position.y + 0.5;
-    positions[i * 3 + 2] = position.z;
+  const vertsPerTube = templateCore.attributes.position.count;
 
-    // Random velocity
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 2 + Math.random() * 3;
-    const upSpeed = 3 + Math.random() * 2;
-    velocities.push({
-      x: Math.cos(angle) * speed,
-      y: upSpeed,
-      z: Math.sin(angle) * speed,
-    });
+  // Pre-calculate per-edge geometry data
+  const edgeCenters = []; // {x, z} per edge
+  const corePositions = [];
+  const glowPositions = [];
+
+  for (const edge of edges) {
+    const dx = edge.x2 - edge.x1;
+    const dz = edge.z2 - edge.z1;
+    const length = Math.sqrt(dx * dx + dz * dz);
+    const angle = Math.atan2(dx, dz);
+    const centerX = (edge.x1 + edge.x2) / 2;
+    const centerZ = (edge.z1 + edge.z2) / 2;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    edgeCenters.push({ x: centerX, z: centerZ });
+
+    for (let v = 0; v < vertsPerTube; v++) {
+      let lx = templateCore.attributes.position.getX(v);
+      let ly = templateCore.attributes.position.getY(v);
+      let lz = templateCore.attributes.position.getZ(v) * length;
+      const rx = lx * cosA + lz * sinA;
+      const rz = -lx * sinA + lz * cosA;
+      corePositions.push(rx + centerX, ly + tubeHeight / 2, rz + centerZ);
+
+      lx = templateGlow.attributes.position.getX(v);
+      ly = templateGlow.attributes.position.getY(v);
+      lz = templateGlow.attributes.position.getZ(v) * length;
+      const grx = lx * cosA + lz * sinA;
+      const grz = -lx * sinA + lz * cosA;
+      glowPositions.push(grx + centerX, ly + tubeHeight / 2, grz + centerZ);
+    }
   }
 
-  particleGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-
-  const particleMaterial = new THREE.PointsMaterial({
-    color: chaserColor,
-    size: 0.15,
-    transparent: true,
-    opacity: 1,
-  });
-
-  const particles = new THREE.Points(particleGeometry, particleMaterial);
-  scene.add(particles);
-
-  effects.push({
-    type: "particles",
-    mesh: particles,
-    velocities,
-    startTime: performance.now(),
-    duration: 1000,
-    gravity: 10,
-  });
-
-  // Flash effect
-  const flashGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-  const flashMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 1,
-  });
-  const flash = new THREE.Mesh(flashGeometry, flashMaterial);
-  flash.position.copy(position);
-  flash.position.y += 0.5;
-  scene.add(flash);
-
-  effects.push({
-    type: "flash",
-    mesh: flash,
-    startTime: performance.now(),
-    duration: 200,
-    startScale: 0.1,
-    endScale: 2,
-  });
-
-  // Store in active effects array
-  for (const effect of effects) {
-    activeEffects.push(effect);
+  // Build shared index buffer
+  const templateIndex = templateCore.index.array;
+  const indices = [];
+  for (let e = 0; e < edges.length; e++) {
+    const offset = e * vertsPerTube;
+    for (let j = 0; j < templateIndex.length; j++) {
+      indices.push(templateIndex[j] + offset);
+    }
   }
 
-  return effects;
+  templateCore.dispose();
+  templateGlow.dispose();
+
+  return {
+    corePositions: new Float32Array(corePositions),
+    glowPositions: new Float32Array(glowPositions),
+    indices,
+    edgeCenters,
+    vertsPerTube,
+    edgeCount: edges.length
+  };
 }
 
-export function updateCaptureEffects(scene) {
-  const now = performance.now();
+function getTubeCache(STATE, settings) {
+  if (!_tubeCache) _tubeCache = buildTubeCache(STATE, settings);
+  return _tubeCache;
+}
 
-  for (let i = activeEffects.length - 1; i >= 0; i--) {
-    const effect = activeEffects[i];
-    const elapsed = now - effect.startTime;
-    const progress = Math.min(elapsed / effect.duration, 1);
+// Shared flash + particle geometry (created once, reused)
+let _sharedFlashGeo = null;
 
-    if (progress >= 1) {
-      // Remove effect
-      scene.remove(effect.mesh);
-      if (effect.mesh.geometry) effect.mesh.geometry.dispose();
-      if (effect.mesh.material) effect.mesh.material.dispose();
-      activeEffects.splice(i, 1);
+export function createCaptureEffect(position, chaserColor, billboard, scene, settings, STATE) {
+  if (!settings.pulseWaveEnabled) return;
+
+  const color = new THREE.Color(chaserColor);
+  const originX = position.x;
+  const originZ = position.z;
+
+  let coreMesh = null, glowMesh = null;
+  let coreGeo = null, glowGeo = null;
+  let coreMat = null, glowMat = null;
+  let edgeDistances = [];
+  let vertsPerTube = 0;
+
+  const cache = getTubeCache(STATE, settings);
+  if (cache) {
+    // Compute per-edge distances from this capture origin
+    for (let e = 0; e < cache.edgeCount; e++) {
+      const ec = cache.edgeCenters[e];
+      edgeDistances.push(Math.sqrt((ec.x - originX) ** 2 + (ec.z - originZ) ** 2));
+    }
+    vertsPerTube = cache.vertsPerTube;
+
+    // Reuse shared position/index data, only create fresh alpha attributes
+    const totalVerts = cache.edgeCount * vertsPerTube;
+
+    coreGeo = new THREE.BufferGeometry();
+    coreGeo.setAttribute('position', new THREE.Float32BufferAttribute(cache.corePositions, 3));
+    coreGeo.setAttribute('alpha', new THREE.Float32BufferAttribute(new Float32Array(totalVerts), 1));
+    coreGeo.setIndex(cache.indices);
+
+    glowGeo = new THREE.BufferGeometry();
+    glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(cache.glowPositions, 3));
+    glowGeo.setAttribute('alpha', new THREE.Float32BufferAttribute(new Float32Array(totalVerts), 1));
+    glowGeo.setIndex(cache.indices);
+
+    const shaderVert = `
+      attribute float alpha;
+      varying float vAlpha;
+      void main() {
+        vAlpha = alpha;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    const shaderFrag = `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying float vAlpha;
+      void main() {
+        gl_FragColor = vec4(uColor, vAlpha * uOpacity);
+      }
+    `;
+
+    coreMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(0xffffff) }, uOpacity: { value: 1.0 } },
+      vertexShader: shaderVert, fragmentShader: shaderFrag,
+      transparent: true, depthWrite: false, depthTest: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+    });
+    coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    scene.add(coreMesh);
+
+    glowMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: color.clone() }, uOpacity: { value: 1.0 } },
+      vertexShader: shaderVert, fragmentShader: shaderFrag,
+      transparent: true, depthWrite: false, depthTest: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+    });
+    glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    scene.add(glowMesh);
+  }
+
+  // Create particle burst from billboard position
+  const particleCount = settings.pulseWaveParticles ? 60 : 0;
+  const particlePositions = new Float32Array(particleCount * 3);
+  const particleVelocities = [];
+  const particleColors = new Float32Array(particleCount * 3);
+
+  const billboardPos = position.clone();
+  billboardPos.y = position.y + 0.3;
+
+  for (let i = 0; i < particleCount; i++) {
+    particlePositions[i * 3] = billboardPos.x + (Math.random() - 0.5) * 0.3;
+    particlePositions[i * 3 + 1] = billboardPos.y + (Math.random() - 0.5) * 0.3;
+    particlePositions[i * 3 + 2] = billboardPos.z + (Math.random() - 0.5) * 0.3;
+
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 1.5 + 0.5;
+    const upSpeed = Math.random() * 2 + 0.5;
+    particleVelocities.push({
+      x: Math.cos(angle) * speed,
+      y: upSpeed,
+      z: Math.sin(angle) * speed
+    });
+
+    const t = Math.random();
+    const brightness = 1 + Math.random() * 0.5;
+    particleColors[i * 3] = Math.min(1, brightness * (1 * (1 - t) + color.r * t));
+    particleColors[i * 3 + 1] = Math.min(1, brightness * (1 * (1 - t) + color.g * t));
+    particleColors[i * 3 + 2] = Math.min(1, brightness * (1 * (1 - t) + color.b * t));
+  }
+
+  const particleGeo = new THREE.BufferGeometry();
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+
+  const particleMat = new THREE.PointsMaterial({
+    size: 0.25, vertexColors: true, transparent: true, opacity: 1.0,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+  });
+
+  const particles = new THREE.Points(particleGeo, particleMat);
+  scene.add(particles);
+
+  // Flash at capture point (reuse shared geometry)
+  let flash = null;
+  let flashMat = null;
+  if (settings.pulseWaveFlash !== false) {
+    if (!_sharedFlashGeo) _sharedFlashGeo = new THREE.SphereGeometry(0.5, 16, 16);
+    flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 1.0,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    flash = new THREE.Mesh(_sharedFlashGeo, flashMat);
+    flash.position.copy(billboardPos);
+    scene.add(flash);
+  }
+
+  captureEffects.push({
+    coreMesh, glowMesh, coreGeo, glowGeo, coreMat, glowMat,
+    edgeDistances, vertsPerTube,
+    particles, particleMat, particleVelocities,
+    flash, flashMat,
+    originX, originZ,
+    time: 0,
+    duration: settings.pulseWaveDuration || 5.0,
+    pulseSpeed: settings.pulseWaveSpeed || 3.5,
+    pulseWidth: settings.pulseWaveWidth || 1.5,
+    intensity: settings.pulseWaveIntensity || 0.8,
+    easing: settings.pulseWaveEasing || "easeOut"
+  });
+}
+
+// Easing functions for pulse wave
+function applyEasing(t, easing) {
+  switch (easing) {
+    case "easeOut":
+      return 1 - Math.pow(1 - t, 3); // Cubic ease out - starts fast, slows down
+    case "easeIn":
+      return Math.pow(t, 3); // Cubic ease in - starts slow, speeds up
+    case "easeInOut":
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    case "linear":
+    default:
+      return t;
+  }
+}
+
+export function updateCaptureEffects(dt, scene) {
+  for (let i = captureEffects.length - 1; i >= 0; i--) {
+    const effect = captureEffects[i];
+    effect.time += dt;
+    const t = effect.time / effect.duration;
+
+    if (t >= 1) {
+      // Remove effect — positions are cached, only dispose alpha + materials
+      if (effect.coreMesh) { scene.remove(effect.coreMesh); effect.coreMat.dispose(); }
+      if (effect.glowMesh) { scene.remove(effect.glowMesh); effect.glowMat.dispose(); }
+      if (effect.coreGeo) { effect.coreGeo.deleteAttribute('alpha'); effect.coreGeo.dispose(); }
+      if (effect.glowGeo) { effect.glowGeo.deleteAttribute('alpha'); effect.glowGeo.dispose(); }
+      scene.remove(effect.particles);
+      effect.particles.geometry.dispose();
+      effect.particleMat.dispose();
+      if (effect.flash) {
+        scene.remove(effect.flash);
+        effect.flashMat.dispose();
+      }
+      captureEffects.splice(i, 1);
       continue;
     }
 
-    switch (effect.type) {
-      case "grid": {
-        const scale = effect.startScale + (effect.endScale - effect.startScale) * progress;
-        effect.mesh.scale.set(scale, scale, 1);
-        effect.mesh.material.opacity = 1 - progress;
-        break;
-      }
+    // Apply easing to the animation progress
+    const easedT = applyEasing(t, effect.easing);
+    const maxRadius = effect.pulseSpeed * effect.duration;
+    const pulseRadius = easedT * maxRadius;
+    const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
 
-      case "particles": {
-        const positions = effect.mesh.geometry.attributes.position.array;
-        const dt = 0.016; // Approximate delta time
+    // Update per-vertex alpha on the batched meshes
+    if (effect.coreGeo && effect.edgeDistances.length > 0) {
+      const coreAlphas = effect.coreGeo.attributes.alpha.array;
+      const glowAlphas = effect.glowGeo.attributes.alpha.array;
+      const vpte = effect.vertsPerTube;
 
-        for (let j = 0; j < effect.velocities.length; j++) {
-          const vel = effect.velocities[j];
-          vel.y -= effect.gravity * dt;
-
-          positions[j * 3] += vel.x * dt;
-          positions[j * 3 + 1] += vel.y * dt;
-          positions[j * 3 + 2] += vel.z * dt;
+      for (let e = 0; e < effect.edgeDistances.length; e++) {
+        const distFromPulse = Math.abs(effect.edgeDistances[e] - pulseRadius);
+        let coreA = 0, glowA = 0;
+        if (distFromPulse < effect.pulseWidth) {
+          const normalizedDist = distFromPulse / effect.pulseWidth;
+          const smoothFalloff = Math.exp(-normalizedDist * normalizedDist * 4);
+          const opacity = smoothFalloff * effect.intensity * (1 - fadeOut);
+          coreA = Math.min(1, opacity);
+          glowA = Math.min(0.4, opacity * 0.4);
         }
-
-        effect.mesh.geometry.attributes.position.needsUpdate = true;
-        effect.mesh.material.opacity = 1 - progress;
-        break;
+        const base = e * vpte;
+        for (let v = 0; v < vpte; v++) {
+          coreAlphas[base + v] = coreA;
+          glowAlphas[base + v] = glowA;
+        }
       }
+      effect.coreGeo.attributes.alpha.needsUpdate = true;
+      effect.glowGeo.attributes.alpha.needsUpdate = true;
+    }
 
-      case "flash": {
-        const scale = effect.startScale + (effect.endScale - effect.startScale) * progress;
-        effect.mesh.scale.set(scale, scale, scale);
-        effect.mesh.material.opacity = 1 - progress;
-        break;
-      }
+    // Animate particles with physics
+    const positions = effect.particles.geometry.attributes.position.array;
+    for (let j = 0; j < effect.particleVelocities.length; j++) {
+      const vel = effect.particleVelocities[j];
+      positions[j * 3] += vel.x * dt;
+      positions[j * 3 + 1] += vel.y * dt;
+      positions[j * 3 + 2] += vel.z * dt;
+      // Light gravity
+      vel.y -= 3 * dt;
+      // Strong air resistance to keep particles close
+      vel.x *= 0.95;
+      vel.y *= 0.97;
+      vel.z *= 0.95;
+    }
+    effect.particles.geometry.attributes.position.needsUpdate = true;
+    effect.particleMat.opacity = Math.max(0, 1 - t * 1.2);
+    effect.particleMat.size = 0.25 * (1 - t * 0.3);
+
+    // Animate flash - quick bright flash that fades
+    if (effect.flash) {
+      const flashT = Math.min(1, effect.time * 5);
+      effect.flashMat.opacity = Math.max(0, 1 - flashT);
+      effect.flash.scale.setScalar(1 + flashT * 2);
     }
   }
 }
 
 export function clearCaptureEffects(scene) {
-  for (const effect of activeEffects) {
-    scene.remove(effect.mesh);
-    if (effect.mesh.geometry) effect.mesh.geometry.dispose();
-    if (effect.mesh.material) effect.mesh.material.dispose();
+  for (const effect of captureEffects) {
+    if (effect.coreMesh) { scene.remove(effect.coreMesh); effect.coreMat.dispose(); }
+    if (effect.glowMesh) { scene.remove(effect.glowMesh); effect.glowMat.dispose(); }
+    if (effect.coreGeo) { effect.coreGeo.deleteAttribute('alpha'); effect.coreGeo.dispose(); }
+    if (effect.glowGeo) { effect.glowGeo.deleteAttribute('alpha'); effect.glowGeo.dispose(); }
+    scene.remove(effect.particles);
+    effect.particles.geometry.dispose();
+    effect.particleMat.dispose();
+    if (effect.flash) {
+      scene.remove(effect.flash);
+      // Don't dispose flash geometry — it's shared (_sharedFlashGeo)
+      effect.flashMat.dispose();
+    }
   }
-  activeEffects.length = 0;
+  captureEffects.length = 0;
 }
 
-export function getActiveEffects() {
-  return activeEffects;
+export function resetTubeCache() {
+  _tubeCache = null;
 }

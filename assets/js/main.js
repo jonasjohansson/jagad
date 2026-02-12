@@ -5,19 +5,27 @@ const DEBUG = false; // Set to true for console logging
 
 import * as THREE from "./lib/three/three.module.js";
 import { GLTFLoader } from "./lib/three/addons/loaders/GLTFLoader.js";
-import { EffectComposer } from "./lib/three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "./lib/three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "./lib/three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "./lib/three/addons/postprocessing/OutputPass.js";
-import { ShaderPass } from "./lib/three/addons/postprocessing/ShaderPass.js";
-import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPixelatedPass.js";
-import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
 import { KTX2Loader } from "./lib/three/addons/loaders/KTX2Loader.js";
 import { defaultSettings, loadSettings, saveSettings, exportSettings, importSettings } from "./game/settings.js?v=17";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=8";
 import { createBoostState, triggerBoost, updateBoosts, getBoostMultiplier, resetBoosts, addBoostGUI } from "./gui/index.js?v=1";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=4";
+import { createNoiseTexture3D } from "./rendering/fog.js?v=145";
+import { checkCollision } from "./game/collision.js?v=145";
+import { getServerAddress, connectToServer, sendServerEvent, postHighScore } from "./game/server.js?v=145";
+import { initAudio, playAudio, stopAudio, setAudioTrack, initSFX, playSFX, playHelicopterSound, stopHelicopterSound, unlockAudio, getAudioElement } from "./systems/audio.js?v=145";
+import { initPostProcessing, updatePostProcessing } from "./rendering/postprocessing.js?v=145";
+import { loadHelicopter, updateHelicopter, rebuildHelicopterCone, updateHelicopterColor, updateHelicopterScale, updateHelicopterBoundsHelper, getHelicopter, getHelicopterLightHelper, getHelicopterBoundsHelper, setHelicopterLightHelper } from "./systems/helicopter.js?v=145";
+import { setupSearchlights, updateSearchlights, toggleSearchlightHelpers } from "./systems/searchlights.js?v=145";
+import { updateLamps, updateCarsAudio, updateTextBPMPulse, updateAllEmissives } from "./systems/emissives.js?v=145";
+import { createCaptureEffect, updateCaptureEffects, clearCaptureEffects } from "./systems/captureEffects.js?v=145";
+import { setupGlassMeshes, updateGlassCanvas, updateGlassPosition, updateGlassMaterialOpacity, updateGlassColor, updateGlassBrightness, isShuffleActive, setBeforeRenderCallback, getGlassMeshes, getGlassMaterials, getGlassVideo, getGlassCanvas, isGlassVideoReady } from "./rendering/glass.js?v=145";
+import { initTemplateVars, replaceTemplateVars, applyStartingText, applyPlayingText, applyHighScoreText, applyGameOverText } from "./game/templateVars.js?v=145";
+import { initProjection, initProjectionPlane, updateProjectionForState, loadProjectionImage, updateProjectionPump, handleProjectionStateChange } from "./rendering/projection.js?v=145";
+import { initPathMovement, initActorOnPath, updateFugitiveMovementPath, updateChaserMovementPath } from "./game/pathMovement.js?v=145";
+import { initActorWire, ActorWire, updateWireBillboards } from "./systems/actorWire.js?v=145";
+import { setupLights, toneMappingOptions } from "./rendering/lights.js?v=145";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -98,56 +106,6 @@ const loadingProgress = {
 
   const isFacadeMode = new URLSearchParams(window.location.search).has("facade");
 
-  let serverWS = null;
-
-  function getServerAddress() {
-    const params = new URLSearchParams(window.location.search);
-    const s = params.get("server");
-    const LOCAL = "http://localhost:3000";
-    const REMOTE = "https://pacman-server-239p.onrender.com";
-    if (s) {
-      if (s.startsWith("http://") || s.startsWith("https://")) return s;
-      if (s === "local" || s === "localhost") return LOCAL;
-      if (s === "remote" || s === "render") return REMOTE;
-    }
-    if (window.location.origin === "http://localhost" || window.location.origin.startsWith("http://localhost:")) return LOCAL;
-    return REMOTE;
-  }
-
-  function connectToServer() {
-    try {
-      const url = getServerAddress().replace(/^http/, "ws");
-      console.log("Game WS connecting to", url);
-      serverWS = new WebSocket(url);
-      serverWS.addEventListener("open", () => {
-        console.log("Game WS connected");
-      });
-      serverWS.addEventListener("close", () => {
-        console.log("Game WS disconnected, retrying in 5s");
-        serverWS = null;
-        setTimeout(connectToServer, 5000);
-      });
-      serverWS.addEventListener("error", () => serverWS.close());
-    } catch { serverWS = null; }
-  }
-
-  function sendServerEvent(event) {
-    if (serverWS && serverWS.readyState === WebSocket.OPEN) {
-      console.log("Game WS sending:", event.type);
-      serverWS.send(JSON.stringify(event));
-    } else {
-      console.warn("Game WS not connected, event dropped:", event.type);
-    }
-  }
-
-  function postHighScore(data) {
-    return fetch(`${getServerAddress()}/api/highscore`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }).catch(() => {});
-  }
-
   connectToServer();
 
   // WebGL Renderer
@@ -172,12 +130,6 @@ const loadingProgress = {
   // ============================================
 
   let buildingPlane = null;
-  let projectionPlane = null;
-  let projectionTextures = {};
-  let projectionVideo = null;
-  let projectionVideoTexture = null;
-  let gameAnimationVideo = null;
-  let gameAnimationVideoTexture = null;
   let camera;
   let orthoCamera;
   let perspCamera;
@@ -189,18 +141,7 @@ const loadingProgress = {
 
   const fugitives = [];
   const chasers = [];
-  let helicopter = null;
-  let helicopterBoundsHelper = null;
-  let searchlights = null;
-  let searchlightHelpers = [];
-  let helicopterLightHelper = null;
   let chaserLightHelpers = [];
-
-  // Reusable temp objects to avoid per-frame allocations
-  const _tempVec3A = new THREE.Vector3();
-  const _tempVec3B = new THREE.Vector3();
-  const _tempQuat = new THREE.Quaternion();
-  const _defaultDownDir = new THREE.Vector3(0, -1, 0);
 
   const settings = {
     gameStarted: false,
@@ -327,1503 +268,13 @@ const loadingProgress = {
     highScoreInitialsColor: null, // Color for high score initials (first player's color)
   };
 
+  initTemplateVars(settings, STATE, () => fugitives.length);
+  initProjection(scene, settings, STATE, renderer, setGameState);
+  initPathMovement(settings, STATE, chasers, fugitives, getChaserInputDirection);
+  initActorWire(scene, settings, STATE, renderer);
+
   // Helper to get level center (avoids creating new Vector3)
   const getLevelCenter = () => STATE.levelCenter;
-
-  // ============================================
-  // AUDIO WITH ANALYZER
-  // ============================================
-
-  let audioElement = null;
-  let audioContext = null;
-  let audioAnalyser = null;
-  let audioSource = null;
-  let audioFrequencyData = null;
-
-  function initAudio() {
-    const trackPath = PATHS.audio[settings.audioTrack];
-    if (trackPath) {
-      audioElement = new Audio(trackPath);
-      audioElement.loop = true;
-      audioElement.volume = settings.audioVolume;
-      audioElement.crossOrigin = "anonymous";
-    }
-  }
-
-  function setupAudioAnalyser() {
-    if (audioAnalyser || !audioContext || !audioElement) return;
-    if (audioContext.state !== "running") return;
-    try {
-      audioAnalyser = audioContext.createAnalyser();
-      audioAnalyser.fftSize = 256;
-      audioAnalyser.smoothingTimeConstant = 0.8;
-      audioSource = audioContext.createMediaElementSource(audioElement);
-      audioSource.connect(audioAnalyser);
-      audioAnalyser.connect(audioContext.destination);
-      audioFrequencyData = new Uint8Array(audioAnalyser.frequencyBinCount);
-    } catch (e) {
-      console.warn("Failed to setup audio analyser:", e);
-    }
-  }
-
-  function getAudioFrequency(bandIndex, numBands) {
-    if (!audioAnalyser || !audioFrequencyData) return 0;
-    audioAnalyser.getByteFrequencyData(audioFrequencyData);
-    const binCount = audioFrequencyData.length;
-    const bandSize = Math.floor(binCount / numBands);
-    const start = bandIndex * bandSize;
-    const end = Math.min(start + bandSize, binCount);
-    let sum = 0;
-    for (let i = start; i < end; i++) {
-      sum += audioFrequencyData[i];
-    }
-    return sum / (end - start) / 255; // Normalize to 0-1
-  }
-
-  function playAudio() {
-    if (!audioElement) return;
-    if (audioContext && audioContext.state === "suspended") {
-      audioContext.resume().then(() => audioElement.play().catch(() => {}));
-    } else {
-      audioElement.play().catch(() => {});
-    }
-  }
-
-  function stopAudio() {
-    if (audioElement) {
-      audioElement.pause();
-    }
-  }
-
-  function setAudioTrack(trackName) {
-    const trackPath = PATHS.audio[trackName];
-    if (trackPath && audioElement) {
-      const wasPlaying = !audioElement.paused;
-      audioElement.src = trackPath;
-      if (wasPlaying) {
-        audioElement.play().catch(() => {});
-      }
-    }
-  }
-
-  // ============================================
-  // SOUND EFFECTS
-  // ============================================
-
-  let helicopterAudio = null;
-  const preloadedSFX = {};
-
-  function initSFX() {
-    // Preload all SFX for immediate playback
-    if (PATHS.sfx) {
-      for (const [name, path] of Object.entries(PATHS.sfx)) {
-        if (name === "helicopter") {
-          // Helicopter is looping, handle separately
-          helicopterAudio = new Audio(path);
-          helicopterAudio.loop = true;
-          helicopterAudio.volume = 0.3;
-        } else {
-          // Preload other SFX
-          const audio = new Audio(path);
-          audio.volume = 0.5;
-          audio.preload = "auto";
-          preloadedSFX[name] = audio;
-        }
-      }
-    }
-  }
-
-  // Tone.js modulated SFX: per-player pitch variation
-  const MODULATED_SFX = ["playerSelect", "honk", "capture", "nitro"]; // SFX that get pitch modulation
-  const PLAYER_PITCH_OFFSETS = [-5, 0, 4, 7]; // lower 4th, root, major 3rd, 5th (semitones)
-  const tonePlayers = {}; // "sfxName_playerIndex" -> pre-created Tone.Player
-
-  function initToneSFX() {
-    if (typeof Tone === "undefined") return;
-    // Pre-create a player for each SFX + player combination
-    for (const name of MODULATED_SFX) {
-      const path = PATHS.sfx[name];
-      if (!path) continue;
-      for (let i = 0; i < 4; i++) {
-        const semitones = PLAYER_PITCH_OFFSETS[i % PLAYER_PITCH_OFFSETS.length] || 0;
-        const rate = Math.pow(2, semitones / 12);
-        const player = new Tone.Player(path).toDestination();
-        player.playbackRate = rate;
-        player.volume.value = -6;
-        tonePlayers[`${name}_${i}`] = player;
-      }
-    }
-  }
-
-  function playSFX(sfxName, playerIndex) {
-    // Try Tone.js player first (pitch-modulated), only if context is running
-    if (playerIndex != null && typeof Tone !== "undefined" && Tone.context.state === "running") {
-      const player = tonePlayers[`${sfxName}_${playerIndex}`];
-      if (player && player.loaded) {
-        try {
-          player.stop();
-          player.start();
-          return;
-        } catch (e) {
-          // Fall through to standard playback
-        }
-      }
-    }
-    // Standard HTML Audio playback (works in user gesture even before Tone is ready)
-    if (!preloadedSFX[sfxName]) return;
-    const sfx = preloadedSFX[sfxName];
-    sfx.currentTime = 0;
-    sfx.play().catch(() => {});
-  }
-
-  function playHelicopterSound() {
-    if (helicopterAudio && helicopterAudio.paused) {
-      helicopterAudio.play().catch(() => {});
-    }
-  }
-
-  function stopHelicopterSound() {
-    if (helicopterAudio) {
-      helicopterAudio.pause();
-      helicopterAudio.currentTime = 0;
-    }
-  }
-
-  // Unlock audio on first user interaction (required by mobile browsers)
-  let audioUnlocked = false;
-  function unlockAudio() {
-    if (audioUnlocked) return;
-    audioUnlocked = true;
-    // Create AudioContext during user gesture, then wire up analyser once running
-    if (!audioContext && audioElement) {
-      try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      } catch (e) {
-        console.warn("Failed to create AudioContext:", e);
-      }
-    }
-    if (audioContext && audioContext.state === "suspended") {
-      audioContext.resume().then(() => setupAudioAnalyser());
-    } else {
-      setupAudioAnalyser();
-    }
-    // Load Tone.js dynamically on first gesture (avoids AudioContext warning at page load)
-    if (typeof Tone === "undefined") {
-      const script = document.createElement("script");
-      script.src = "./assets/js/lib/Tone.js";
-      script.onload = () => {
-        Tone.start().then(() => initToneSFX()).catch(() => {});
-      };
-      document.head.appendChild(script);
-    } else {
-      Tone.start().then(() => initToneSFX()).catch(() => {});
-    }
-  }
-  document.addEventListener("touchstart", unlockAudio, { once: true });
-  document.addEventListener("click", unlockAudio, { once: true });
-  document.addEventListener("keydown", unlockAudio, { once: true });
-
-  // ============================================
-  // VOLUMETRIC FOG (3D Noise Texture)
-  // ============================================
-
-  function createNoiseTexture3D() {
-    const size = 64;
-    const data = new Uint8Array(size * size * size);
-
-    // Simple 3D noise approximation
-    let i = 0;
-    for (let z = 0; z < size; z++) {
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          // Layered sine waves for pseudo-noise
-          const nx = x / size * 5;
-          const ny = y / size * 5;
-          const nz = z / size * 5;
-
-          let noise = Math.sin(nx * 4) * Math.cos(ny * 4) * Math.sin(nz * 4);
-          noise += Math.sin(nx * 8 + 1) * Math.cos(ny * 8 + 2) * Math.sin(nz * 8 + 3) * 0.5;
-          noise += Math.sin(nx * 16 + 4) * Math.cos(ny * 16 + 5) * Math.sin(nz * 16 + 6) * 0.25;
-
-          data[i] = Math.floor((noise + 1) * 0.5 * 255);
-          i++;
-        }
-      }
-    }
-
-    const texture = new THREE.Data3DTexture(data, size, size, size);
-    texture.format = THREE.RedFormat;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.wrapR = THREE.RepeatWrapping;
-    texture.needsUpdate = true;
-
-    return texture;
-  }
-
-  // ============================================
-  // HELICOPTER
-  // ============================================
-
-  function loadHelicopter() {
-    if (!PATHS.models.helicopter) return;
-
-    const loader = new GLTFLoader();
-    loader.setKTX2Loader(ktx2Loader);
-    loader.load(PATHS.models.helicopter, (gltf) => {
-      loadingProgress.complete();
-      const mesh = gltf.scene;
-
-      // Scale helicopter
-      const box = new THREE.Box3().setFromObject(mesh);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const baseScaleRatio = 2 / maxDim; // Store base ratio for dynamic scaling
-      const scale = settings.helicopterScale * baseScaleRatio;
-      mesh.scale.setScalar(scale);
-      mesh.userData.baseScaleRatio = baseScaleRatio; // Store for later use
-      if (DEBUG) console.log("Helicopter size:", size, "maxDim:", maxDim, "scale:", scale);
-
-      // Position above the level - start near chaser spawn area
-      const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-      const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
-      // Start at a random position within the level
-      const startX = center.x + (Math.random() - 0.5) * levelRadius;
-      const startZ = center.z + (Math.random() - 0.5) * levelRadius;
-      mesh.position.set(startX, settings.helicopterHeight, startZ);
-      if (DEBUG) console.log("Helicopter position:", mesh.position, "center:", center, "levelRadius:", levelRadius);
-
-      // Add spotlight facing down
-      const angleRad = (settings.helicopterLightAngle * Math.PI) / 180;
-      const light = new THREE.SpotLight(
-        settings.helicopterLightColor,
-        settings.helicopterLightIntensity,
-        settings.helicopterLightDistance || 50,
-        angleRad,
-        0.5,
-        1
-      );
-      light.position.set(0, 0, 0);
-      light.castShadow = true;
-      light.shadow.mapSize.width = 2048;
-      light.shadow.mapSize.height = 2048;
-      light.shadow.bias = -0.002;
-      light.shadow.normalBias = 0.05;
-
-      // Create target below helicopter
-      const lightTarget = new THREE.Object3D();
-      lightTarget.position.set(0, -10, 0);
-      mesh.add(lightTarget);
-      light.target = lightTarget;
-      mesh.add(light);
-
-      // Volumetric light cone - small at top (helicopter), wide at bottom (ground)
-      // Multiple nested layers for fuzzy volumetric effect
-      const coneHeight = settings.helicopterConeHeight;
-      const topRadius = settings.helicopterConeTopRadius;
-      const bottomRadius = settings.helicopterConeBottomRadius;
-      const coneOffsetY = settings.helicopterConeOffsetY;
-
-      // Create a group to hold multiple cone layers - pivot point at top
-      const lightCone = new THREE.Group();
-      lightCone.position.set(0, -coneOffsetY, 0);
-
-      // Create multiple layers for fuzzy effect
-      const layerCount = 5;
-      const coneLayers = [];
-
-      for (let layer = 0; layer < layerCount; layer++) {
-        // Each layer slightly smaller, creating soft edges
-        const layerScale = 1 - (layer * 0.15);
-        const layerTopRadius = topRadius * layerScale;
-        const layerBottomRadius = bottomRadius * layerScale;
-
-        // More segments for smoother appearance
-        const coneGeo = new THREE.CylinderGeometry(layerTopRadius, layerBottomRadius, coneHeight, 48, 24, true);
-
-        // Vertex colors with soft falloff
-        const colors = [];
-        const positions = coneGeo.attributes.position;
-        for (let i = 0; i < positions.count; i++) {
-          const x = positions.getX(i);
-          const y = positions.getY(i);
-          const z = positions.getZ(i);
-
-          // Vertical fade: t = 1 at top, 0 at bottom
-          const t = (y + coneHeight / 2) / coneHeight;
-          // Softer exponential falloff
-          const verticalFade = Math.pow(t, 0.3);
-
-          // Edge fade based on distance from center
-          const radiusAtHeight = layerTopRadius + (layerBottomRadius - layerTopRadius) * (1 - t);
-          const distFromCenter = Math.sqrt(x * x + z * z);
-          const edgeT = radiusAtHeight > 0 ? distFromCenter / radiusAtHeight : 0;
-          // Soft gaussian-like edge falloff
-          const edgeFade = Math.exp(-edgeT * edgeT * 2);
-
-          const brightness = verticalFade * edgeFade;
-          colors.push(brightness, brightness, brightness);
-        }
-        coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-
-        // Inner layers are brighter, outer layers dimmer
-        const layerOpacity = settings.helicopterVolumetricOpacity * (1 - layer * 0.15);
-
-        const coneMat = new THREE.MeshBasicMaterial({
-          color: settings.helicopterLightColor,
-          transparent: true,
-          opacity: layerOpacity,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          vertexColors: true
-        });
-
-        const layerMesh = new THREE.Mesh(coneGeo, coneMat);
-        layerMesh.position.y = -coneHeight / 2; // Offset down so pivot is at top
-        layerMesh.castShadow = false;
-        layerMesh.receiveShadow = false;
-        lightCone.add(layerMesh);
-        coneLayers.push({ mesh: layerMesh, material: coneMat });
-      }
-
-      // Store layers for later updates
-      lightCone.userData.layers = coneLayers;
-      mesh.add(lightCone);
-
-      const helicopterMaterials = [];
-      mesh.traverse((child) => {
-        // Skip the lightCone - it should not cast/receive shadows
-        if (child === lightCone) return;
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-          // Apply helicopter color
-          if (child.material) {
-            const mat = child.material;
-            mat.color.set(settings.helicopterColor);
-            if (mat.emissive) {
-              mat.emissive.set(settings.helicopterColor);
-              mat.emissiveIntensity = 0.3;
-            }
-            helicopterMaterials.push(mat);
-          }
-        }
-      });
-      mesh.userData.materials = helicopterMaterials;
-
-      // Assign GLB layer for selective pixelation
-      mesh.traverse(child => {
-        if (child.isMesh) child.layers.set(LAYERS.GLB_MODELS);
-      });
-      // Keep light cone on default layer (volumetric effect should not be pixelated)
-      lightCone.traverse(child => child.layers.set(LAYERS.DEFAULT));
-
-      scene.add(mesh);
-
-      helicopter = {
-        mesh,
-        light,
-        lightTarget,
-        lightCone,
-        angle: 0,
-        rotorAngle: 0,
-        targetX: startX,
-        targetZ: startZ,
-        waypointTimer: 2,
-        baseScaleRatio,
-      };
-
-      // Find rotor parts to animate
-      mesh.traverse((child) => {
-        if (child.name && child.name.toLowerCase().includes("rotor")) {
-          if (!helicopter.rotors) helicopter.rotors = [];
-          helicopter.rotors.push(child);
-        }
-      });
-
-      // Rebuild cone to ensure consistent appearance
-      rebuildHelicopterCone();
-
-      if (DEBUG) console.log("Helicopter loaded");
-    }, undefined, (err) => {
-      console.warn("Failed to load helicopter:", err);
-    });
-  }
-
-  function updateHelicopter(dt) {
-    if (!helicopter || !helicopter.mesh) return;
-    if (!settings.helicopterEnabled) {
-      helicopter.mesh.visible = false;
-      return;
-    }
-    helicopter.mesh.visible = true;
-
-    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const levelRadius = STATE.horizontalSize ? STATE.horizontalSize / 2 : 10;
-    const patrolRadius = Math.min(settings.helicopterRadius, levelRadius * 0.8);
-    const time = performance.now() * 0.001;
-
-    // Smooth figure-8 / lemniscate pattern over the level
-    const speed = settings.helicopterSpeed * 0.3;
-    helicopter.angle += speed * dt;
-
-    // Create smooth hovering path using sine waves, clamped to bounds
-    const rawX = center.x + Math.sin(helicopter.angle) * patrolRadius * 0.8;
-    const rawZ = center.z + Math.sin(helicopter.angle * 2) * patrolRadius * 0.4;
-    const targetX = Math.max(settings.helicopterBoundsMinX, Math.min(settings.helicopterBoundsMaxX, rawX));
-    const targetZ = Math.max(settings.helicopterBoundsMinZ, Math.min(settings.helicopterBoundsMaxZ, rawZ));
-
-    // Smoothly interpolate position (no sudden jumps)
-    const lerpSpeed = 1.5 * dt;
-    helicopter.mesh.position.x += (targetX - helicopter.mesh.position.x) * lerpSpeed;
-    helicopter.mesh.position.z += (targetZ - helicopter.mesh.position.z) * lerpSpeed;
-
-    // Gentle height bobbing
-    helicopter.mesh.position.y = settings.helicopterHeight + Math.sin(time * 0.8) * 0.15;
-
-    // Calculate velocity for facing direction
-    if (!helicopter.lastX) helicopter.lastX = helicopter.mesh.position.x;
-    if (!helicopter.lastZ) helicopter.lastZ = helicopter.mesh.position.z;
-
-    const velX = helicopter.mesh.position.x - helicopter.lastX;
-    const velZ = helicopter.mesh.position.z - helicopter.lastZ;
-
-    helicopter.lastX = helicopter.mesh.position.x;
-    helicopter.lastZ = helicopter.mesh.position.z;
-
-    // Only update rotation if actually moving
-    if (Math.abs(velX) > 0.0001 || Math.abs(velZ) > 0.0001) {
-      const targetRotation = Math.atan2(velX, velZ);
-
-      // Very smooth rotation interpolation
-      let rotDiff = targetRotation - helicopter.mesh.rotation.y;
-      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
-      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-      helicopter.mesh.rotation.y += rotDiff * 2 * dt;
-    }
-
-    // Gentle banking based on turning
-    helicopter.mesh.rotation.z = Math.sin(helicopter.angle * 2) * 0.05;
-    helicopter.mesh.rotation.x = 0.03;
-
-    // Spin rotors
-    if (helicopter.rotors) {
-      helicopter.rotorAngle += dt * 20;
-      for (const rotor of helicopter.rotors) {
-        rotor.rotation.y = helicopter.rotorAngle;
-      }
-    }
-
-    // Update light settings
-    if (helicopter.light) {
-      helicopter.light.intensity = settings.helicopterLightIntensity;
-      helicopter.light.color.set(settings.helicopterLightColor);
-      helicopter.light.angle = (settings.helicopterLightAngle * Math.PI) / 180;
-      helicopter.light.distance = settings.helicopterLightDistance || 50;
-      helicopter.light.position.set(
-        settings.helicopterLightOffsetX || 0,
-        settings.helicopterLightOffsetY || 0,
-        settings.helicopterLightOffsetZ || 0
-      );
-    }
-
-    // Update helicopter spotlight helper
-    if (helicopterLightHelper) helicopterLightHelper.update();
-
-    // Animate searchlight sway
-    const swayAmount = settings.helicopterSearchlightSway || 0;
-    const swaySpeed = settings.helicopterSearchlightSpeed || 0.5;
-    const swayX = Math.sin(time * swaySpeed) * swayAmount;
-    const swayZ = Math.cos(time * swaySpeed * 1.3) * swayAmount * 0.7;
-
-    // Move the spotlight target
-    if (helicopter.lightTarget) {
-      helicopter.lightTarget.position.set(swayX, -10, swayZ);
-    }
-
-    // Update light cone appearance and rotation to follow searchlight
-    if (helicopter.lightCone) {
-      helicopter.lightCone.visible = settings.helicopterVolumetric;
-
-      // Point cone toward the light target direction (reuse temp objects)
-      _tempVec3A.set(swayX, -10, swayZ).normalize();
-      _tempQuat.setFromUnitVectors(_defaultDownDir, _tempVec3A);
-      helicopter.lightCone.quaternion.copy(_tempQuat);
-
-      // Update all layers
-      if (helicopter.lightCone.userData.layers) {
-        helicopter.lightCone.userData.layers.forEach((layer, i) => {
-          layer.material.opacity = settings.helicopterVolumetricOpacity * (1 - i * 0.15);
-          layer.material.color.set(settings.helicopterLightColor);
-        });
-      }
-    }
-
-    // Update boundary helper visibility
-    if (helicopterBoundsHelper) {
-      helicopterBoundsHelper.visible = settings.helicopterShowBounds;
-    }
-  }
-
-  function rebuildHelicopterCone() {
-    if (!helicopter || !helicopter.mesh || !helicopter.lightCone) return;
-
-    // Remove old cone group from parent
-    helicopter.mesh.remove(helicopter.lightCone);
-
-    // Dispose old layers
-    if (helicopter.lightCone.userData.layers) {
-      for (const layer of helicopter.lightCone.userData.layers) {
-        layer.mesh.geometry.dispose();
-        layer.material.dispose();
-      }
-    }
-
-    // Create new geometry with updated dimensions
-    const coneHeight = settings.helicopterConeHeight;
-    const topRadius = settings.helicopterConeTopRadius;
-    const bottomRadius = settings.helicopterConeBottomRadius;
-    const coneOffsetY = settings.helicopterConeOffsetY;
-
-    // Create new group - pivot point at top
-    const lightCone = new THREE.Group();
-    lightCone.position.set(0, -coneOffsetY, 0);
-
-    const layerCount = 5;
-    const coneLayers = [];
-
-    for (let layer = 0; layer < layerCount; layer++) {
-      const layerScale = 1 - (layer * 0.15);
-      const layerTopRadius = topRadius * layerScale;
-      const layerBottomRadius = bottomRadius * layerScale;
-
-      const coneGeo = new THREE.CylinderGeometry(layerTopRadius, layerBottomRadius, coneHeight, 48, 24, true);
-
-      const colors = [];
-      const positions = coneGeo.attributes.position;
-      for (let i = 0; i < positions.count; i++) {
-        const x = positions.getX(i);
-        const y = positions.getY(i);
-        const z = positions.getZ(i);
-
-        const t = (y + coneHeight / 2) / coneHeight;
-        const verticalFade = Math.pow(t, 0.3);
-
-        const radiusAtHeight = layerTopRadius + (layerBottomRadius - layerTopRadius) * (1 - t);
-        const distFromCenter = Math.sqrt(x * x + z * z);
-        const edgeT = radiusAtHeight > 0 ? distFromCenter / radiusAtHeight : 0;
-        const edgeFade = Math.exp(-edgeT * edgeT * 2);
-
-        const brightness = verticalFade * edgeFade;
-        colors.push(brightness, brightness, brightness);
-      }
-      coneGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-
-      const layerOpacity = settings.helicopterVolumetricOpacity * (1 - layer * 0.15);
-
-      const coneMat = new THREE.MeshBasicMaterial({
-        color: settings.helicopterLightColor,
-        transparent: true,
-        opacity: layerOpacity,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        vertexColors: true
-      });
-
-      const layerMesh = new THREE.Mesh(coneGeo, coneMat);
-      layerMesh.position.y = -coneHeight / 2; // Offset down so pivot is at top
-      layerMesh.castShadow = false;
-      layerMesh.receiveShadow = false;
-      lightCone.add(layerMesh);
-      coneLayers.push({ mesh: layerMesh, material: coneMat });
-    }
-
-    lightCone.userData.layers = coneLayers;
-    helicopter.lightCone = lightCone;
-    helicopter.mesh.add(lightCone);
-  }
-
-  function updateHelicopterColor() {
-    if (!helicopter || !helicopter.mesh) return;
-    const materials = helicopter.mesh.userData.materials;
-    if (!materials) return;
-    for (const mat of materials) {
-      mat.color.set(settings.helicopterColor);
-      if (mat.emissive) {
-        mat.emissive.set(settings.helicopterColor);
-        mat.emissiveIntensity = settings.helicopterBrightness || 1.0;
-      }
-    }
-  }
-
-  function updateHelicopterScale() {
-    if (!helicopter || !helicopter.mesh || !helicopter.baseScaleRatio) return;
-    const scale = settings.helicopterScale * helicopter.baseScaleRatio;
-    helicopter.mesh.scale.setScalar(scale);
-  }
-
-  function setupSearchlights() {
-    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const height = settings.searchlightHeight;
-    const angleRad = THREE.MathUtils.degToRad(settings.searchlightAngle);
-
-    const lights = [];
-    for (let i = 0; i < 2; i++) {
-      const spot = new THREE.SpotLight(
-        settings.searchlightColor,
-        settings.searchlightIntensity,
-        settings.searchlightDistance,
-        angleRad,
-        settings.searchlightPenumbra,
-        1
-      );
-      // Position at opposite corners, high above the board
-      const offsetX = i === 0 ? -8 : 8;
-      const offsetZ = i === 0 ? -6 : 6;
-      spot.position.set(center.x + offsetX, height, center.z + offsetZ);
-      spot.castShadow = true;
-      spot.shadow.mapSize.width = 1024;
-      spot.shadow.mapSize.height = 1024;
-      spot.shadow.bias = -0.002;
-      spot.shadow.normalBias = 0.05;
-
-      const target = new THREE.Object3D();
-      target.position.copy(center);
-      scene.add(target);
-      spot.target = target;
-      scene.add(spot);
-
-      // Random wandering state
-      const goalX = center.x + (Math.random() - 0.5) * settings.searchlightSway * 2;
-      const goalZ = center.z + (Math.random() - 0.5) * settings.searchlightSway * 2;
-      lights.push({ spot, target, goalX, goalZ });
-    }
-
-    searchlights = lights;
-    if (!settings.searchlightsEnabled) {
-      for (const sl of searchlights) sl.spot.visible = false;
-    }
-  }
-
-  function updateSearchlights(dt) {
-    if (!searchlights) return;
-    const enabled = settings.searchlightsEnabled;
-    for (const sl of searchlights) {
-      sl.spot.visible = enabled;
-    }
-    if (!enabled) return;
-
-    const center = STATE.levelCenter || new THREE.Vector3(0, 0, 0);
-    const speed = settings.searchlightSpeed;
-    const sway = settings.searchlightSway;
-
-    for (const sl of searchlights) {
-      // Update light properties
-      sl.spot.intensity = settings.searchlightIntensity;
-      sl.spot.color.set(settings.searchlightColor);
-      sl.spot.angle = THREE.MathUtils.degToRad(settings.searchlightAngle);
-      sl.spot.distance = settings.searchlightDistance;
-      sl.spot.penumbra = settings.searchlightPenumbra;
-      sl.spot.position.y = settings.searchlightHeight;
-
-      // Smoothly move toward random goal point
-      const lerpSpeed = speed * dt;
-      sl.target.position.x += (sl.goalX - sl.target.position.x) * lerpSpeed;
-      sl.target.position.z += (sl.goalZ - sl.target.position.z) * lerpSpeed;
-
-      // Pick a new random goal when close enough to the current one
-      const dx = sl.goalX - sl.target.position.x;
-      const dz = sl.goalZ - sl.target.position.z;
-      if (dx * dx + dz * dz < 0.5) {
-        sl.goalX = center.x + (Math.random() - 0.5) * sway * 2;
-        sl.goalZ = center.z + (Math.random() - 0.5) * sway * 2;
-      }
-    }
-
-    // Update debug helpers
-    for (const helper of searchlightHelpers) {
-      helper.update();
-    }
-  }
-
-  function toggleSearchlightHelpers(show) {
-    // Remove existing helpers
-    for (const helper of searchlightHelpers) {
-      scene.remove(helper);
-      helper.dispose();
-    }
-    searchlightHelpers = [];
-
-    if (show && searchlights) {
-      for (const sl of searchlights) {
-        const helper = new THREE.SpotLightHelper(sl.spot);
-        scene.add(helper);
-        searchlightHelpers.push(helper);
-      }
-    }
-  }
-
-  function updateLamps() {
-    if (!STATE.lampMeshes || STATE.lampMeshes.length === 0) return;
-
-    // Get audio frequency if audio-reactive is enabled
-    let audioBoost = 0;
-    if (settings.lampAudioReactive && audioAnalyser) {
-      // Use low-mid frequencies for lamp pulsing
-      const bass = getAudioFrequency(0, 8);
-      const mid = getAudioFrequency(2, 8);
-      audioBoost = (bass * 0.6 + mid * 0.4) * settings.lampAudioSensitivity;
-    }
-
-    const globalMult = settings.globalEmissiveMultiplier || 1.0;
-    const baseIntensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
-    const finalIntensity = baseIntensity + audioBoost;
-
-    for (const mesh of STATE.lampMeshes) {
-      if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = finalIntensity;
-      }
-    }
-  }
-
-  let carBeatTime = 0;
-
-  function updateCarsAudio() {
-    if (!chasers || chasers.length === 0) return;
-    if (!settings.carAudioReactive) return;
-
-    // BPM-based pulsing
-    const bpm = settings.carAudioBPM || 95;
-    const beatInterval = 60000 / bpm; // ms per beat
-    const now = performance.now();
-    const beatPhase = (now % beatInterval) / beatInterval; // 0 to 1
-
-    // Create a pulse that peaks at the beat and fades
-    // Using a sharp attack and smooth decay
-    const pulse = Math.pow(1 - beatPhase, 3); // Exponential decay from beat
-    const audioBoost = pulse * (settings.carAudioIntensity || 0.5);
-
-    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
-
-    for (let i = 0; i < chasers.length; i++) {
-      const chaser = chasers[i];
-      if (chaser.isCarModel && chaser.cachedMaterials) {
-        const chaserColor = chaserColors[i] || "#ffffff";
-        const isSelected = chaser.ready || chaser.active;
-        const baseEmissive = isSelected ? 0.3 : 0.05;
-        // Only selected/ready chasers pulsate to the beat
-        const intensity = isSelected ? baseEmissive + audioBoost : baseEmissive;
-
-        for (const mat of chaser.cachedMaterials) {
-          // Initialize emissive color once
-          if (!mat._emissiveInitialized) {
-            if (!mat.emissive) {
-              mat.emissive = new THREE.Color(chaserColor);
-            } else {
-              mat.emissive.set(chaserColor);
-            }
-            mat._emissiveInitialized = true;
-          }
-          mat.emissiveIntensity = intensity;
-        }
-      }
-    }
-  }
-
-  function updateTextBPMPulse() {
-    if (!settings.textBPMPulse || glassMaterials.length === 0) return;
-
-    // BPM-based pulsing (same timing as cars)
-    const bpm = settings.carAudioBPM || 95;
-    const beatInterval = 60000 / bpm; // ms per beat
-    const now = performance.now();
-    const beatPhase = (now % beatInterval) / beatInterval; // 0 to 1
-
-    // Create a pulse that peaks at the beat and fades
-    const pulse = Math.pow(1 - beatPhase, 3); // Exponential decay from beat
-    const pulseBoost = pulse * (settings.textBPMIntensity || 0.5);
-
-    const baseBrightness = settings.glassTextBrightness || 1;
-    const finalBrightness = baseBrightness + pulseBoost * baseBrightness;
-
-    for (const mat of glassMaterials) {
-      mat.color.setRGB(finalBrightness, finalBrightness, finalBrightness);
-    }
-  }
-
-  function updateAllEmissives() {
-    const globalMult = settings.globalEmissiveMultiplier || 1.0;
-
-    // Update windows
-    if (STATE.windowMeshes) {
-      const intensity = (settings.windowEmissiveIntensity || 2.0) * globalMult;
-      for (const mesh of STATE.windowMeshes) {
-        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-          mesh.material.emissiveIntensity = intensity;
-        }
-      }
-    }
-
-    // Update lamps
-    if (STATE.lampMeshes) {
-      const intensity = (settings.lampEmissiveIntensity || 2.0) * globalMult;
-      for (const mesh of STATE.lampMeshes) {
-        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-          mesh.material.emissiveIntensity = intensity;
-        }
-      }
-    }
-
-    // Update roads
-    if (STATE.roadMeshes) {
-      const intensity = (settings.roadEmissiveIntensity || 1.0) * globalMult;
-      for (const mesh of STATE.roadMeshes) {
-        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-          mesh.material.emissiveIntensity = intensity;
-        }
-      }
-    }
-
-    // Update paths
-    if (STATE.pathMeshes) {
-      const intensity = (settings.pathEmissiveIntensity || 1.0) * globalMult;
-      for (const mesh of STATE.pathMeshes) {
-        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-          mesh.material.emissiveIntensity = intensity;
-        }
-      }
-    }
-
-    // Update other emissive meshes
-    if (STATE.otherEmissiveMeshes) {
-      const intensity = (settings.otherEmissiveIntensity || 1.0) * globalMult;
-      for (const mesh of STATE.otherEmissiveMeshes) {
-        if (mesh.material && mesh.material.emissiveIntensity !== undefined) {
-          mesh.material.emissiveIntensity = intensity;
-        }
-      }
-    }
-  }
-
-  function updateHelicopterBoundsHelper() {
-    // Remove old helper
-    if (helicopterBoundsHelper) {
-      scene.remove(helicopterBoundsHelper);
-      helicopterBoundsHelper.geometry.dispose();
-      helicopterBoundsHelper.material.dispose();
-      helicopterBoundsHelper = null;
-    }
-
-    // Create new bounds visualization as a wireframe box
-    const minX = settings.helicopterBoundsMinX;
-    const maxX = settings.helicopterBoundsMaxX;
-    const minZ = settings.helicopterBoundsMinZ;
-    const maxZ = settings.helicopterBoundsMaxZ;
-    const height = settings.helicopterHeight;
-
-    const width = maxX - minX;
-    const depth = maxZ - minZ;
-    const boxHeight = 4;
-
-    const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
-    const edges = new THREE.EdgesGeometry(geometry);
-    const material = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
-    helicopterBoundsHelper = new THREE.LineSegments(edges, material);
-    helicopterBoundsHelper.position.set((minX + maxX) / 2, height, (minZ + maxZ) / 2);
-    helicopterBoundsHelper.visible = settings.helicopterShowBounds;
-    scene.add(helicopterBoundsHelper);
-  }
-
-  // ============================================
-  // GLASS OVERLAY (Canvas texture on GLASS mesh)
-  // ============================================
-
-  let glassMeshes = [];
-  let glassMaterials = [];
-  let glassCanvas = null;
-  let glassContext = null;
-  let glassTexture = null;
-  let marqueeOffset = 0;
-  let lastMarqueeTime = 0;
-  let glassVideo = null;
-  let glassVideoReady = false;
-
-  // Text shuffle effect - similar to domedreaming.com
-  // Each character has its own scramble state with startTime and duration
-  const textShuffleState = {
-    rows: [{}, {}, {}, {}], // State for each row
-    lastTexts: ["", "", "", ""], // Track previous text to detect changes
-    lastFlickerTime: 0, // Throttle random char updates
-    flickerChars: {}, // Cached random chars per row
-    activeCount: 0, // Track active shuffle count to avoid iteration
-  };
-
-  const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-  // Check if character is a letter (A-Z)
-  function isLetter(char) {
-    return char >= "A" && char <= "Z";
-  }
-
-  function initShuffleRow(rowIndex, targetText, previousText) {
-    const state = textShuffleState.rows[rowIndex];
-    state.target = targetText;
-    state.chars = []; // Per-character state: { active, startTime }
-
-    const now = performance.now();
-    const duration = settings.glassTextShuffleCharDelay || 500; // Duration each char scrambles
-    const stagger = 30; // Stagger start time between characters
-
-    // Initialize per-character state
-    for (let i = 0; i < targetText.length; i++) {
-      const oldChar = (previousText || "")[i] || "";
-      const newChar = targetText[i] || "";
-      // Only scramble letters that changed
-      const isChanged = oldChar !== newChar && isLetter(newChar);
-
-      state.chars.push({
-        active: isChanged,
-        startTime: now + (i * stagger), // Stagger each character
-        duration: duration,
-      });
-      if (isChanged) textShuffleState.activeCount++;
-    }
-  }
-
-  // Trigger random scramble on a letter in a row
-  function triggerRandomScramble(rowIndex) {
-    const state = textShuffleState.rows[rowIndex];
-    if (!state.target || !state.chars) return;
-
-    const now = performance.now();
-    const duration = settings.glassTextShuffleCharDelay || 500;
-
-    // Find available letter characters (not already scrambling)
-    const availableIndices = [];
-    for (let i = 0; i < state.target.length; i++) {
-      const char = state.target[i];
-      const charState = state.chars[i];
-      if (isLetter(char) && charState && !charState.active) {
-        availableIndices.push(i);
-      }
-    }
-
-    // Scramble one random available letter
-    if (availableIndices.length > 0) {
-      const randomIdx = availableIndices[Math.floor(Math.random() * availableIndices.length)];
-      state.chars[randomIdx].active = true;
-      state.chars[randomIdx].startTime = now;
-      state.chars[randomIdx].duration = duration;
-      textShuffleState.activeCount++;
-    }
-  }
-
-  function getShuffledText(rowIndex, targetText, dt) {
-    // Skip shuffle if disabled or during high score entry
-    if (!settings.glassTextShuffle || STATE.enteringHighScore) {
-      textShuffleState.lastTexts[rowIndex] = targetText;
-      return targetText;
-    }
-
-    // Check if text changed
-    if (textShuffleState.lastTexts[rowIndex] !== targetText) {
-      const previousText = textShuffleState.lastTexts[rowIndex];
-      textShuffleState.lastTexts[rowIndex] = targetText;
-      initShuffleRow(rowIndex, targetText, previousText);
-    }
-
-    const state = textShuffleState.rows[rowIndex];
-    if (!state.target || !state.chars) return targetText;
-
-    const now = performance.now();
-
-    // Throttle random char updates (every 150ms for slower, readable flicker)
-    const flickerInterval = 150;
-    if (now - textShuffleState.lastFlickerTime >= flickerInterval) {
-      textShuffleState.lastFlickerTime = now;
-
-      // Randomly trigger scrambles on letters (5% chance per row per interval)
-      for (let r = 0; r < 4; r++) {
-        if (Math.random() < 0.05) {
-          triggerRandomScramble(r);
-        }
-      }
-
-      // Generate new random chars for all rows
-      for (let r = 0; r < 4; r++) {
-        textShuffleState.flickerChars[r] = {};
-        const rowState = textShuffleState.rows[r];
-        if (rowState.target) {
-          for (let i = 0; i < rowState.target.length; i++) {
-            textShuffleState.flickerChars[r][i] = SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
-          }
-        }
-      }
-    }
-
-    // Build result string
-    let result = "";
-
-    for (let i = 0; i < state.target.length; i++) {
-      const char = state.target[i];
-      const charState = state.chars[i];
-
-      if (!charState || !charState.active) {
-        result += char;
-      } else {
-        const elapsed = now - charState.startTime;
-        if (elapsed >= charState.duration) {
-          // Scramble complete - lock to final char
-          charState.active = false;
-          textShuffleState.activeCount--;
-          result += char;
-        } else if (elapsed < 0) {
-          // Not started yet (staggered) - show space
-          result += " ";
-        } else {
-          // Still scrambling - show cached random char
-          result += textShuffleState.flickerChars[rowIndex]?.[i] || char;
-        }
-      }
-    }
-
-    return result;
-  }
-
-  function isShuffleActive() {
-    if (!settings.glassTextShuffle) return false;
-    return textShuffleState.activeCount > 0;
-  }
-
-  // Preload fonts for canvas usage
-  async function preloadFonts() {
-    const fonts = [
-      { family: "BankGothic", weight: "bold" },
-      { family: "BankGothic Md BT", weight: "500" },
-      { family: "Bank Gothic", weight: "300" },
-    ];
-
-    for (const font of fonts) {
-      try {
-        await document.fonts.load(`${font.weight} 48px "${font.family}"`);
-      } catch (e) {
-        console.warn(`Could not load font: ${font.family}`);
-      }
-    }
-  }
-
-  // Create offscreen canvas for rendering text
-  function initGlassCanvas() {
-    glassCanvas = document.createElement("canvas");
-    glassCanvas.width = 1024;
-    glassCanvas.height = 1024;
-    glassContext = glassCanvas.getContext("2d");
-    glassTexture = new THREE.CanvasTexture(glassCanvas);
-    glassTexture.minFilter = THREE.LinearFilter;
-    glassTexture.magFilter = THREE.LinearFilter;
-
-    // Initialize video background
-    if (PATHS.video && PATHS.video.windowAmbience) {
-      glassVideo = document.createElement("video");
-      glassVideo.src = PATHS.video.windowAmbience;
-      glassVideo.loop = true;
-      glassVideo.muted = true;
-      glassVideo.playsInline = true;
-      glassVideo.crossOrigin = "anonymous";
-      glassVideo.addEventListener("canplaythrough", () => {
-        glassVideoReady = true;
-        glassVideo.play().catch(() => {});
-      });
-      glassVideo.load();
-    }
-
-    // Preload fonts then update canvas
-    preloadFonts().then(() => {
-      updateGlassCanvas();
-    });
-  }
-
-  function updateGlassCanvas(timestamp = 0) {
-    if (!glassContext) return;
-
-    // Re-apply high score text each frame during high score entry for blinking initials
-    if (STATE.enteringHighScore) {
-      applyHighScoreText();
-    }
-
-    const ctx = glassContext;
-    const w = glassCanvas.width;
-    const h = glassCanvas.height;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, w, h);
-
-    // Flip vertically to correct upside-down text
-    ctx.save();
-    ctx.translate(0, h);
-    ctx.scale(1, -1);
-
-    // Compensation factor for text brightness (darken background so material brightness only boosts text)
-    const textBrightness = settings.glassTextBrightness || 1;
-    const bgCompensation = textBrightness > 1 ? 1 - (1 / textBrightness) : 0;
-
-    // Draw video background if available and enabled, otherwise solid color
-    if (settings.glassVideoEnabled && glassVideo && glassVideoReady && glassVideo.readyState >= 2) {
-      // Draw video frame scaled to fill canvas
-      const vw = glassVideo.videoWidth;
-      const vh = glassVideo.videoHeight;
-      if (vw && vh) {
-        const scale = Math.max(w / vw, h / vh);
-        const sw = vw * scale;
-        const sh = vh * scale;
-        const sx = (w - sw) / 2;
-        const sy = (h - sh) / 2;
-
-        // Apply video opacity
-        ctx.globalAlpha = settings.glassVideoOpacity;
-        ctx.drawImage(glassVideo, sx, sy, sw, sh);
-        ctx.globalAlpha = 1.0;
-
-        // Apply brightness (darken if < 1, lighten if > 1)
-        const brightness = settings.glassVideoBrightness;
-        if (brightness < 1) {
-          ctx.fillStyle = `rgba(0, 0, 0, ${1 - brightness})`;
-          ctx.fillRect(0, 0, w, h);
-        } else if (brightness > 1) {
-          ctx.fillStyle = `rgba(255, 255, 255, ${(brightness - 1) * 0.5})`;
-          ctx.fillRect(0, 0, w, h);
-        }
-      }
-      // Darkening overlay for text readability
-      ctx.fillStyle = `rgba(0, 0, 0, ${settings.glassOpacity * 0.5})`;
-      ctx.fillRect(0, 0, w, h);
-
-      // Compensate for text brightness boost (darken background)
-      if (bgCompensation > 0) {
-        ctx.fillStyle = `rgba(0, 0, 0, ${bgCompensation})`;
-        ctx.fillRect(0, 0, w, h);
-      }
-    } else {
-      // Fallback solid background - only draw if opacity > 0
-      if (settings.glassOpacity > 0) {
-        // Combined opacity includes brightness compensation
-        const combinedOpacity = Math.min(1, settings.glassOpacity + bgCompensation);
-        ctx.fillStyle = `rgba(0, 0, 0, ${combinedOpacity})`;
-        ctx.fillRect(0, 0, w, h);
-      }
-      // When glassOpacity is 0, keep background transparent (no compensation needed)
-    }
-
-    // Calculate dt for shuffle effect
-    const shuffleDt = timestamp - lastMarqueeTime > 0 && timestamp - lastMarqueeTime < 100
-      ? (timestamp - lastMarqueeTime) / 1000
-      : 0.016;
-
-    // Skip text rendering if disabled
-    if (!settings.glassTextEnabled) {
-      ctx.restore();
-      if (glassTexture) {
-        glassTexture.needsUpdate = true;
-      }
-      return;
-    }
-
-    // Get text rows with shuffle effect applied
-    const rawRows = [
-      settings.glassTextRow1,
-      settings.glassTextRow2,
-      settings.glassTextRow3,
-      settings.glassTextRow4,
-    ];
-    // Keep all 4 rows (empty or not) for consistent positioning
-    const rows = rawRows.map((row, i) => row && row.trim() !== "" ? getShuffledText(i, row, shuffleDt) : "");
-
-    // Check if all rows are empty
-    const hasContent = rows.some(row => row !== "");
-    if (!hasContent) {
-      ctx.restore();
-      if (glassTexture) glassTexture.needsUpdate = true;
-      return;
-    }
-
-    // Setup text style
-    const fontSize = settings.glassTextFontSize;
-    const lineHeight = fontSize * settings.glassTextLineHeight;
-    const fontFamily = settings.glassTextFont || "BankGothic";
-    ctx.fillStyle = settings.glassTextColor;
-    ctx.font = `bold ${fontSize}px "${fontFamily}", Arial, sans-serif`;
-    ctx.textBaseline = "middle";
-
-    // Calculate total height assuming 4 rows (consistent positioning)
-    const totalHeight = 4 * lineHeight;
-    const startY = (h - totalHeight) / 2 + lineHeight / 2 + (settings.glassTextOffsetY || 0);
-    const letterSpacing = settings.glassTextLetterSpacing || 0;
-
-    // Monospace settings
-    const monospace = settings.glassTextMonospace || false;
-    const charWidth = settings.glassTextCharWidth || 50;
-
-    // Helper function to draw text with letter spacing (and optional monospace)
-    function drawTextWithSpacing(text, x, y, align = "left") {
-      if (monospace) {
-        // Monospace mode: each character gets fixed width, centered in cell
-        ctx.textAlign = "center";
-        const totalWidth = text.length * charWidth;
-        let startX = x;
-
-        // Adjust starting position for alignment
-        if (align === "center") {
-          startX = x - totalWidth / 2 + charWidth / 2;
-        } else if (align === "right") {
-          startX = x - totalWidth + charWidth / 2;
-        } else {
-          startX = x + charWidth / 2;
-        }
-
-        for (let i = 0; i < text.length; i++) {
-          const char = text[i];
-          const charX = startX + i * charWidth;
-          ctx.fillText(char, charX, y);
-        }
-        return;
-      }
-
-      // Variable width mode with letter spacing
-      if (letterSpacing === 0) {
-        ctx.textAlign = align;
-        ctx.fillText(text, x, y);
-        return;
-      }
-
-      // Draw each character with spacing
-      ctx.textAlign = "left";
-      let currentX = x;
-
-      // Adjust starting position for alignment
-      if (align === "center" || align === "right") {
-        let totalWidth = 0;
-        for (const char of text) {
-          totalWidth += ctx.measureText(char).width + letterSpacing;
-        }
-        totalWidth -= letterSpacing; // Remove last spacing
-        if (align === "center") currentX = x - totalWidth / 2;
-        else if (align === "right") currentX = x - totalWidth;
-      }
-
-      for (const char of text) {
-        ctx.fillText(char, currentX, y);
-        currentX += ctx.measureText(char).width + letterSpacing;
-      }
-    }
-
-    // Helper to measure text width with letter spacing (or monospace)
-    function measureTextWithSpacing(text) {
-      if (monospace) {
-        return text.length * charWidth;
-      }
-      if (letterSpacing === 0) return ctx.measureText(text).width;
-      let totalWidth = 0;
-      for (const char of text) {
-        totalWidth += ctx.measureText(char).width + letterSpacing;
-      }
-      return totalWidth - letterSpacing; // Remove last spacing
-    }
-
-    // Handle marquee animation - text scrolls fully off before reappearing
-    if (settings.glassTextMarquee) {
-      // Update marquee offset based on time
-      const dt = timestamp - lastMarqueeTime;
-      lastMarqueeTime = timestamp;
-      if (dt > 0 && dt < 100) {
-        marqueeOffset += (settings.glassTextMarqueeSpeed * dt) / 1000;
-      }
-
-      // Find the longest text width for resetting the loop
-      let maxTextWidth = 0;
-      for (const text of rows) {
-        maxTextWidth = Math.max(maxTextWidth, measureTextWithSpacing(text));
-      }
-      // Total distance: start off-right (w) + scroll across + exit off-left (maxTextWidth)
-      const totalScrollDistance = w + maxTextWidth + (rows.length - 1) * settings.glassTextRowDelay;
-
-      // Reset marquee when all text has scrolled off
-      if (marqueeOffset > totalScrollDistance) {
-        marqueeOffset = 0;
-      }
-
-      for (let i = 0; i < rows.length; i++) {
-        const text = rows[i];
-        if (!text) continue; // Skip empty rows
-        const y = startY + i * lineHeight;
-        const textWidth = measureTextWithSpacing(text);
-        // Apply row delay offset (each row starts further back)
-        const rowOffset = marqueeOffset - (i * settings.glassTextRowDelay);
-
-        // Text starts at right edge (w) and scrolls left
-        const x = w - rowOffset;
-
-        // Only draw if text is visible on canvas
-        if (x > -textWidth && x < w) {
-          drawTextWithSpacing(text, x, y, "left");
-        }
-      }
-    } else {
-      // Static text
-      let xPos;
-      const offsetX = settings.glassTextOffsetX || 0;
-      switch (settings.glassTextAlign) {
-        case "left": xPos = 50 + offsetX; break;
-        case "right": xPos = w - 50 + offsetX; break;
-        default: xPos = w / 2 + offsetX; break;
-      }
-
-      for (let i = 0; i < rows.length; i++) {
-        const text = rows[i];
-        if (!text) continue; // Skip empty rows but keep position
-        const y = startY + i * lineHeight;
-        // Initials row: white text with colored glow during high score entry
-        if (STATE.enteringHighScore && STATE.highScoreInitialsColor && i === 1) {
-          ctx.save();
-          ctx.shadowColor = STATE.highScoreInitialsColor;
-          ctx.shadowBlur = 20;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 0;
-          ctx.fillStyle = "#ffffff";
-          // Draw multiple times to intensify the glow
-          drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
-          drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
-          ctx.restore();
-          ctx.fillStyle = settings.glassTextColor;
-        } else {
-          drawTextWithSpacing(text, xPos, y, settings.glassTextAlign);
-        }
-      }
-    }
-
-    // Restore canvas state (undo the flip)
-    ctx.restore();
-
-    // Update texture
-    if (glassTexture) {
-      glassTexture.needsUpdate = true;
-    }
-  }
-
-  // Public API to update the glass content (sets all 4 rows at once)
-  window.setGlassContent = function(row1 = "", row2 = "", row3 = "", row4 = "") {
-    settings.glassTextRow1 = row1;
-    settings.glassTextRow2 = row2;
-    settings.glassTextRow3 = row3;
-    settings.glassTextRow4 = row4;
-    updateGlassCanvas();
-  };
-
-  // Public API to update a single row
-  window.setGlassRow = function(rowNum, text) {
-    if (rowNum >= 1 && rowNum <= 4) {
-      settings[`glassTextRow${rowNum}`] = text;
-      updateGlassCanvas();
-    }
-  };
-
-  // Public API to draw custom content on the glass
-  window.drawOnGlass = function(callback) {
-    if (glassContext) {
-      callback(glassContext, glassCanvas.width, glassCanvas.height);
-      if (glassTexture) {
-        glassTexture.needsUpdate = true;
-      }
-    }
-  };
-
-  function setupGlassMeshes(meshes) {
-    glassMeshes = meshes;
-    initGlassCanvas();
-
-    // Pick up GLB material color as default glass tint (skip black/very dark)
-    for (const mesh of meshes) {
-      if (mesh.material && mesh.material.color) {
-        const c = mesh.material.color;
-        if ((c.r + c.g + c.b) > 0.1 && (c.r !== 1 || c.g !== 1 || c.b !== 1)) {
-          settings.glassColor = "#" + c.getHexString();
-          break;
-        }
-      }
-    }
-
-    glassMaterials = [];
-    const brightness = settings.glassTextBrightness || 1;
-    const tint = new THREE.Color(settings.glassColor);
-    for (const mesh of glassMeshes) {
-      // Store original positions and rotation for offset calculations
-      mesh.userData.originalX = mesh.position.x;
-      mesh.userData.originalY = mesh.position.y;
-      mesh.userData.originalZ = mesh.position.z;
-      mesh.userData.originalRotX = mesh.rotation.x;
-
-      // Use BasicMaterial with toneMapped:false to allow brightness > 1
-      const glassMaterial = new THREE.MeshBasicMaterial({
-        map: glassTexture,
-        color: tint.clone().multiplyScalar(brightness),
-        transparent: true,
-        opacity: settings.glassMaterialOpacity ?? 1.0,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        toneMapped: false,
-      });
-
-      mesh.material = glassMaterial;
-      mesh.castShadow = false; // Don't block light (helicopter spotlight shines through)
-      mesh.renderOrder = 999; // Render on top
-      glassMaterials.push(glassMaterial);
-    }
-
-    // Apply initial position offsets
-    updateGlassPosition();
-  }
-
-  function updateGlassPosition() {
-    for (const mesh of glassMeshes) {
-      if (mesh.userData.originalX !== undefined) {
-        mesh.position.x = mesh.userData.originalX + (settings.glassPosX || 0);
-      }
-      if (mesh.userData.originalY !== undefined) {
-        mesh.position.y = mesh.userData.originalY + (settings.glassPosY || 0);
-      }
-      if (mesh.userData.originalZ !== undefined) {
-        mesh.position.z = mesh.userData.originalZ + (settings.glassPosZ || 0);
-      }
-      // Apply rotation offset (in degrees, converted to radians)
-      if (mesh.userData.originalRotX !== undefined) {
-        mesh.rotation.x = mesh.userData.originalRotX + (settings.glassRotX || 0) * Math.PI / 180;
-      }
-    }
-  }
-
-  function updateGlassMaterialOpacity() {
-    const opacity = settings.glassMaterialOpacity ?? 1.0;
-    for (const mat of glassMaterials) {
-      mat.opacity = opacity;
-    }
-  }
-
-  function updateGlassColor() {
-    const brightness = settings.glassTextBrightness || 1;
-    const tint = new THREE.Color(settings.glassColor);
-    for (const mat of glassMaterials) {
-      mat.color.copy(tint).multiplyScalar(brightness);
-    }
-    updateGlassCanvas();
-  }
-
-  function updateGlassBrightness() {
-    updateGlassColor();
-  }
 
   // ============================================
   // INPUT
@@ -2009,7 +460,7 @@ const loadingProgress = {
     const billboard = wire ? wire.billboard : null;
 
     // Create capture effect at fugitive position
-    createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard);
+    createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard, scene, settings, STATE);
 
     // Hide fugitive
     f.mesh.position.y = -1000;
@@ -2072,7 +523,7 @@ const loadingProgress = {
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
     const chaserColor = chaserColors[chaserIndex] || "#ffffff";
     if (chaser.mesh) {
-      createCaptureEffect(chaser.mesh.position.clone(), chaserColor, null);
+      createCaptureEffect(chaser.mesh.position.clone(), chaserColor, null, scene, settings, STATE);
     }
 
     // Light up the car fully (like when active/moving)
@@ -2197,24 +648,7 @@ const loadingProgress = {
     switch (newState) {
       case "PRE_GAME":
         stopHelicopterSound(); // Stop helicopter loop
-        // Play game animation video when restarting (coming from GAME_OVER)
-        if (oldState === "GAME_OVER" && gameAnimationVideo && gameAnimationVideoTexture) {
-          STATE.gameAnimationPlaying = true;
-          gameAnimationVideo.currentTime = 0;
-          gameAnimationVideo.play().catch(() => {});
-          if (projectionPlane && projectionPlane.material) {
-            projectionPlane.material.map = gameAnimationVideoTexture;
-            projectionPlane.material.opacity = settings.projectionOpacity;
-            projectionPlane.material.needsUpdate = true;
-          }
-          // Hide projection when animation ends
-          const hideProjection = () => {
-            STATE.gameAnimationPlaying = false;
-            if (projectionPlane) projectionPlane.material.opacity = 0;
-            gameAnimationVideo.removeEventListener("ended", hideProjection);
-          };
-          gameAnimationVideo.addEventListener("ended", hideProjection);
-        }
+        handleProjectionStateChange(newState, oldState);
         // Clear glass text in PRE_GAME (intro image replaces text)
         settings.glassTextRow1 = "";
         settings.glassTextRow2 = "";
@@ -2260,58 +694,60 @@ const loadingProgress = {
           }
         }
         playAudio();
-        // Start intro video from beginning — game starts on video end
-        if (projectionVideo) {
-          projectionVideo.muted = false;
-          projectionVideo.currentTime = 0;
-          projectionVideo.play().catch(() => {});
-        }
+        handleProjectionStateChange(newState, oldState);
         break;
 
       case "PLAYING":
-        // Frame 0: minimal state setup only
+        // Frame 0: state variables only — no DOM/GPU work
         STATE.gameTimerStarted = true;
         STATE.gameTimerRemaining = 90;
         STATE.fugitiveValue = 250;
         STATE.playerScore = 0;
         STATE.capturedCount = 0;
 
-        // Make non-ready chasers fully transparent (shaders pre-warmed in STARTING)
-        for (const c of chasers) {
-          if (!c.ready) {
-            if (c.light) c.light.visible = false;
-            if (c.isCarModel && c.mesh) {
-              c.mesh.traverse((child) => {
-                if (child.isMesh && child.material) {
-                  child.material.opacity = 0;
-                }
-              });
-            } else if (c.material) {
-              c.material.opacity = 0;
-            }
-          }
-        }
-
-        // Start fugitive light fade-in
+        // Start fugitive light fade-in (just zeroing values, cheap)
         for (const f of fugitives) {
           if (f.light) f.light.intensity = 0;
         }
         STATE.fugitiveLightFadeStart = performance.now();
 
-        // Spread remaining work across frames to avoid single-frame stutter
-        // Frame 1: text + projection swap
+        // Frame 1: hide non-ready chasers (shaders pre-warmed in STARTING)
         requestAnimationFrame(() => {
-          applyPlayingText();
-          updateProjectionForState("PLAYING");
+          for (const c of chasers) {
+            if (!c.ready) {
+              if (c.light) c.light.visible = false;
+              if (c.isCarModel && c.mesh) {
+                c.mesh.traverse((child) => {
+                  if (child.isMesh && child.material) {
+                    child.material.opacity = 0;
+                  }
+                });
+              } else if (c.material) {
+                c.material.opacity = 0;
+              }
+            }
+          }
         });
-        // Frame 2: audio
+        // Frame 2: projection texture swap (pre-warmed into GPU during countdown)
+        setTimeout(() => {
+          updateProjectionForState("PLAYING");
+        }, 32);
+        // Frame 3: glass canvas text update
+        setTimeout(() => {
+          applyPlayingText();
+          updateGlassCanvas();
+        }, 64);
+        // Frame 4: game start SFX
         setTimeout(() => {
           playSFX("gameStart");
+        }, 100);
+        // Frame 5: background audio + helicopter
+        setTimeout(() => {
           playAudio();
           playHelicopterSound();
-        }, 50);
-        // Frame 3+: stagger billboard pop-ins
-        { let popDelay = 200;
+        }, 150);
+        // Frame 6+: stagger billboard pop-ins
+        { let popDelay = 250;
         for (const wire of fugitiveWires) {
           if (!wire.isChaser) {
             setTimeout(() => wire.startPopIn(), popDelay);
@@ -2350,9 +786,7 @@ const loadingProgress = {
 
     // Update the glass canvas and projection (deferred for PLAYING to avoid frame stutter)
     if (newState !== "PLAYING" && !STATE.gameAnimationPlaying) {
-      if (typeof updateGlassCanvas === "function") {
-        updateGlassCanvas();
-      }
+      updateGlassCanvas();
       updateProjectionForState(newState);
     }
 
@@ -2360,381 +794,6 @@ const loadingProgress = {
     if (STATE.updateStateDisplay) STATE.updateStateDisplay();
   }
 
-  // ============================================
-  // TEMPLATE VARIABLE REPLACEMENT
-  // ============================================
-
-  function getEndStatus() {
-    // Check if player got a new high score
-    const highScorePosition = checkHighScore(STATE.playerScore);
-    if (highScorePosition >= 0) return "NEWHIGHSCORE!";
-    return "GAMEOVER";
-  }
-
-  function getHighScoreString(position) {
-    const highScores = loadHighScores();
-    if (position >= 0 && position < highScores.length) {
-      const hs = highScores[position];
-      // Ensure initials are exactly 3 characters
-      const initials = (hs.initials || "???").substring(0, 3).padEnd(3, "?");
-      const score = String(hs.score).padStart(3, "0");
-      return `${initials}${score}`;
-    }
-    return "";
-  }
-
-  function getHighScoreInitials(position) {
-    const highScores = loadHighScores();
-    if (position >= 0 && position < highScores.length) {
-      // Ensure initials are exactly 3 characters
-      return (highScores[position].initials || "???").substring(0, 3).padEnd(3, "?");
-    }
-    return "___";
-  }
-
-  function getHighScoreScore(position) {
-    const highScores = loadHighScores();
-    if (position >= 0 && position < highScores.length) {
-      return String(highScores[position].score);
-    }
-    return "0";
-  }
-
-  function getCountdownText() {
-    if (STATE.countdownValue > 0) return String(STATE.countdownValue);
-    if (STATE.countdownValue === 0) return "GO!";
-    return "";
-  }
-
-  function replaceTemplateVars(text) {
-    if (!text) return "";
-    // Flash current position when entering high score
-    let initials;
-    if (STATE.highScoreInitials) {
-      const blink = Math.floor(Date.now() / 400) % 2 === 0; // Toggle every 400ms
-      initials = STATE.highScoreInitials.map((c, i) => {
-        if (STATE.enteringHighScore && i === STATE.highScorePosition) {
-          // Blink the current position being edited
-          return blink ? c : "_";
-        }
-        return c;
-      }).join("");
-    } else {
-      initials = "___";
-    }
-    // Pad score to 4 characters so "SCORE:" doesn't shift
-    const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
-    return text
-      .replace(/\$\{score\}/g, paddedScore)
-      .replace(/\$\{time\}/g, String(Math.floor(STATE.gameTimerRemaining || 0)))
-      .replace(/\$\{caught\}/g, String(STATE.capturedCount || 0))
-      .replace(/\$\{total\}/g, String(fugitives.length || 4))
-      .replace(/\$\{status\}/g, getEndStatus())
-      .replace(/\$\{initials\}/g, initials)
-      .replace(/\$\{countdown\}/g, getCountdownText())
-      // High scores: ${s1}, ${s2}, ${s3} = "AAA 999" format
-      .replace(/\$\{s1\}/g, getHighScoreString(0))
-      .replace(/\$\{s2\}/g, getHighScoreString(1))
-      .replace(/\$\{s3\}/g, getHighScoreString(2))
-      // High score initials: ${hs1i}, ${hs2i}, ${hs3i}
-      .replace(/\$\{hs1i\}/g, getHighScoreInitials(0))
-      .replace(/\$\{hs2i\}/g, getHighScoreInitials(1))
-      .replace(/\$\{hs3i\}/g, getHighScoreInitials(2))
-      // High score scores: ${hs1s}, ${hs2s}, ${hs3s}
-      .replace(/\$\{hs1s\}/g, getHighScoreScore(0))
-      .replace(/\$\{hs2s\}/g, getHighScoreScore(1))
-      .replace(/\$\{hs3s\}/g, getHighScoreScore(2));
-  }
-
-  function applyStartingText() {
-    settings.glassTextRow1 = replaceTemplateVars(settings.startingTextRow1);
-    settings.glassTextRow2 = replaceTemplateVars(settings.startingTextRow2);
-    settings.glassTextRow3 = replaceTemplateVars(settings.startingTextRow3);
-    settings.glassTextRow4 = replaceTemplateVars(settings.startingTextRow4);
-  }
-
-  function applyPlayingText() {
-    settings.glassTextRow1 = replaceTemplateVars(settings.playingTextRow1);
-    settings.glassTextRow2 = replaceTemplateVars(settings.playingTextRow2);
-    settings.glassTextRow3 = replaceTemplateVars(settings.playingTextRow3);
-    settings.glassTextRow4 = replaceTemplateVars(settings.playingTextRow4);
-  }
-
-  function applyHighScoreText() {
-    settings.glassTextRow1 = replaceTemplateVars(settings.highScoreTextRow1);
-    settings.glassTextRow2 = replaceTemplateVars(settings.highScoreTextRow2);
-    settings.glassTextRow3 = replaceTemplateVars(settings.highScoreTextRow3);
-    settings.glassTextRow4 = replaceTemplateVars(settings.highScoreTextRow4);
-  }
-
-  function applyGameOverText() {
-    settings.glassTextRow1 = replaceTemplateVars(settings.gameOverTextRow1);
-    settings.glassTextRow2 = replaceTemplateVars(settings.gameOverTextRow2);
-    settings.glassTextRow3 = replaceTemplateVars(settings.gameOverTextRow3);
-    settings.glassTextRow4 = replaceTemplateVars(settings.gameOverTextRow4);
-  }
-
-  // ============================================
-  // STATE PROJECTION IMAGES
-  // ============================================
-
-  function initProjectionPlane() {
-    if (projectionPlane) return; // Already initialized
-
-    // Create a large plane above the level for projection
-    const size = STATE.horizontalSize * 2 || 30;
-    const geometry = new THREE.PlaneGeometry(size, size);
-    const material = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: settings.projectionOpacity,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-
-    projectionPlane = new THREE.Mesh(geometry, material);
-    projectionPlane.rotation.x = -Math.PI / 2; // Horizontal plane
-    projectionPlane.position.set(
-      STATE.levelCenter.x + settings.projectionOffsetX,
-      STATE.levelCenter.y + settings.projectionOffsetY,
-      STATE.levelCenter.z + settings.projectionOffsetZ
-    );
-    projectionPlane.renderOrder = 10;
-    projectionPlane.visible = true;
-    projectionPlane.material.opacity = 0;
-
-    scene.add(projectionPlane);
-
-    // Preload textures for each state
-    preloadProjectionTextures();
-
-    // Create countdown intro video for projection
-    if (PATHS.video && PATHS.video.countdownIntro) {
-      projectionVideo = document.createElement("video");
-      projectionVideo.src = PATHS.video.countdownIntro;
-      projectionVideo.loop = false;
-      projectionVideo.muted = true;
-      projectionVideo.playsInline = true;
-      projectionVideo.crossOrigin = "anonymous";
-      projectionVideo.addEventListener("canplaythrough", () => {
-        if (!projectionVideoTexture) {
-          projectionVideoTexture = new THREE.VideoTexture(projectionVideo);
-          projectionVideoTexture.colorSpace = THREE.SRGBColorSpace;
-        }
-      }, { once: true });
-      // When video ends, transition to PLAYING
-      projectionVideo.addEventListener("timeupdate", () => {
-        if (STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 0.1) {
-          setGameState("PLAYING");
-        }
-      });
-      projectionVideo.addEventListener("ended", () => {
-        if (STATE.gameState === "STARTING") {
-          setGameState("PLAYING");
-        }
-      });
-      projectionVideo.load();
-    }
-
-    // Create game animation video (plays when returning to PRE_GAME after a game)
-    if (PATHS.video && PATHS.video.gameAnimation) {
-      gameAnimationVideo = document.createElement("video");
-      gameAnimationVideo.src = PATHS.video.gameAnimation;
-      gameAnimationVideo.loop = false;
-      gameAnimationVideo.muted = true;
-      gameAnimationVideo.playsInline = true;
-      gameAnimationVideo.crossOrigin = "anonymous";
-      gameAnimationVideo.addEventListener("canplaythrough", () => {
-        if (!gameAnimationVideoTexture) {
-          gameAnimationVideoTexture = new THREE.VideoTexture(gameAnimationVideo);
-          gameAnimationVideoTexture.colorSpace = THREE.SRGBColorSpace;
-        }
-      }, { once: true });
-      gameAnimationVideo.load();
-    }
-  }
-
-  function preloadProjectionTextures() {
-    const textureLoader = new THREE.TextureLoader();
-    const imagePath = "assets/images/";
-
-    const stateImages = {
-      PRE_GAME: settings.preGameImage,
-      STARTING: settings.startingImage || settings.preGameImage,
-      PLAYING: settings.playingImage,
-      GAME_OVER: settings.gameOverImage,
-    };
-
-    for (const [state, imageName] of Object.entries(stateImages)) {
-      if (imageName && imageName.trim() !== "") {
-        textureLoader.load(
-          imagePath + imageName,
-          (texture) => {
-            texture.colorSpace = THREE.SRGBColorSpace;
-            projectionTextures[state] = texture;
-            // If this is the current state, update the projection
-            if (STATE.gameState === state) {
-              updateProjectionForState(state);
-            }
-          },
-          undefined,
-          (err) => {
-            console.warn(`Failed to load projection image for ${state}:`, imageName, err);
-          }
-        );
-      }
-    }
-  }
-
-  function updateProjectionForState(state) {
-    if (!projectionPlane) {
-      return;
-    }
-
-    // Use video for STARTING state (intro plays until video ends)
-    const useVideo = state === "STARTING" && projectionVideoTexture;
-
-    if (useVideo) {
-      if (projectionPlane.material.map !== projectionVideoTexture) {
-        projectionPlane.material.map = projectionVideoTexture;
-        projectionPlane.material.needsUpdate = true;
-      }
-      projectionPlane.material.opacity = settings.projectionOpacity;
-      projectionVideo.play().catch(() => {});
-
-      // Use actual video dimensions for aspect ratio
-      const vw = projectionVideo.videoWidth;
-      const vh = projectionVideo.videoHeight;
-      const aspect = (vw && vh) ? vw / vh : 1;
-      projectionPlane.scale.set(
-        settings.projectionScale * aspect,
-        settings.projectionScale,
-        1
-      );
-    } else {
-      // Pause video when leaving PRE_GAME/STARTING
-      if (projectionVideo) {
-        projectionVideo.pause();
-      }
-
-      const stateImageSettings = {
-        PRE_GAME: settings.preGameImage,
-        STARTING: settings.startingImage || settings.preGameImage,
-        PLAYING: settings.playingImage,
-        GAME_OVER: settings.gameOverImage,
-      };
-
-      const imageName = stateImageSettings[state];
-      let texture = projectionTextures[state];
-      if (!texture && state === "STARTING") {
-        texture = projectionTextures["PRE_GAME"];
-      }
-
-      if (texture) {
-        if (projectionPlane.material.map !== texture) {
-          projectionPlane.material.map = texture;
-          projectionPlane.material.needsUpdate = true;
-        }
-        projectionPlane.material.opacity = settings.projectionOpacity;
-
-        const img = texture.image;
-        if (img && img.width && img.height) {
-          const aspect = img.width / img.height;
-          projectionPlane.scale.set(
-            settings.projectionScale * aspect,
-            settings.projectionScale,
-            1
-          );
-        } else {
-          projectionPlane.scale.setScalar(settings.projectionScale);
-        }
-      } else {
-        // Hide by setting opacity to 0 instead of toggling visible (avoids shader recompilation)
-        projectionPlane.material.opacity = 0;
-      }
-    }
-
-    // Update projection position
-    projectionPlane.position.x = STATE.levelCenter.x + settings.projectionOffsetX;
-    projectionPlane.position.y = STATE.levelCenter.y + settings.projectionOffsetY;
-    projectionPlane.position.z = STATE.levelCenter.z + settings.projectionOffsetZ;
-  }
-
-  function loadProjectionImage(state, imageName) {
-    if (!imageName || imageName.trim() === "") {
-      projectionTextures[state] = null;
-      if (STATE.gameState === state) {
-        updateProjectionForState(state);
-      }
-      return;
-    }
-
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(
-      "assets/images/" + imageName,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        projectionTextures[state] = texture;
-        if (STATE.gameState === state) {
-          updateProjectionForState(state);
-        }
-      },
-      undefined,
-      (err) => {
-        console.warn(`Failed to load projection image for ${state}:`, imageName);
-      }
-    );
-  }
-
-  // Projection pump effect for countdown beats
-  let projectionPumpTime = 0;
-  const PROJECTION_PUMP_DURATION = 0.3; // seconds for pump to decay
-  const PROJECTION_PUMP_STRENGTH = 0.15; // scale boost (fraction of projectionScale)
-
-  function triggerProjectionPump() {
-    projectionPumpTime = PROJECTION_PUMP_DURATION;
-  }
-
-  function updateProjectionPump(dt) {
-    if (projectionPumpTime <= 0 || !projectionPlane || !projectionPlane.visible) return;
-
-    projectionPumpTime = Math.max(0, projectionPumpTime - dt);
-    const t = projectionPumpTime / PROJECTION_PUMP_DURATION; // 1 -> 0
-    const ease = t * t; // quadratic ease-out (fast attack, smooth decay)
-    const boost = 1 + PROJECTION_PUMP_STRENGTH * ease;
-
-    const baseScale = settings.projectionScale;
-    const texture = projectionPlane.material.map;
-    const img = texture && texture.image;
-    const aspect = (img && img.width && img.height) ? img.width / img.height : 1;
-
-    projectionPlane.scale.set(
-      baseScale * aspect * boost,
-      baseScale * boost,
-      1
-    );
-  }
-
-  function updateCountdown(dt) {
-    if (STATE.gameState !== "STARTING") return;
-
-    STATE.countdownTimer += dt;
-
-    if (STATE.countdownTimer >= 1.0) {
-      STATE.countdownTimer -= 1.0;
-      STATE.countdownValue--;
-
-      if (STATE.countdownValue >= 0) {
-        // Show 3, 2, 1, GO!
-        applyStartingText();
-        updateGlassCanvas();
-        triggerProjectionPump();
-      } else {
-        // Countdown finished, start playing
-        setGameState("PLAYING");
-      }
-    }
-  }
 
   function checkHighScore(score) {
     const highScores = loadHighScores();
@@ -2801,7 +860,7 @@ const loadingProgress = {
     for (const c of readyChasers) {
       const idx = chasers.indexOf(c);
       setTimeout(() => {
-        createCaptureEffect(c.mesh.position.clone(), chaserColors[idx] || "#ffffff", null);
+        createCaptureEffect(c.mesh.position.clone(), chaserColors[idx] || "#ffffff", null, scene, settings, STATE);
         playSFX("capture", idx);
       }, delay);
       delay += 300;
@@ -2832,68 +891,7 @@ const loadingProgress = {
   // LIGHTS
   // ============================================
 
-  const ambientLight = new THREE.AmbientLight(settings.ambientColor, settings.ambientIntensity);
-  scene.add(ambientLight);
-
-  const directionalLight = new THREE.DirectionalLight(settings.directColor, settings.directIntensity);
-  directionalLight.position.set(settings.directPosX, settings.directPosY, settings.directPosZ);
-  directionalLight.castShadow = true;
-  directionalLight.shadow.mapSize.width = 4096;
-  directionalLight.shadow.mapSize.height = 4096;
-  directionalLight.shadow.camera.near = 0.1;
-  directionalLight.shadow.camera.far = 50;
-  directionalLight.shadow.camera.left = -15;
-  directionalLight.shadow.camera.right = 15;
-  directionalLight.shadow.camera.top = 15;
-  directionalLight.shadow.camera.bottom = -15;
-  directionalLight.shadow.bias = -0.002;
-  directionalLight.shadow.normalBias = 0.05;
-  scene.add(directionalLight);
-
-  // Apply initial tone mapping settings
-  const toneMappingOptions = {
-    "None": THREE.NoToneMapping,
-    "Linear": THREE.LinearToneMapping,
-    "Reinhard": THREE.ReinhardToneMapping,
-    "Cineon": THREE.CineonToneMapping,
-    "ACESFilmic": THREE.ACESFilmicToneMapping,
-    "AgX": THREE.AgXToneMapping,
-    "Neutral": THREE.NeutralToneMapping,
-  };
-  renderer.toneMapping = toneMappingOptions[settings.toneMapping] || THREE.LinearToneMapping;
-  renderer.toneMappingExposure = settings.exposure;
-
-  // Generate neutral environment for PBR materials
-  function createNeutralEnvironment() {
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    pmremGenerator.compileEquirectangularShader();
-
-    // Create a simple neutral environment scene
-    const envScene = new THREE.Scene();
-    envScene.background = new THREE.Color(0.5, 0.5, 0.5);
-
-    // Add soft lights to the environment scene
-    const light1 = new THREE.DirectionalLight(0xffffff, 1);
-    light1.position.set(1, 1, 1);
-    envScene.add(light1);
-
-    const light2 = new THREE.DirectionalLight(0xffffff, 0.5);
-    light2.position.set(-1, 0.5, -1);
-    envScene.add(light2);
-
-    const ambLight = new THREE.AmbientLight(0xffffff, 0.4);
-    envScene.add(ambLight);
-
-    const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
-    pmremGenerator.dispose();
-
-    return envMap;
-  }
-
-  // Apply neutral environment
-  const neutralEnvMap = createNeutralEnvironment();
-  scene.environment = neutralEnvMap;
-  scene.environmentIntensity = settings.environmentIntensity;
+  const { ambientLight, directionalLight } = setupLights(scene, renderer, settings);
 
   // ============================================
   // CAMERAS
@@ -2988,14 +986,14 @@ const loadingProgress = {
       renderer.shadowMap.needsUpdate = true;
 
       // Post-processing (bloom, color grading)
-      updatePostProcessing();
+      updatePostProcessing(composer, scene, settings);
 
       // Apply actor lights from override
       for (const f of fugitives) { if (f.light) f.light.visible = settings.punctualLights; }
       for (const c of chasers) { if (c.light) c.light.visible = settings.punctualLights; }
 
       // Apply helicopter from override
-      if (helicopter && helicopter.mesh) helicopter.mesh.visible = settings.helicopterEnabled;
+      { const heli = getHelicopter(); if (heli && heli.mesh) heli.mesh.visible = settings.helicopterEnabled; }
 
       // Chaser speed boost
       for (const c of chasers) c.speed = settings.chaserSpeed;
@@ -3050,7 +1048,7 @@ const loadingProgress = {
       renderer.shadowMap.needsUpdate = true;
 
       // Post-processing
-      updatePostProcessing();
+      updatePostProcessing(composer, scene, settings);
 
       // Restore actor lights
       if (settings.punctualLights) {
@@ -3059,7 +1057,7 @@ const loadingProgress = {
       }
 
       // Restore helicopter visibility (handled by update loop via helicopterEnabled)
-      if (helicopter && helicopter.mesh) helicopter.mesh.visible = settings.helicopterEnabled;
+      { const heli = getHelicopter(); if (heli && heli.mesh) heli.mesh.visible = settings.helicopterEnabled; }
 
       // Restore chaser speed
       for (const c of chasers) c.speed = settings.chaserSpeed;
@@ -3221,7 +1219,7 @@ const loadingProgress = {
     });
 
     perfFolder.add(settings, "bloomEnabled").name("Bloom").listen().onChange(() => {
-      updatePostProcessing();
+      updatePostProcessing(composer, scene, settings);
     });
 
     perfFolder.add(settings, "punctualLights").name("Actor Lights").listen().onChange((v) => {
@@ -3230,11 +1228,11 @@ const loadingProgress = {
     });
 
     perfFolder.add(settings, "colorGradingEnabled").name("Color Grading").listen().onChange(() => {
-      updatePostProcessing();
+      updatePostProcessing(composer, scene, settings);
     });
 
     perfFolder.add(settings, "helicopterEnabled").name("Helicopter").listen().onChange((v) => {
-      if (helicopter && helicopter.mesh) helicopter.mesh.visible = v;
+      const heli = getHelicopter(); if (heli && heli.mesh) heli.mesh.visible = v;
     });
 
     perfFolder.add(settings, "pulseWaveParticles").name("Pulse Particles").listen();
@@ -3413,7 +1411,7 @@ const loadingProgress = {
     fugitiveFolder.add(settings, "faceSwapDuration", 0, 120, 1).name("Face Swap (sec)");
 
     const billboardFolder = fugitiveFolder.addFolder("Face Billboards");
-    billboardFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(updateWireBillboards);
+    billboardFolder.add(settings, "wireCubeSize", 0.2, 4, 0.1).name("Billboard Size").onChange(() => updateWireBillboards(fugitiveWires));
     billboardFolder.add(settings, "billboardBrightness", 0, 5, 0.1).name("Brightness").onChange((v) => {
       for (const wire of fugitiveWires) {
         if (wire.billboard && wire.billboard.material) {
@@ -3450,7 +1448,7 @@ const loadingProgress = {
     const textFolder = guiLeft.addFolder("📝 Text");
     textFolder.addColor(settings, "glassColor").name("Glass Color").onChange(() => updateGlassColor());
     textFolder.add(settings, "glassEnabled").name("Glass Enabled").onChange((v) => {
-      for (const mesh of glassMeshes) mesh.visible = v;
+      for (const mesh of getGlassMeshes()) mesh.visible = v;
     });
     textFolder.add(settings, "glassTextEnabled").name("Show Text").onChange(() => updateGlassCanvas());
     textFolder.add(settings, "glassOpacity", 0, 1, 0.05).name("Background Opacity").onChange(() => updateGlassCanvas());
@@ -3518,11 +1516,12 @@ const loadingProgress = {
     // Glass Overlay (video background)
     const windowOverlayFolder = addonsFolder.addFolder("Glass Overlay");
     windowOverlayFolder.add(settings, "glassVideoEnabled").name("Enabled").onChange((v) => {
-      if (glassVideo) {
+      const vid = getGlassVideo();
+      if (vid) {
         if (v) {
-          glassVideo.play().catch(() => {});
+          vid.play().catch(() => {});
         } else {
-          glassVideo.pause();
+          vid.pause();
         }
       }
       updateGlassCanvas();
@@ -3534,12 +1533,12 @@ const loadingProgress = {
     // Helicopter
     const helicopterFolder = addonsFolder.addFolder("Helicopter");
     helicopterFolder.add(settings, "helicopterEnabled").name("Enabled");
-    helicopterFolder.addColor(settings, "helicopterColor").name("Color").onChange(() => updateHelicopterColor());
-    helicopterFolder.add(settings, "helicopterBrightness", 0, 5, 0.1).name("Brightness").onChange(() => updateHelicopterColor());
+    helicopterFolder.addColor(settings, "helicopterColor").name("Color").onChange(() => updateHelicopterColor(settings));
+    helicopterFolder.add(settings, "helicopterBrightness", 0, 5, 0.1).name("Brightness").onChange(() => updateHelicopterColor(settings));
     helicopterFolder.add(settings, "helicopterHeight", 2, 20, 0.5).name("Fly Height");
     helicopterFolder.add(settings, "helicopterSpeed", 0.1, 2, 0.1).name("Drift Speed");
     helicopterFolder.add(settings, "helicopterRadius", 2, 15, 0.5).name("Drift Range");
-    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale").onChange(() => updateHelicopterScale());
+    helicopterFolder.add(settings, "helicopterScale", 0.1, 2, 0.1).name("Scale").onChange(() => updateHelicopterScale(settings));
     helicopterFolder.add(settings, "helicopterLightIntensity", 0, 2000, 10).name("Spotlight Intensity");
     helicopterFolder.addColor(settings, "helicopterLightColor").name("Light Color");
     helicopterFolder.add(settings, "helicopterLightAngle", 1, 60, 1).name("Spotlight Angle");
@@ -3552,39 +1551,44 @@ const loadingProgress = {
     helicopterFolder.add(settings, "helicopterLightOffsetY", -5, 5, 0.1).name("Light Y");
     helicopterFolder.add(settings, "helicopterLightOffsetZ", -5, 5, 0.1).name("Light Z");
     helicopterFolder.add({ debug: false }, "debug").name("Show Light Helper").onChange((v) => {
-      if (helicopterLightHelper) {
-        scene.remove(helicopterLightHelper);
-        helicopterLightHelper.dispose();
-        helicopterLightHelper = null;
+      const oldHelper = getHelicopterLightHelper();
+      if (oldHelper) {
+        scene.remove(oldHelper);
+        oldHelper.dispose();
+        setHelicopterLightHelper(null);
       }
-      if (v && helicopter && helicopter.light) {
-        helicopterLightHelper = new THREE.SpotLightHelper(helicopter.light);
-        scene.add(helicopterLightHelper);
+      const heli = getHelicopter();
+      if (v && heli && heli.light) {
+        const newHelper = new THREE.SpotLightHelper(heli.light);
+        scene.add(newHelper);
+        setHelicopterLightHelper(newHelper);
       }
     });
     helicopterFolder.add(settings, "helicopterSearchlightSway", 0, 5, 0.1).name("Searchlight Sway");
     helicopterFolder.add(settings, "helicopterSearchlightSpeed", 0.1, 2, 0.1).name("Sway Speed");
     helicopterFolder.add(settings, "helicopterVolumetric").name("Show Light Cone");
     helicopterFolder.add(settings, "helicopterVolumetricOpacity", 0, 1, 0.01).name("Cone Opacity").onChange((v) => {
-      if (helicopter && helicopter.lightCone && helicopter.lightCone.userData.layers) {
-        helicopter.lightCone.userData.layers.forEach((layer, i) => {
+      const heli = getHelicopter();
+      if (heli && heli.lightCone && heli.lightCone.userData.layers) {
+        heli.lightCone.userData.layers.forEach((layer, i) => {
           layer.material.opacity = v * (1 - i * 0.15);
         });
       }
     });
-    helicopterFolder.add(settings, "helicopterConeOffsetY", 0, 3, 0.1).name("Cone Y Offset").onChange(rebuildHelicopterCone);
-    helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(rebuildHelicopterCone);
-    helicopterFolder.add(settings, "helicopterConeTopRadius", 0, 2, 0.05).name("Cone Top Radius").onChange(rebuildHelicopterCone);
-    helicopterFolder.add(settings, "helicopterConeBottomRadius", 0.5, 10, 0.5).name("Cone Bottom Radius").onChange(rebuildHelicopterCone);
+    helicopterFolder.add(settings, "helicopterConeOffsetY", 0, 3, 0.1).name("Cone Y Offset").onChange(() => rebuildHelicopterCone(settings));
+    helicopterFolder.add(settings, "helicopterConeHeight", 1, 40, 0.5).name("Cone Height").onChange(() => rebuildHelicopterCone(settings));
+    helicopterFolder.add(settings, "helicopterConeTopRadius", 0, 2, 0.05).name("Cone Top Radius").onChange(() => rebuildHelicopterCone(settings));
+    helicopterFolder.add(settings, "helicopterConeBottomRadius", 0.5, 10, 0.5).name("Cone Bottom Radius").onChange(() => rebuildHelicopterCone(settings));
     // Boundary limits
     const boundsFolder = helicopterFolder.addFolder("Bounds");
-    boundsFolder.add(settings, "helicopterBoundsMinX", -15, 15, 0.1).name("Min X").onChange(updateHelicopterBoundsHelper);
-    boundsFolder.add(settings, "helicopterBoundsMaxX", -15, 15, 0.1).name("Max X").onChange(updateHelicopterBoundsHelper);
-    boundsFolder.add(settings, "helicopterBoundsMinZ", -15, 15, 0.1).name("Min Z").onChange(updateHelicopterBoundsHelper);
-    boundsFolder.add(settings, "helicopterBoundsMaxZ", -15, 15, 0.1).name("Max Z").onChange(updateHelicopterBoundsHelper);
+    boundsFolder.add(settings, "helicopterBoundsMinX", -15, 15, 0.1).name("Min X").onChange(() => updateHelicopterBoundsHelper(scene, settings));
+    boundsFolder.add(settings, "helicopterBoundsMaxX", -15, 15, 0.1).name("Max X").onChange(() => updateHelicopterBoundsHelper(scene, settings));
+    boundsFolder.add(settings, "helicopterBoundsMinZ", -15, 15, 0.1).name("Min Z").onChange(() => updateHelicopterBoundsHelper(scene, settings));
+    boundsFolder.add(settings, "helicopterBoundsMaxZ", -15, 15, 0.1).name("Max Z").onChange(() => updateHelicopterBoundsHelper(scene, settings));
     boundsFolder.add(settings, "helicopterShowBounds").name("Show Bounds").onChange((v) => {
-      if (!helicopterBoundsHelper) updateHelicopterBoundsHelper();
-      if (helicopterBoundsHelper) helicopterBoundsHelper.visible = v;
+      if (!getHelicopterBoundsHelper()) updateHelicopterBoundsHelper(scene, settings);
+      const bh = getHelicopterBoundsHelper();
+      if (bh) bh.visible = v;
     });
     boundsFolder.close();
     helicopterFolder.close();
@@ -3600,7 +1604,7 @@ const loadingProgress = {
     searchlightsFolder.add(settings, "searchlightHeight", 3, 30, 0.5).name("Height");
     searchlightsFolder.add(settings, "searchlightSpeed", 0.05, 1, 0.05).name("Speed");
     searchlightsFolder.add(settings, "searchlightSway", 1, 15, 0.5).name("Sway Range");
-    searchlightsFolder.add({ debug: false }, "debug").name("Show Helpers").onChange(toggleSearchlightHelpers);
+    searchlightsFolder.add({ debug: false }, "debug").name("Show Helpers").onChange((v) => toggleSearchlightHelpers(v, scene));
     searchlightsFolder.close();
 
     // Pulse Wave (capture effect)
@@ -3718,16 +1722,16 @@ const loadingProgress = {
     const emissiveFolder = lightsFolder.addFolder("Emissive");
     if (settings.globalEmissiveMultiplier === undefined) settings.globalEmissiveMultiplier = 1.0;
     emissiveFolder.add(settings, "globalEmissiveMultiplier", 0, 5, 0.1).name("Global Multiplier").onChange(() => {
-      updateAllEmissives();
+      updateAllEmissives(settings, STATE);
     });
     emissiveFolder.add(settings, "windowEmissiveIntensity", 0, 50, 0.5).name("Windows").onChange(() => {
-      updateAllEmissives();
+      updateAllEmissives(settings, STATE);
     });
     emissiveFolder.add(settings, "lampEmissiveIntensity", 0, 50, 0.5).name("Lamps").onChange(() => {
-      updateAllEmissives();
+      updateAllEmissives(settings, STATE);
     });
     emissiveFolder.add(settings, "roadEmissiveIntensity", 0, 50, 0.5).name("Roads").onChange(() => {
-      updateAllEmissives();
+      updateAllEmissives(settings, STATE);
     });
     emissiveFolder.add(settings, "roadNormalMap").name("Road Normal Map").onChange((v) => {
       if (STATE.roadMeshes) {
@@ -3746,10 +1750,10 @@ const loadingProgress = {
       }
     });
     emissiveFolder.add(settings, "pathEmissiveIntensity", 0, 50, 0.5).name("Paths").onChange(() => {
-      updateAllEmissives();
+      updateAllEmissives(settings, STATE);
     });
     emissiveFolder.add(settings, "otherEmissiveIntensity", 0, 50, 0.5).name("Other").onChange(() => {
-      updateAllEmissives();
+      updateAllEmissives(settings, STATE);
     });
     // Audio reactive controls
     emissiveFolder.add(settings, "lampAudioReactive").name("Lamp Audio Reactive");
@@ -3773,40 +1777,40 @@ const loadingProgress = {
 
     // Environment
     const atmosphereFolder = vfxFolder.addFolder("Environment");
-    atmosphereFolder.add(settings, "fogEnabled").name("Fog").onChange(updatePostProcessing);
-    atmosphereFolder.addColor(settings, "fogColor").name("Fog Color").onChange(updatePostProcessing);
-    atmosphereFolder.add(settings, "fogNear", 1, 50, 1).name("Fog Near").onChange(updatePostProcessing);
-    atmosphereFolder.add(settings, "fogFar", 10, 100, 1).name("Fog Far").onChange(updatePostProcessing);
+    atmosphereFolder.add(settings, "fogEnabled").name("Fog").onChange(() => updatePostProcessing(composer, scene, settings));
+    atmosphereFolder.addColor(settings, "fogColor").name("Fog Color").onChange(() => updatePostProcessing(composer, scene, settings));
+    atmosphereFolder.add(settings, "fogNear", 1, 50, 1).name("Fog Near").onChange(() => updatePostProcessing(composer, scene, settings));
+    atmosphereFolder.add(settings, "fogFar", 10, 100, 1).name("Fog Far").onChange(() => updatePostProcessing(composer, scene, settings));
     atmosphereFolder.close();
 
     const bloomFolder = vfxFolder.addFolder("Bloom");
-    bloomFolder.add(settings, "bloomEnabled").name("Enabled").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomStrength", 0, 3, 0.1).name("Strength").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomThreshold", 0, 1, 0.01).name("Threshold").onChange(updatePostProcessing);
-    bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange(updatePostProcessing);
+    bloomFolder.add(settings, "bloomEnabled").name("Enabled").onChange(() => updatePostProcessing(composer, scene, settings));
+    bloomFolder.add(settings, "bloomStrength", 0, 3, 0.1).name("Strength").onChange(() => updatePostProcessing(composer, scene, settings));
+    bloomFolder.add(settings, "bloomThreshold", 0, 1, 0.01).name("Threshold").onChange(() => updatePostProcessing(composer, scene, settings));
+    bloomFolder.add(settings, "bloomRadius", 0, 2, 0.01).name("Radius").onChange(() => updatePostProcessing(composer, scene, settings));
     bloomFolder.close();
 
     const gradeFolder = vfxFolder.addFolder("Color Grading");
-    gradeFolder.add(settings, "colorGradingEnabled").name("Enabled").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "vignetteEnabled").name("Vignette").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "vignetteIntensity", 0, 1, 0.05).name("Vignette Amount").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingSaturation", 0, 3, 0.05).name("Saturation").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingContrast", 0.5, 2, 0.05).name("Contrast").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingBrightness", 0, 3, 0.05).name("Brightness").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingGamma", 0.2, 3, 0.05).name("Gamma").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingGainR", 0, 2, 0.05).name("Red").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingGainG", 0, 2, 0.05).name("Green").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingGainB", 0, 2, 0.05).name("Blue").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingLiftR", -0.5, 0.5, 0.01).name("Lift R").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingLiftG", -0.5, 0.5, 0.01).name("Lift G").onChange(updatePostProcessing);
-    gradeFolder.add(settings, "colorGradingLiftB", -0.5, 0.5, 0.01).name("Lift B").onChange(updatePostProcessing);
+    gradeFolder.add(settings, "colorGradingEnabled").name("Enabled").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "vignetteEnabled").name("Vignette").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "vignetteIntensity", 0, 1, 0.05).name("Vignette Amount").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingSaturation", 0, 3, 0.05).name("Saturation").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingContrast", 0.5, 2, 0.05).name("Contrast").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingBrightness", 0, 3, 0.05).name("Brightness").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingGamma", 0.2, 3, 0.05).name("Gamma").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingGainR", 0, 2, 0.05).name("Red").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingGainG", 0, 2, 0.05).name("Green").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingGainB", 0, 2, 0.05).name("Blue").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingLiftR", -0.5, 0.5, 0.01).name("Lift R").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingLiftG", -0.5, 0.5, 0.01).name("Lift G").onChange(() => updatePostProcessing(composer, scene, settings));
+    gradeFolder.add(settings, "colorGradingLiftB", -0.5, 0.5, 0.01).name("Lift B").onChange(() => updatePostProcessing(composer, scene, settings));
     gradeFolder.close();
 
     const pixelFolder = vfxFolder.addFolder("Pixelation");
-    pixelFolder.add(settings, "pixelationEnabled").name("Enabled").onChange(updatePostProcessing);
-    pixelFolder.add(settings, "pixelationSize", 1, 16, 1).name("Pixel Size").onChange(updatePostProcessing);
-    pixelFolder.add(settings, "pixelationNormalEdge", 0, 2, 0.05).name("Normal Edge").onChange(updatePostProcessing);
-    pixelFolder.add(settings, "pixelationDepthEdge", 0, 1, 0.05).name("Depth Edge").onChange(updatePostProcessing);
+    pixelFolder.add(settings, "pixelationEnabled").name("Enabled").onChange(() => updatePostProcessing(composer, scene, settings));
+    pixelFolder.add(settings, "pixelationSize", 1, 16, 1).name("Pixel Size").onChange(() => updatePostProcessing(composer, scene, settings));
+    pixelFolder.add(settings, "pixelationNormalEdge", 0, 2, 0.05).name("Normal Edge").onChange(() => updatePostProcessing(composer, scene, settings));
+    pixelFolder.add(settings, "pixelationDepthEdge", 0, 1, 0.05).name("Depth Edge").onChange(() => updatePostProcessing(composer, scene, settings));
     pixelFolder.close();
 
     vfxFolder.close();
@@ -3815,9 +1819,10 @@ const loadingProgress = {
     const audioFolder = guiLeft.addFolder("🔊 Audio");
     const audioControls = {
       play: function() {
-        if (audioElement) {
-          audioElement.volume = settings.audioVolume;
-          audioElement.play().catch(() => {});
+        const el = getAudioElement();
+        if (el) {
+          el.volume = settings.audioVolume;
+          el.play().catch(() => {});
         }
       },
       stop: function() {
@@ -3827,7 +1832,7 @@ const loadingProgress = {
     audioFolder.add(audioControls, "play").name("▶ Play");
     audioFolder.add(audioControls, "stop").name("■ Stop");
     audioFolder.add(settings, "audioVolume", 0, 1, 0.05).name("Volume").onChange((v) => {
-      if (audioElement) audioElement.volume = v;
+      const el = getAudioElement(); if (el) el.volume = v;
     });
     audioFolder.add(settings, "audioTrack", Object.keys(PATHS.audio)).name("Track").onChange((v) => {
       setAudioTrack(v);
@@ -4042,94 +2047,6 @@ const loadingProgress = {
   }
 
   // ============================================
-  // CYBERPUNK VFX SHADER
-  // ============================================
-
-  const CyberpunkShader = {
-    uniforms: {
-      'tDiffuse': { value: null },
-      'vignetteIntensity': { value: 0.4 },
-      'chromaticAberration': { value: 0.003 },
-      'tintColor': { value: new THREE.Color(0xff00ff) },
-      'tintIntensity': { value: 0.15 },
-      'saturation': { value: 1.2 },
-      'contrast': { value: 1.1 },
-      'brightness': { value: 1.0 },
-      'gain': { value: new THREE.Vector3(1, 1, 1) },
-      'lift': { value: new THREE.Vector3(0, 0, 0) },
-      'gamma': { value: 1.0 },
-      'time': { value: 0 }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D tDiffuse;
-      uniform float vignetteIntensity;
-      uniform float chromaticAberration;
-      uniform vec3 tintColor;
-      uniform float tintIntensity;
-      uniform float saturation;
-      uniform float contrast;
-      uniform float brightness;
-      uniform vec3 gain;
-      uniform vec3 lift;
-      uniform float gamma;
-      uniform float time;
-      varying vec2 vUv;
-
-      void main() {
-        vec2 uv = vUv;
-        vec2 center = uv - 0.5;
-        float dist = length(center);
-
-        // Chromatic aberration
-        float aberration = chromaticAberration * dist;
-        float r = texture2D(tDiffuse, uv + vec2(aberration, 0.0)).r;
-        float g = texture2D(tDiffuse, uv).g;
-        float b = texture2D(tDiffuse, uv - vec2(aberration, 0.0)).b;
-        vec3 color = vec3(r, g, b);
-
-        // Brightness
-        color *= brightness;
-
-        // RGB channel gain (multiply per channel)
-        color *= gain;
-
-        // Lift (add to shadows — applied before gamma so it mainly affects darks)
-        color += lift;
-
-        // Gamma correction
-        float invGamma = 1.0 / gamma;
-        color = pow(max(color, vec3(0.0)), vec3(invGamma));
-
-        // Saturation
-        float luminance = dot(color, vec3(0.299, 0.587, 0.114));
-        color = mix(vec3(luminance), color, saturation);
-
-        // Contrast
-        color = (color - 0.5) * contrast + 0.5;
-
-        // Color tint (additive cyberpunk glow)
-        color += tintColor * tintIntensity * (0.5 + 0.5 * sin(time * 0.5));
-
-        // Vignette
-        float vignette = 1.0 - dist * vignetteIntensity * 2.0;
-        vignette = clamp(vignette, 0.0, 1.0);
-        vignette = smoothstep(0.0, 1.0, vignette);
-        color *= vignette;
-
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `
-  };
-
-
-  // ============================================
   // ATMOSPHERE SYSTEMS
   // ============================================
 
@@ -4144,118 +2061,6 @@ const loadingProgress = {
     // Update cyberpunk shader time
     if (composer && composer.cyberpunkPass) {
       composer.cyberpunkPass.uniforms['time'].value = performance.now() * 0.001;
-    }
-  }
-
-  // ============================================
-  // POST-PROCESSING (WebGL EffectComposer)
-  // ============================================
-
-  function initPostProcessing() {
-    composer = new EffectComposer(renderer);
-
-    // Selective pixel pass - renders GLB models with pixelation, other elements normally
-    const selectivePixelPass = new SelectivePixelPass(
-      settings.pixelationSize || 4,
-      scene,
-      camera,
-      {
-        normalEdgeStrength: settings.pixelationNormalEdge || 0.3,
-        depthEdgeStrength: settings.pixelationDepthEdge || 0.4,
-        glbLayer: LAYERS.GLB_MODELS,
-        pixelationEnabled: settings.pixelationEnabled
-      }
-    );
-    composer.addPass(selectivePixelPass);
-
-    // Bloom pass
-    const bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      settings.bloomStrength,
-      settings.bloomRadius,
-      settings.bloomThreshold
-    );
-    bloomPass.enabled = settings.bloomEnabled;
-    composer.addPass(bloomPass);
-
-    // Cyberpunk shader pass (vignette, chromatic aberration, color grading)
-    const cyberpunkPass = new ShaderPass(CyberpunkShader);
-    cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
-    cyberpunkPass.uniforms['chromaticAberration'].value = 0;
-    cyberpunkPass.uniforms['tintColor'].value.set("#ffffff");
-    cyberpunkPass.uniforms['tintIntensity'].value = 0;
-    cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
-    cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
-    cyberpunkPass.uniforms['brightness'].value = settings.colorGradingEnabled ? settings.colorGradingBrightness : 1.0;
-    cyberpunkPass.uniforms['gain'].value.set(
-      settings.colorGradingEnabled ? settings.colorGradingGainR : 1,
-      settings.colorGradingEnabled ? settings.colorGradingGainG : 1,
-      settings.colorGradingEnabled ? settings.colorGradingGainB : 1
-    );
-    cyberpunkPass.uniforms['lift'].value.set(
-      settings.colorGradingEnabled ? settings.colorGradingLiftR : 0,
-      settings.colorGradingEnabled ? settings.colorGradingLiftG : 0,
-      settings.colorGradingEnabled ? settings.colorGradingLiftB : 0
-    );
-    cyberpunkPass.uniforms['gamma'].value = settings.colorGradingEnabled ? settings.colorGradingGamma : 1.0;
-    composer.addPass(cyberpunkPass);
-
-    // Output pass for tone mapping
-    const outputPass = new OutputPass();
-    composer.addPass(outputPass);
-
-    // Store references for updates
-    composer.bloomPass = bloomPass;
-    composer.cyberpunkPass = cyberpunkPass;
-    composer.selectivePixelPass = selectivePixelPass;
-  }
-
-  function updatePostProcessing() {
-    if (!composer) return;
-
-    if (composer.bloomPass) {
-      composer.bloomPass.enabled = settings.bloomEnabled;
-      composer.bloomPass.threshold = settings.bloomThreshold;
-      composer.bloomPass.strength = settings.bloomStrength;
-      composer.bloomPass.radius = settings.bloomRadius;
-    }
-
-    if (composer.cyberpunkPass) {
-      composer.cyberpunkPass.uniforms['vignetteIntensity'].value = settings.vignetteEnabled ? settings.vignetteIntensity : 0;
-      composer.cyberpunkPass.uniforms['chromaticAberration'].value = 0;
-      composer.cyberpunkPass.uniforms['tintColor'].value.set("#ffffff");
-      composer.cyberpunkPass.uniforms['tintIntensity'].value = 0;
-      composer.cyberpunkPass.uniforms['saturation'].value = settings.colorGradingEnabled ? settings.colorGradingSaturation : 1.0;
-      composer.cyberpunkPass.uniforms['contrast'].value = settings.colorGradingEnabled ? settings.colorGradingContrast : 1.0;
-      composer.cyberpunkPass.uniforms['brightness'].value = settings.colorGradingEnabled ? settings.colorGradingBrightness : 1.0;
-      const en = settings.colorGradingEnabled;
-      composer.cyberpunkPass.uniforms['gain'].value.set(
-        en ? settings.colorGradingGainR : 1, en ? settings.colorGradingGainG : 1, en ? settings.colorGradingGainB : 1
-      );
-      composer.cyberpunkPass.uniforms['lift'].value.set(
-        en ? settings.colorGradingLiftR : 0, en ? settings.colorGradingLiftG : 0, en ? settings.colorGradingLiftB : 0
-      );
-      composer.cyberpunkPass.uniforms['gamma'].value = en ? settings.colorGradingGamma : 1.0;
-    }
-
-    // Update selective pixelation
-    if (composer.selectivePixelPass) {
-      composer.selectivePixelPass.pixelationEnabled = settings.pixelationEnabled;
-      composer.selectivePixelPass.setPixelSize(settings.pixelationSize || 4);
-      composer.selectivePixelPass.normalEdgeStrength = settings.pixelationNormalEdge || 0.3;
-      composer.selectivePixelPass.depthEdgeStrength = settings.pixelationDepthEdge || 0.4;
-    }
-
-    // Update fog
-    if (settings.fogEnabled) {
-      if (!scene.fog) {
-        scene.fog = new THREE.Fog(settings.fogColor, settings.fogNear, settings.fogFar);
-      }
-      scene.fog.color.set(settings.fogColor);
-      scene.fog.near = settings.fogNear;
-      scene.fog.far = settings.fogFar;
-    } else {
-      scene.fog = null;
     }
   }
 
@@ -4332,434 +2137,9 @@ const loadingProgress = {
     for (const h of chaserLightHelpers) h.update();
   }
 
-  // ============================================
-  // ROPE PHYSICS
-  // ============================================
-
-  class RopePoint {
-    constructor(x, y, z) {
-      this.pos = new THREE.Vector3(x, y, z);
-      this.oldPos = new THREE.Vector3(x, y, z);
-      this.pinned = false;
-    }
-
-    update(gravity, friction) {
-      if (this.pinned) return;
-
-      const vx = (this.pos.x - this.oldPos.x) * friction;
-      const vy = (this.pos.y - this.oldPos.y) * friction;
-      const vz = (this.pos.z - this.oldPos.z) * friction;
-
-      this.oldPos.copy(this.pos);
-
-      this.pos.x += vx;
-      this.pos.y += vy - gravity;
-      this.pos.z += vz;
-    }
-
-    setPos(x, y, z) {
-      this.pos.set(x, y, z);
-      this.oldPos.set(x, y, z);
-    }
-  }
-
-  class RopeStick {
-    constructor(p1, p2, length) {
-      this.p1 = p1;
-      this.p2 = p2;
-      this.length = length;
-    }
-
-    update() {
-      const dx = this.p2.pos.x - this.p1.pos.x;
-      const dy = this.p2.pos.y - this.p1.pos.y;
-      const dz = this.p2.pos.z - this.p1.pos.z;
-      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-      if (distance === 0) return;
-
-      const diff = (this.length - distance) / distance / 2;
-      const offsetX = dx * diff;
-      const offsetY = dy * diff;
-      const offsetZ = dz * diff;
-
-      if (!this.p1.pinned) {
-        this.p1.pos.x -= offsetX;
-        this.p1.pos.y -= offsetY;
-        this.p1.pos.z -= offsetZ;
-      }
-      if (!this.p2.pinned) {
-        this.p2.pos.x += offsetX;
-        this.p2.pos.y += offsetY;
-        this.p2.pos.z += offsetZ;
-      }
-    }
-  }
-
-  // ============================================
-  // ACTOR WIRE (BILLBOARD) SYSTEM
-  // ============================================
-
-  class ActorWire {
-    constructor(actor, actorSize, color, isChaser = true, index = 0) {
-      this.actor = actor;
-      this.actorSize = actorSize;
-      this.color = color;
-      this.isChaser = isChaser;
-      this.index = index;
-      this.points = [];
-      this.sticks = [];
-      this.line = null;
-      this.cube = null;
-      this.cubeLight = null;
-
-      // Fade state
-      this.isFading = false;
-      this.fadeProgress = 1.0;
-      this.fadeDirection = 0;
-      this.pendingTextureSwap = false;
-
-      // Pop-in animation state
-      this.isPopping = false;
-      this.popProgress = 0;
-      this.popDuration = 0.6; // seconds
-      this.popScale = 0;
-      this.showWireAndBillboard = false; // Only show when game is playing
-
-      this.initWire();
-    }
-
-    initWire() {
-      const segmentCount = 12; // Fixed value since wire is removed
-      const totalHeight = 3.2 * this.actorSize; // Fixed height for billboard positioning
-      const segmentLength = totalHeight / segmentCount;
-
-      const actorPos = this.actor.mesh.position;
-
-      this.points = [];
-      this.sticks = [];
-
-      for (let i = 0; i <= segmentCount; i++) {
-        const t = i / segmentCount;
-        const y = actorPos.y + t * totalHeight;
-        const p = new RopePoint(actorPos.x, y, actorPos.z);
-        this.points.push(p);
-
-        if (i > 0) {
-          this.sticks.push(new RopeStick(this.points[i - 1], this.points[i], segmentLength));
-        }
-      }
-
-      this.points[0].pinned = true;
-      this.points[this.points.length - 1].pinned = true;
-
-      const billboardSize = settings.wireCubeSize * this.actorSize * 2;
-      const billboardGeo = new THREE.PlaneGeometry(billboardSize, billboardSize);
-      const brightness = settings.billboardBrightness;
-      const billboardMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(brightness, brightness, brightness),
-        side: THREE.DoubleSide,
-        transparent: true,
-        depthWrite: false,
-        depthTest: true, // Enable depth test so billboards render behind helicopter
-      });
-
-      // Add contrast adjustment via shader modification
-      billboardMat.userData.contrast = settings.billboardContrast;
-      billboardMat.onBeforeCompile = (shader) => {
-        shader.uniforms.contrast = { value: settings.billboardContrast };
-        billboardMat.userData.shader = shader;
-
-        // Inject contrast uniform
-        shader.fragmentShader = shader.fragmentShader.replace(
-          'void main() {',
-          'uniform float contrast;\nvoid main() {'
-        );
-
-        // Apply contrast to the final color
-        shader.fragmentShader = shader.fragmentShader.replace(
-          '#include <dithering_fragment>',
-          `gl_FragColor.rgb = (gl_FragColor.rgb - 0.5) * contrast + 0.5;
-          #include <dithering_fragment>`
-        );
-      };
-
-      // Update contrast uniform when material needs update
-      const originalOnBeforeRender = billboardMat.onBeforeRender;
-      billboardMat.onBeforeRender = function() {
-        if (this.userData.shader) {
-          this.userData.shader.uniforms.contrast.value = settings.billboardContrast;
-        }
-        if (originalOnBeforeRender) originalOnBeforeRender.apply(this, arguments);
-      };
-      this.billboard = new THREE.Mesh(billboardGeo, billboardMat);
-      this.billboard.rotation.x = -Math.PI / 2;
-      this.billboard.castShadow = false;
-      this.billboard.renderOrder = 100; // Render above wire but respect depth
-      scene.add(this.billboard);
-
-      // Add point light for billboard emission (chasers only, fugitive lights disabled for performance)
-      if (this.isChaser) {
-        this.billboardLight = new THREE.PointLight(
-          this.color,
-          settings.billboardLightIntensity,
-          settings.billboardLightDistance
-        );
-        this.billboardLight.castShadow = false;
-        scene.add(this.billboardLight);
-      } else {
-        this.billboardLight = null;
-      }
-
-      if (!this.isChaser) {
-        const textureLoader = new THREE.TextureLoader();
-        const pair = FACE_TEXTURES[this.index] || FACE_TEXTURES[0];
-        this.textures = [null, null];
-        this.currentTextureIndex = 0;
-
-        const facePath = PATHS.images.faces;
-        textureLoader.load(facePath + pair[0],
-          (texture) => {
-            this.textures[0] = texture;
-            this.billboard.material.map = texture;
-            this.billboard.material.needsUpdate = true;
-            // Pre-upload texture to GPU to avoid stall on first render
-            renderer.initTexture(texture);
-          },
-          undefined,
-          () => this.billboard.material.color.set(this.color)
-        );
-        textureLoader.load(facePath + pair[1],
-          (texture) => {
-            this.textures[1] = texture;
-            renderer.initTexture(texture);
-          }
-        );
-      } else {
-        this.billboard.material.color.set(this.color);
-      }
-    }
-
-    swapTexture() {
-      if (this.isChaser || !this.textures) return;
-
-      if (settings.faceSwapFade && settings.faceSwapFadeDuration > 0) {
-        // Start fade out
-        this.isFading = true;
-        this.fadeDirection = -1; // -1 = fading out, 1 = fading in
-        this.fadeProgress = 1.0;
-        this.pendingTextureSwap = true;
-      } else {
-        // Instant swap
-        this.currentTextureIndex = 1 - this.currentTextureIndex;
-        const newTexture = this.textures[this.currentTextureIndex];
-        if (newTexture) {
-          this.billboard.material.map = newTexture;
-          this.billboard.material.needsUpdate = true;
-        }
-      }
-    }
-
-    updateFade(dt) {
-      if (!this.isFading || !this.billboard) return;
-      // Skip fade updates for captured fugitives
-      if (!this.isChaser && this.actor.captured) {
-        this.isFading = false;
-        return;
-      }
-
-      const fadeSpeed = 1.0 / settings.faceSwapFadeDuration;
-      this.fadeProgress += this.fadeDirection * fadeSpeed * dt;
-
-      if (this.fadeDirection === -1 && this.fadeProgress <= 0) {
-        // Fully faded out - swap texture and start fading in
-        this.fadeProgress = 0;
-        if (this.pendingTextureSwap) {
-          this.currentTextureIndex = 1 - this.currentTextureIndex;
-          const newTexture = this.textures[this.currentTextureIndex];
-          if (newTexture && this.billboard.material) {
-            this.billboard.material.map = newTexture;
-            this.billboard.material.needsUpdate = true;
-          }
-          this.pendingTextureSwap = false;
-        }
-        this.fadeDirection = 1; // Start fading in
-      } else if (this.fadeDirection === 1 && this.fadeProgress >= 1) {
-        // Fully faded in - done
-        this.fadeProgress = 1;
-        this.isFading = false;
-      }
-
-      // Apply opacity
-      if (this.billboard.material) {
-        this.billboard.material.opacity = this.fadeProgress;
-        this.billboard.material.needsUpdate = true;
-      }
-    }
-
-    isVisible() {
-      if (this.isChaser) {
-        return this.actor.active;
-      } else {
-        // Fugitive billboards only show when game is playing and showWireAndBillboard is true
-        return !this.actor.captured && this.showWireAndBillboard;
-      }
-    }
-
-    startPopIn() {
-      this.isPopping = true;
-      this.popProgress = 0;
-      this.popScale = 0;
-      this.showWireAndBillboard = true;
-    }
-
-    hideWireAndBillboard() {
-      this.showWireAndBillboard = false;
-      this.isPopping = false;
-      this.popScale = 0;
-      if (this.billboard) this.billboard.scale.setScalar(0);
-    }
-
-    // Elastic easing function (overshoot and settle)
-    elasticOut(t) {
-      const p = 0.3;
-      return Math.pow(2, -10 * t) * Math.sin((t - p / 4) * (2 * Math.PI) / p) + 1;
-    }
-
-    update(dt = 0.016) {
-      // Update fade animation
-      this.updateFade(dt);
-
-      // Update pop-in animation
-      if (this.isPopping) {
-        this.popProgress += dt / this.popDuration;
-        if (this.popProgress >= 1) {
-          this.popProgress = 1;
-          this.isPopping = false;
-        }
-        this.popScale = this.elasticOut(this.popProgress);
-      }
-
-      if (!this.isVisible()) {
-        // Keep visible at scale 0 to avoid shader recompilation on show
-        if (this.billboard) this.billboard.scale.setScalar(0);
-        return;
-      }
-
-      if (this.billboard) {
-        // Apply pop scale
-        this.billboard.scale.setScalar(this.popScale);
-      }
-
-      const actorPos = this.actor.mesh.position;
-      const totalHeight = 3.2 * this.actorSize; // Hardcoded (wire removed)
-
-      this.points[0].setPos(actorPos.x, actorPos.y, actorPos.z);
-
-      const topPoint = this.points[this.points.length - 1];
-      const time = performance.now() * 0.001;
-      const swayX = Math.sin(time * 1.5 + this.actorSize * 10) * 0.3 * this.actorSize;
-      const swayZ = Math.cos(time * 1.2 + this.actorSize * 5) * 0.3 * this.actorSize;
-
-      // Pull billboard toward center of level
-      const center = STATE.levelCenter || { x: 0, z: 0 };
-      const centerPull = settings.billboardCenterPull;
-      let targetX = actorPos.x + (center.x - actorPos.x) * centerPull + swayX;
-      let targetZ = actorPos.z + (center.z - actorPos.z) * centerPull + swayZ;
-
-      // Limit distance from actor
-      const maxDist = settings.billboardMaxDistance;
-      const dx = targetX - actorPos.x;
-      const dz = targetZ - actorPos.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > maxDist) {
-        const scale = maxDist / dist;
-        targetX = actorPos.x + dx * scale;
-        targetZ = actorPos.z + dz * scale;
-      }
-
-      topPoint.setPos(targetX, actorPos.y + totalHeight, targetZ);
-
-      const gravity = 0.15 * this.actorSize; // Hardcoded (wire removed)
-      const friction = 0.92; // Hardcoded (wire removed)
-
-      for (const p of this.points) {
-        if (!p.pinned) {
-          const windX = (Math.random() - 0.5) * 0.02 * this.actorSize;
-          const windZ = (Math.random() - 0.5) * 0.02 * this.actorSize;
-          p.pos.x += windX;
-          p.pos.z += windZ;
-        }
-        p.update(gravity, friction);
-      }
-
-      for (let i = 0; i < 3; i++) { // Hardcoded iterations (wire removed)
-        for (const stick of this.sticks) {
-          stick.update();
-        }
-      }
-
-      // Wire line removed - only billboard remains
-
-      // Billboard position: pull toward center based on centerPull setting
-      const toCenterX = center.x - actorPos.x;
-      const toCenterZ = center.z - actorPos.z;
-      let billboardX = actorPos.x + toCenterX * centerPull;
-      let billboardZ = actorPos.z + toCenterZ * centerPull;
-
-      // Optionally limit distance from actor if maxDist > 0
-      if (maxDist > 0) {
-        const dx = billboardX - actorPos.x;
-        const dz = billboardZ - actorPos.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist > maxDist) {
-          const scale = maxDist / dist;
-          billboardX = actorPos.x + dx * scale;
-          billboardZ = actorPos.z + dz * scale;
-        }
-      }
-
-      this.billboard.position.set(billboardX, actorPos.y + totalHeight, billboardZ);
-
-      // Update billboard light position and settings
-      // Use intensity=0 instead of visible=false to avoid shader recompilation
-      if (this.billboardLight) {
-        this.billboardLight.position.copy(this.billboard.position);
-        const baseIntensity = this.isChaser ? settings.billboardLightIntensity : settings.fugitiveLightIntensity;
-        this.billboardLight.intensity = this.showWireAndBillboard ? baseIntensity : 0;
-        this.billboardLight.distance = settings.billboardLightDistance;
-      }
-    }
-
-    dispose() {
-      if (this.line) {
-        scene.remove(this.line);
-        this.line.geometry.dispose();
-        this.line.material.dispose();
-      }
-      if (this.billboard) {
-        scene.remove(this.billboard);
-        this.billboard.geometry.dispose();
-        this.billboard.material.dispose();
-      }
-      if (this.billboardLight) {
-        scene.remove(this.billboardLight);
-      }
-    }
-  }
 
   const fugitiveWires = [];
   let lastFaceSwapTime = 0;
-
-  function updateWireBillboards() {
-    for (const wire of fugitiveWires) {
-      if (wire.billboard) {
-        const billboardSize = settings.wireCubeSize * wire.actorSize * 2;
-        wire.billboard.geometry.dispose();
-        wire.billboard.geometry = new THREE.PlaneGeometry(billboardSize, billboardSize);
-      }
-    }
-  }
 
   // ============================================
   // GAME TIMER & RESET
@@ -4828,22 +2208,7 @@ const loadingProgress = {
     resetBoosts(boostStates, settings);
 
     // Clear any active capture effects
-    for (const effect of captureEffects) {
-      if (effect.coreMesh) { scene.remove(effect.coreMesh); effect.coreMat.dispose(); }
-      if (effect.glowMesh) { scene.remove(effect.glowMesh); effect.glowMat.dispose(); }
-      // Dispose alpha attribute buffers only (positions are shared from cache)
-      if (effect.coreGeo) { effect.coreGeo.deleteAttribute('alpha'); effect.coreGeo.dispose(); }
-      if (effect.glowGeo) { effect.glowGeo.deleteAttribute('alpha'); effect.glowGeo.dispose(); }
-      scene.remove(effect.particles);
-      effect.particles.geometry.dispose();
-      effect.particleMat.dispose();
-      if (effect.flash) {
-        scene.remove(effect.flash);
-        // Don't dispose flash geometry — it's shared (_sharedFlashGeo)
-        effect.flashMat.dispose();
-      }
-    }
-    captureEffects.length = 0;
+    clearCaptureEffects(scene);
 
     // Reset fugitives
     for (const f of fugitives) {
@@ -4900,739 +2265,6 @@ const loadingProgress = {
     setGameState("PRE_GAME");
   }
 
-  // ============================================
-  // CAPTURE EFFECTS
-  // ============================================
-
-  const captureEffects = [];
-
-  // Pre-built tube geometry cache — built once when path graph is ready
-  let _tubeCache = null;
-
-  function buildTubeCache() {
-    if (!STATE.pathGraph || !STATE.pathGraph.edges) return null;
-    const tubeHeight = settings.pulseWaveTubeHeight || 0.15;
-    const tubeRadius = tubeHeight * 0.4;
-    const glowScale = settings.pulseWaveGlow || 3.0;
-    const edges = STATE.pathGraph.edges;
-    const segs = 6;
-
-    const templateCore = new THREE.CylinderGeometry(tubeRadius, tubeRadius, 1, segs, 1, true);
-    const templateGlow = new THREE.CylinderGeometry(tubeRadius * glowScale, tubeRadius * glowScale, 1, segs, 1, true);
-    templateCore.rotateX(Math.PI / 2);
-    templateGlow.rotateX(Math.PI / 2);
-
-    const vertsPerTube = templateCore.attributes.position.count;
-
-    // Pre-calculate per-edge geometry data
-    const edgeCenters = []; // {x, z} per edge
-    const corePositions = [];
-    const glowPositions = [];
-
-    for (const edge of edges) {
-      const dx = edge.x2 - edge.x1;
-      const dz = edge.z2 - edge.z1;
-      const length = Math.sqrt(dx * dx + dz * dz);
-      const angle = Math.atan2(dx, dz);
-      const centerX = (edge.x1 + edge.x2) / 2;
-      const centerZ = (edge.z1 + edge.z2) / 2;
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
-      edgeCenters.push({ x: centerX, z: centerZ });
-
-      for (let v = 0; v < vertsPerTube; v++) {
-        let lx = templateCore.attributes.position.getX(v);
-        let ly = templateCore.attributes.position.getY(v);
-        let lz = templateCore.attributes.position.getZ(v) * length;
-        const rx = lx * cosA + lz * sinA;
-        const rz = -lx * sinA + lz * cosA;
-        corePositions.push(rx + centerX, ly + tubeHeight / 2, rz + centerZ);
-
-        lx = templateGlow.attributes.position.getX(v);
-        ly = templateGlow.attributes.position.getY(v);
-        lz = templateGlow.attributes.position.getZ(v) * length;
-        const grx = lx * cosA + lz * sinA;
-        const grz = -lx * sinA + lz * cosA;
-        glowPositions.push(grx + centerX, ly + tubeHeight / 2, grz + centerZ);
-      }
-    }
-
-    // Build shared index buffer
-    const templateIndex = templateCore.index.array;
-    const indices = [];
-    for (let e = 0; e < edges.length; e++) {
-      const offset = e * vertsPerTube;
-      for (let j = 0; j < templateIndex.length; j++) {
-        indices.push(templateIndex[j] + offset);
-      }
-    }
-
-    templateCore.dispose();
-    templateGlow.dispose();
-
-    return {
-      corePositions: new Float32Array(corePositions),
-      glowPositions: new Float32Array(glowPositions),
-      indices,
-      edgeCenters,
-      vertsPerTube,
-      edgeCount: edges.length
-    };
-  }
-
-  function getTubeCache() {
-    if (!_tubeCache) _tubeCache = buildTubeCache();
-    return _tubeCache;
-  }
-
-  // Shared flash + particle geometry (created once, reused)
-  let _sharedFlashGeo = null;
-
-  function createCaptureEffect(position, chaserColor, billboard) {
-    if (!settings.pulseWaveEnabled) return;
-
-    const color = new THREE.Color(chaserColor);
-    const originX = position.x;
-    const originZ = position.z;
-
-    let coreMesh = null, glowMesh = null;
-    let coreGeo = null, glowGeo = null;
-    let coreMat = null, glowMat = null;
-    let edgeDistances = [];
-    let vertsPerTube = 0;
-
-    const cache = getTubeCache();
-    if (cache) {
-      // Compute per-edge distances from this capture origin
-      for (let e = 0; e < cache.edgeCount; e++) {
-        const ec = cache.edgeCenters[e];
-        edgeDistances.push(Math.sqrt((ec.x - originX) ** 2 + (ec.z - originZ) ** 2));
-      }
-      vertsPerTube = cache.vertsPerTube;
-
-      // Reuse shared position/index data, only create fresh alpha attributes
-      const totalVerts = cache.edgeCount * vertsPerTube;
-
-      coreGeo = new THREE.BufferGeometry();
-      coreGeo.setAttribute('position', new THREE.Float32BufferAttribute(cache.corePositions, 3));
-      coreGeo.setAttribute('alpha', new THREE.Float32BufferAttribute(new Float32Array(totalVerts), 1));
-      coreGeo.setIndex(cache.indices);
-
-      glowGeo = new THREE.BufferGeometry();
-      glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(cache.glowPositions, 3));
-      glowGeo.setAttribute('alpha', new THREE.Float32BufferAttribute(new Float32Array(totalVerts), 1));
-      glowGeo.setIndex(cache.indices);
-
-      const shaderVert = `
-        attribute float alpha;
-        varying float vAlpha;
-        void main() {
-          vAlpha = alpha;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `;
-      const shaderFrag = `
-        uniform vec3 uColor;
-        uniform float uOpacity;
-        varying float vAlpha;
-        void main() {
-          gl_FragColor = vec4(uColor, vAlpha * uOpacity);
-        }
-      `;
-
-      coreMat = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color(0xffffff) }, uOpacity: { value: 1.0 } },
-        vertexShader: shaderVert, fragmentShader: shaderFrag,
-        transparent: true, depthWrite: false, depthTest: false,
-        blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-      });
-      coreMesh = new THREE.Mesh(coreGeo, coreMat);
-      scene.add(coreMesh);
-
-      glowMat = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: color.clone() }, uOpacity: { value: 1.0 } },
-        vertexShader: shaderVert, fragmentShader: shaderFrag,
-        transparent: true, depthWrite: false, depthTest: false,
-        blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-      });
-      glowMesh = new THREE.Mesh(glowGeo, glowMat);
-      scene.add(glowMesh);
-    }
-
-    // Create particle burst from billboard position
-    const particleCount = settings.pulseWaveParticles ? 60 : 0;
-    const particlePositions = new Float32Array(particleCount * 3);
-    const particleVelocities = [];
-    const particleColors = new Float32Array(particleCount * 3);
-
-    const billboardPos = position.clone();
-    billboardPos.y = position.y + 0.3;
-
-    for (let i = 0; i < particleCount; i++) {
-      particlePositions[i * 3] = billboardPos.x + (Math.random() - 0.5) * 0.3;
-      particlePositions[i * 3 + 1] = billboardPos.y + (Math.random() - 0.5) * 0.3;
-      particlePositions[i * 3 + 2] = billboardPos.z + (Math.random() - 0.5) * 0.3;
-
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 1.5 + 0.5;
-      const upSpeed = Math.random() * 2 + 0.5;
-      particleVelocities.push({
-        x: Math.cos(angle) * speed,
-        y: upSpeed,
-        z: Math.sin(angle) * speed
-      });
-
-      const t = Math.random();
-      const brightness = 1 + Math.random() * 0.5;
-      particleColors[i * 3] = Math.min(1, brightness * (1 * (1 - t) + color.r * t));
-      particleColors[i * 3 + 1] = Math.min(1, brightness * (1 * (1 - t) + color.g * t));
-      particleColors[i * 3 + 2] = Math.min(1, brightness * (1 * (1 - t) + color.b * t));
-    }
-
-    const particleGeo = new THREE.BufferGeometry();
-    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-    particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
-
-    const particleMat = new THREE.PointsMaterial({
-      size: 0.25, vertexColors: true, transparent: true, opacity: 1.0,
-      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
-    });
-
-    const particles = new THREE.Points(particleGeo, particleMat);
-    scene.add(particles);
-
-    // Flash at capture point (reuse shared geometry)
-    let flash = null;
-    let flashMat = null;
-    if (settings.pulseWaveFlash !== false) {
-      if (!_sharedFlashGeo) _sharedFlashGeo = new THREE.SphereGeometry(0.5, 16, 16);
-      flashMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 1.0,
-        blending: THREE.AdditiveBlending, depthWrite: false
-      });
-      flash = new THREE.Mesh(_sharedFlashGeo, flashMat);
-      flash.position.copy(billboardPos);
-      scene.add(flash);
-    }
-
-    captureEffects.push({
-      coreMesh, glowMesh, coreGeo, glowGeo, coreMat, glowMat,
-      edgeDistances, vertsPerTube,
-      particles, particleMat, particleVelocities,
-      flash, flashMat,
-      originX, originZ,
-      time: 0,
-      duration: settings.pulseWaveDuration || 5.0,
-      pulseSpeed: settings.pulseWaveSpeed || 3.5,
-      pulseWidth: settings.pulseWaveWidth || 1.5,
-      intensity: settings.pulseWaveIntensity || 0.8,
-      easing: settings.pulseWaveEasing || "easeOut"
-    });
-  }
-
-  // Easing functions for pulse wave
-  function applyEasing(t, easing) {
-    switch (easing) {
-      case "easeOut":
-        return 1 - Math.pow(1 - t, 3); // Cubic ease out - starts fast, slows down
-      case "easeIn":
-        return Math.pow(t, 3); // Cubic ease in - starts slow, speeds up
-      case "easeInOut":
-        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      case "linear":
-      default:
-        return t;
-    }
-  }
-
-  function updateCaptureEffects(dt) {
-    for (let i = captureEffects.length - 1; i >= 0; i--) {
-      const effect = captureEffects[i];
-      effect.time += dt;
-      const t = effect.time / effect.duration;
-
-      if (t >= 1) {
-        // Remove effect — positions are cached, only dispose alpha + materials
-        if (effect.coreMesh) { scene.remove(effect.coreMesh); effect.coreMat.dispose(); }
-        if (effect.glowMesh) { scene.remove(effect.glowMesh); effect.glowMat.dispose(); }
-        if (effect.coreGeo) { effect.coreGeo.deleteAttribute('alpha'); effect.coreGeo.dispose(); }
-        if (effect.glowGeo) { effect.glowGeo.deleteAttribute('alpha'); effect.glowGeo.dispose(); }
-        scene.remove(effect.particles);
-        effect.particles.geometry.dispose();
-        effect.particleMat.dispose();
-        if (effect.flash) {
-          scene.remove(effect.flash);
-          effect.flashMat.dispose();
-        }
-        captureEffects.splice(i, 1);
-        continue;
-      }
-
-      // Apply easing to the animation progress
-      const easedT = applyEasing(t, effect.easing);
-      const maxRadius = effect.pulseSpeed * effect.duration;
-      const pulseRadius = easedT * maxRadius;
-      const fadeOut = t > 0.7 ? (t - 0.7) / 0.3 : 0;
-
-      // Update per-vertex alpha on the batched meshes
-      if (effect.coreGeo && effect.edgeDistances.length > 0) {
-        const coreAlphas = effect.coreGeo.attributes.alpha.array;
-        const glowAlphas = effect.glowGeo.attributes.alpha.array;
-        const vpte = effect.vertsPerTube;
-
-        for (let e = 0; e < effect.edgeDistances.length; e++) {
-          const distFromPulse = Math.abs(effect.edgeDistances[e] - pulseRadius);
-          let coreA = 0, glowA = 0;
-          if (distFromPulse < effect.pulseWidth) {
-            const normalizedDist = distFromPulse / effect.pulseWidth;
-            const smoothFalloff = Math.exp(-normalizedDist * normalizedDist * 4);
-            const opacity = smoothFalloff * effect.intensity * (1 - fadeOut);
-            coreA = Math.min(1, opacity);
-            glowA = Math.min(0.4, opacity * 0.4);
-          }
-          const base = e * vpte;
-          for (let v = 0; v < vpte; v++) {
-            coreAlphas[base + v] = coreA;
-            glowAlphas[base + v] = glowA;
-          }
-        }
-        effect.coreGeo.attributes.alpha.needsUpdate = true;
-        effect.glowGeo.attributes.alpha.needsUpdate = true;
-      }
-
-      // Animate particles with physics
-      const positions = effect.particles.geometry.attributes.position.array;
-      for (let j = 0; j < effect.particleVelocities.length; j++) {
-        const vel = effect.particleVelocities[j];
-        positions[j * 3] += vel.x * dt;
-        positions[j * 3 + 1] += vel.y * dt;
-        positions[j * 3 + 2] += vel.z * dt;
-        // Light gravity
-        vel.y -= 3 * dt;
-        // Strong air resistance to keep particles close
-        vel.x *= 0.95;
-        vel.y *= 0.97;
-        vel.z *= 0.95;
-      }
-      effect.particles.geometry.attributes.position.needsUpdate = true;
-      effect.particleMat.opacity = Math.max(0, 1 - t * 1.2);
-      effect.particleMat.size = 0.25 * (1 - t * 0.3);
-
-      // Animate flash - quick bright flash that fades
-      if (effect.flash) {
-        const flashT = Math.min(1, effect.time * 5);
-        effect.flashMat.opacity = Math.max(0, 1 - flashT);
-        effect.flash.scale.setScalar(1 + flashT * 2);
-      }
-    }
-  }
-
-  // ============================================
-  // COLLISION
-  // ============================================
-
-  function checkCollision(a, b, radius) {
-    const da = a.position;
-    const db = b.position;
-    const dx = da.x - db.x;
-    const dy = da.y - db.y;
-    const dz = da.z - db.z;
-    const distSq = dx * dx + dy * dy + dz * dz;
-    const r = radius * 2;
-    return distSq < r * r;
-  }
-
-  // ============================================
-  // PATH-BASED MOVEMENT
-  // ============================================
-
-  // Initialize actor on path graph
-  function initActorOnPath(actor) {
-    const { pathGraph, findNearestEdgePoint, projectYOnRoad } = STATE;
-    if (!pathGraph || pathGraph.edges.length === 0) return;
-
-    const pos = actor.mesh.position;
-    const nearest = findNearestEdgePoint(pos.x, pos.z, pathGraph);
-
-    if (nearest.edge) {
-      actor.currentEdge = nearest.edge;
-      actor.edgeT = nearest.t; // 0-1 position along edge
-      actor.edgeDir = 1; // +1 = toward node2, -1 = toward node1
-
-      // Snap to edge
-      pos.x = nearest.point.x;
-      pos.z = nearest.point.z;
-      projectYOnRoad(pos);
-
-      // Set direction based on edge
-      const dx = actor.currentEdge.x2 - actor.currentEdge.x1;
-      const dz = actor.currentEdge.z2 - actor.currentEdge.z1;
-      actor.dirX = Math.sign(dx) || 0;
-      actor.dirZ = Math.sign(dz) || 0;
-    }
-  }
-
-  // Get position on edge from t value
-  function getEdgePosition(edge, t) {
-    return {
-      x: edge.x1 + (edge.x2 - edge.x1) * t,
-      z: edge.z1 + (edge.z2 - edge.z1) * t
-    };
-  }
-
-  // Find edge at node going in specified direction (uses dot product for best match)
-  function findEdgeInDirection(node, dirX, dirZ, pathGraph, excludeEdge = null) {
-    let bestMatch = null;
-    let bestDot = -Infinity;
-
-    for (const edgeId of node.edges) {
-      if (excludeEdge && edgeId === excludeEdge.id) continue;
-
-      const edge = pathGraph.edges[edgeId];
-      let edgeDirX, edgeDirZ;
-
-      if (edge.node1 === node.id) {
-        edgeDirX = edge.x2 - edge.x1;
-        edgeDirZ = edge.z2 - edge.z1;
-      } else {
-        edgeDirX = edge.x1 - edge.x2;
-        edgeDirZ = edge.z1 - edge.z2;
-      }
-
-      // Normalize edge direction
-      const len = Math.sqrt(edgeDirX * edgeDirX + edgeDirZ * edgeDirZ);
-      if (len < 0.001) continue;
-      edgeDirX /= len;
-      edgeDirZ /= len;
-
-      // Dot product with requested direction
-      const dot = edgeDirX * dirX + edgeDirZ * dirZ;
-
-      // Only consider edges going roughly in the right direction (dot > 0.5 = within ~60 degrees)
-      if (dot > 0.5 && dot > bestDot) {
-        bestDot = dot;
-        bestMatch = { edge, startFromNode1: edge.node1 === node.id };
-      }
-    }
-    return bestMatch;
-  }
-
-  // Get all available directions at a node
-  function getAvailableDirectionsAtNode(node, pathGraph) {
-    const directions = [];
-    for (const edgeId of node.edges) {
-      const edge = pathGraph.edges[edgeId];
-      let dirX, dirZ, startFromNode1;
-
-      if (edge.node1 === node.id) {
-        dirX = edge.x2 - edge.x1;
-        dirZ = edge.z2 - edge.z1;
-        startFromNode1 = true;
-      } else {
-        dirX = edge.x1 - edge.x2;
-        dirZ = edge.z1 - edge.z2;
-        startFromNode1 = false;
-      }
-
-      // Normalize direction
-      const len = Math.sqrt(dirX * dirX + dirZ * dirZ);
-      if (len > 0.001) {
-        dirX /= len;
-        dirZ /= len;
-      }
-
-      directions.push({ edge, dirX, dirZ, startFromNode1 });
-    }
-    return directions;
-  }
-
-  function updateFugitiveMovementPath(actor, dt) {
-    const { pathGraph, projectYOnRoad } = STATE;
-    if (!pathGraph || !actor.currentEdge) return;
-
-    const pos = actor.mesh.position;
-    const moveDistance = actor.speed * dt;
-
-    // Mid-edge juke: small chance of reversing direction when a chaser is close
-    const midEdgeJukeChance = settings.fugitiveMidEdgeJukeChance || 0.03;
-    if (midEdgeJukeChance > 0 && actor.edgeT > 0.1 && actor.edgeT < 0.9) {
-      let nearestChaserDist = Infinity;
-      for (const c of chasers) {
-        if (!c.active) continue;
-        const dx = pos.x - c.mesh.position.x;
-        const dz = pos.z - c.mesh.position.z;
-        nearestChaserDist = Math.min(nearestChaserDist, Math.sqrt(dx * dx + dz * dz));
-      }
-      const dangerRadius = settings.fugitiveDangerRadius || 4;
-      if (nearestChaserDist < dangerRadius && Math.random() < midEdgeJukeChance * dt) {
-        actor.edgeDir *= -1;
-        actor.dirX *= -1;
-        actor.dirZ *= -1;
-      }
-    }
-
-    // Move along current edge
-    const edgeLength = actor.currentEdge.length;
-    const tDelta = (moveDistance / edgeLength) * actor.edgeDir;
-    actor.edgeT += tDelta;
-
-    // Check if reached a node
-    if (actor.edgeT >= 1) {
-      actor.edgeT = 1;
-      const nodeId = actor.currentEdge.node2;
-      handleFugitiveAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
-    } else if (actor.edgeT <= 0) {
-      actor.edgeT = 0;
-      const nodeId = actor.currentEdge.node1;
-      handleFugitiveAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
-    }
-
-    // Update position
-    const newPos = getEdgePosition(actor.currentEdge, actor.edgeT);
-    pos.x = newPos.x;
-    pos.z = newPos.z;
-    projectYOnRoad(pos);
-  }
-
-  function handleFugitiveAtNode(actor, node, pathGraph) {
-    const intelligence = STATE.fugitiveIntelligenceOverride != null ? STATE.fugitiveIntelligenceOverride : settings.fugitiveIntelligence;
-    const available = getAvailableDirectionsAtNode(node, pathGraph);
-
-    if (available.length === 0) return;
-
-    // Calculate threat direction from chasers
-    let threatX = 0, threatZ = 0;
-    let closestDist = Infinity;
-
-    for (const c of chasers) {
-      if (!c.active) continue;
-      const dx = actor.mesh.position.x - c.mesh.position.x;
-      const dz = actor.mesh.position.z - c.mesh.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < closestDist) closestDist = dist;
-      if (dist > 0.1) {
-        const weight = 1 / (dist * dist + 0.1);
-        threatX += (dx / dist) * weight;
-        threatZ += (dz / dist) * weight;
-      }
-    }
-
-    // Calculate separation from other fugitives
-    let separationX = 0, separationZ = 0;
-    const separationRange = 5; // Distance within which fugitives repel each other
-
-    for (const f of fugitives) {
-      if (f === actor) continue;
-      const dx = actor.mesh.position.x - f.mesh.position.x;
-      const dz = actor.mesh.position.z - f.mesh.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > 0.1 && dist < separationRange) {
-        // Stronger repulsion when closer
-        const weight = 1 / (dist * dist + 0.1);
-        separationX += (dx / dist) * weight;
-        separationZ += (dz / dist) * weight;
-      }
-    }
-
-    const threatLen = Math.sqrt(threatX * threatX + threatZ * threatZ);
-    const hasThreat = threatLen > 0.01 && closestDist < 30;
-
-    const separationLen = Math.sqrt(separationX * separationX + separationZ * separationZ);
-    const hasSeparation = separationLen > 0.01;
-
-    let chosen;
-
-    if (hasThreat && Math.random() < intelligence) {
-      // Escape: choose direction most aligned with escape
-      threatX /= threatLen;
-      threatZ /= threatLen;
-
-      // Blend in separation if fugitives are close
-      if (hasSeparation) {
-        separationX /= separationLen;
-        separationZ /= separationLen;
-        // Chasers are more important (0.7) but separation also matters (0.3)
-        threatX = threatX * 0.7 + separationX * 0.3;
-        threatZ = threatZ * 0.7 + separationZ * 0.3;
-        const blendLen = Math.sqrt(threatX * threatX + threatZ * threatZ);
-        if (blendLen > 0.01) {
-          threatX /= blendLen;
-          threatZ /= blendLen;
-        }
-      }
-
-      let bestScore = -Infinity;
-      for (const dir of available) {
-        const score = dir.dirX * threatX + dir.dirZ * threatZ;
-        if (score > bestScore) {
-          bestScore = score;
-          chosen = dir;
-        }
-      }
-      // Unpredictable juke: occasionally pick a random non-worst direction
-      const jukeChance = settings.fugitiveJukeChance || 0.15;
-      if (available.length > 1 && Math.random() < jukeChance) {
-        const scored = available.map(dir => ({
-          dir,
-          score: dir.dirX * threatX + dir.dirZ * threatZ
-        })).sort((a, b) => b.score - a.score);
-        const jukeOptions = scored.slice(0, -1);
-        chosen = jukeOptions[Math.floor(Math.random() * jukeOptions.length)].dir;
-      }
-    } else if (hasSeparation && Math.random() < 0.6) {
-      // No chaser threat but fugitives nearby: move away from them
-      separationX /= separationLen;
-      separationZ /= separationLen;
-
-      let bestScore = -Infinity;
-      for (const dir of available) {
-        const score = dir.dirX * separationX + dir.dirZ * separationZ;
-        if (score > bestScore) {
-          bestScore = score;
-          chosen = dir;
-        }
-      }
-    } else {
-      // Random: prefer not reversing
-      const currentDirX = actor.dirX;
-      const currentDirZ = actor.dirZ;
-      const nonReverse = available.filter(d =>
-        !(d.dirX === -currentDirX && d.dirZ === -currentDirZ)
-      );
-      const choices = nonReverse.length > 0 ? nonReverse : available;
-      chosen = choices[Math.floor(Math.random() * choices.length)];
-    }
-
-    if (chosen) {
-      actor.currentEdge = chosen.edge;
-      actor.edgeT = chosen.startFromNode1 ? 0 : 1;
-      actor.edgeDir = chosen.startFromNode1 ? 1 : -1;
-      actor.dirX = chosen.dirX;
-      actor.dirZ = chosen.dirZ;
-    }
-  }
-
-  function updateChaserMovementPath(actor, dt, chaserIndex) {
-    const { pathGraph, projectYOnRoad } = STATE;
-    if (!pathGraph || !actor.currentEdge || !actor.active) {
-      return;
-    }
-
-    const pos = actor.mesh.position;
-    const moveDistance = actor.speed * dt;
-
-    // Move along current edge
-    const edgeLength = actor.currentEdge.length;
-    const tDelta = (moveDistance / edgeLength) * actor.edgeDir;
-    actor.edgeT += tDelta;
-
-    // Check if reached a node
-    if (actor.edgeT >= 1) {
-      const overshoot = actor.edgeT - 1;
-      actor.edgeT = 1;
-      const nodeId = actor.currentEdge.node2;
-      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph, chaserIndex);
-      // Apply overshoot to new edge
-      if (actor.edgeT === 0) actor.edgeT = overshoot * (edgeLength / actor.currentEdge.length);
-    } else if (actor.edgeT <= 0) {
-      const overshoot = -actor.edgeT;
-      actor.edgeT = 0;
-      const nodeId = actor.currentEdge.node1;
-      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph, chaserIndex);
-      // Apply overshoot to new edge
-      if (actor.edgeT === 1) actor.edgeT = 1 - overshoot * (edgeLength / actor.currentEdge.length);
-    }
-
-    // Update position
-    const newPos = getEdgePosition(actor.currentEdge, actor.edgeT);
-    pos.x = newPos.x;
-    pos.z = newPos.z;
-    projectYOnRoad(pos);
-    // Apply chaser height offset
-    pos.y += settings.chaserHeightOffset;
-
-    // Rotate to face movement direction (headlight rotates with car automatically)
-    const edge = actor.currentEdge;
-    const travelDirX = (edge.x2 - edge.x1) * actor.edgeDir;
-    const travelDirZ = (edge.z2 - edge.z1) * actor.edgeDir;
-    if (Math.abs(travelDirX) > 0.01 || Math.abs(travelDirZ) > 0.01) {
-      const targetRotation = Math.atan2(travelDirX, travelDirZ) + Math.PI;
-      // Smooth rotation interpolation
-      let currentRotation = actor.mesh.rotation.y;
-      let diff = targetRotation - currentRotation;
-      // Handle angle wrapping (-PI to PI)
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      // Lerp towards target (adjust speed with multiplier)
-      const rotationSpeed = 10;
-      actor.mesh.rotation.y += diff * Math.min(1, rotationSpeed * dt);
-    }
-  }
-
-  function handleChaserAtNode(actor, node, pathGraph, chaserIndex) {
-    if (!node) return;
-
-    // Get current cardinal direction (edges are strictly H or V)
-    const curEdge = actor.currentEdge;
-    const travelDirX = Math.sign(curEdge.x2 - curEdge.x1) * actor.edgeDir;
-    const travelDirZ = Math.sign(curEdge.z2 - curEdge.z1) * actor.edgeDir;
-
-    // Collect available edges with their cardinal directions
-    const options = [];
-    for (const edgeId of node.edges) {
-      if (edgeId === actor.currentEdge.id) continue;
-
-      const edge = pathGraph.edges[edgeId];
-      const startFromNode1 = edge.node1 === node.id;
-      const dirX = startFromNode1 ? edge.dirX : -edge.dirX;
-      const dirZ = startFromNode1 ? edge.dirZ : -edge.dirZ;
-
-      options.push({ edge, startFromNode1, dirX, dirZ });
-    }
-
-    // Dead end - stop moving
-    if (options.length === 0) {
-      actor.isMoving = false;
-      return;
-    }
-
-    // Priority 1: Match queued input exactly (cardinal)
-    if (actor.queuedDirX !== 0 || actor.queuedDirZ !== 0) {
-      const match = options.find(o => o.dirX === actor.queuedDirX && o.dirZ === actor.queuedDirZ);
-      if (match) {
-        actor.currentEdge = match.edge;
-        actor.edgeT = match.startFromNode1 ? 0 : 1;
-        actor.edgeDir = match.startFromNode1 ? 1 : -1;
-        actor.queuedDirX = 0;
-        actor.queuedDirZ = 0;
-        return;
-      }
-    }
-
-    // Priority 2: Continue straight if possible
-    const straight = options.find(o => o.dirX === travelDirX && o.dirZ === travelDirZ);
-    if (straight) {
-      actor.currentEdge = straight.edge;
-      actor.edgeT = straight.startFromNode1 ? 0 : 1;
-      actor.edgeDir = straight.startFromNode1 ? 1 : -1;
-      return;
-    }
-
-    // No straight path and no queued turn — check live input as fallback
-    const liveInput = getChaserInputDirection(chaserIndex);
-    if (liveInput.hasInput) {
-      const liveMatch = options.find(o => o.dirX === liveInput.x && o.dirZ === liveInput.z);
-      if (liveMatch) {
-        actor.currentEdge = liveMatch.edge;
-        actor.edgeT = liveMatch.startFromNode1 ? 0 : 1;
-        actor.edgeDir = liveMatch.startFromNode1 ? 1 : -1;
-        return;
-      }
-    }
-
-    // No valid direction — stop at intersection
-    actor.isMoving = false;
-  }
 
   // ============================================
   // GAME LOOP
@@ -5712,16 +2344,16 @@ const loadingProgress = {
       }
 
       // Update helicopter, lamps, cars audio, text pulse, atmosphere and capture effects
-      updateHelicopter(dt);
-      updateSearchlights(dt);
-      updateLamps();
-      updateCarsAudio();
-      updateTextBPMPulse();
-      updateCaptureEffects(dt);
+      updateHelicopter(dt, settings, STATE);
+      updateSearchlights(dt, settings, STATE);
+      updateLamps(settings, STATE);
+      updateCarsAudio(settings, chasers);
+      updateTextBPMPulse(settings, getGlassMaterials());
+      updateCaptureEffects(dt, scene);
       updateAtmosphere(dt);
 
       // Update glass canvas for video/marquee/shuffle animation/high score entry/game over
-      if (settings.glassEnabled && glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive() || STATE.enteringHighScore || STATE.gameOver)) {
+      if (settings.glassEnabled && getGlassCanvas() && (settings.glassTextMarquee || (settings.glassVideoEnabled && isGlassVideoReady()) || isShuffleActive() || STATE.enteringHighScore || STATE.gameOver)) {
         updateGlassCanvas(timestamp);
       }
     }
@@ -5892,7 +2524,7 @@ const loadingProgress = {
           const billboard = wire ? wire.billboard : null;
 
           // Create capture effect at fugitive position
-          createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard);
+          createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard, scene, settings, STATE);
 
           // Hide fugitive
           f.mesh.position.y = -1000;
@@ -6112,7 +2744,8 @@ const loadingProgress = {
 
 
     if (foundGlassMeshes.length > 0) {
-      setupGlassMeshes(foundGlassMeshes);
+      setupGlassMeshes(foundGlassMeshes, settings, STATE);
+      setBeforeRenderCallback(() => applyHighScoreText());
     }
 
     // Find Nav nodes for path grid (objects with names starting with "Nav")
@@ -6923,13 +3556,13 @@ const loadingProgress = {
     loadingProgress.finish();
 
     setupGUI();
-    initPostProcessing();
+    composer = initPostProcessing(renderer, scene, camera, settings, LAYERS);
     initAtmosphere();
-    initAudio();
+    initAudio(settings);
     initSFX();
-    loadHelicopter();
-    updateHelicopterBoundsHelper();
-    setupSearchlights();
+    loadHelicopter(scene, settings, STATE, LAYERS, ktx2Loader, loadingProgress, DEBUG);
+    updateHelicopterBoundsHelper(scene, settings);
+    setupSearchlights(scene, settings, STATE);
 
 
     // Load path graph from GLB and initialize actors
@@ -6941,7 +3574,7 @@ const loadingProgress = {
     settings.glassEnabled = true;
     settings.glassTextMarquee = false;
     settings.glassTextShuffle = true; // Enable shuffle effect when text changes
-    for (const mesh of glassMeshes) {
+    for (const mesh of getGlassMeshes()) {
       mesh.visible = true;
     }
 

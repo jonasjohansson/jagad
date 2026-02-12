@@ -1,50 +1,121 @@
-// Projection system module
-// Handles state-based image projection onto the game level
+// Projection system — state-based images, countdown video, pump effect
+// Extracted from main.js
+
+import * as THREE from "../lib/three/three.module.js";
+import { PATHS } from "../game/constants.js?v=8";
+import { applyStartingText } from "../game/templateVars.js?v=145";
+import { updateGlassCanvas } from "./glass.js?v=145";
 
 let projectionPlane = null;
 let projectionTextures = {};
+let projectionVideo = null;
+let projectionVideoTexture = null;
+let gameAnimationVideo = null;
+let gameAnimationVideoTexture = null;
 
-export function initProjectionPlane(THREE, scene, STATE, settings) {
-  if (projectionPlane) return; // Already initialized
+// Projection pump effect
+let projectionPumpTime = 0;
+const PROJECTION_PUMP_DURATION = 0.3;
+const PROJECTION_PUMP_STRENGTH = 0.15;
 
-  // Create a large plane above the level for projection
-  const size = STATE.horizontalSize * 2 || 30;
+// Stored references
+let _scene = null;
+let _settings = null;
+let _STATE = null;
+let _renderer = null;
+let _setGameStateFn = null;
+
+export function initProjection(scene, settings, STATE, renderer, setGameStateFn) {
+  _scene = scene;
+  _settings = settings;
+  _STATE = STATE;
+  _renderer = renderer;
+  _setGameStateFn = setGameStateFn;
+}
+
+export function initProjectionPlane() {
+  if (projectionPlane) return;
+
+  const size = _STATE.horizontalSize * 2 || 30;
   const geometry = new THREE.PlaneGeometry(size, size);
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
-    opacity: settings.projectionOpacity,
+    opacity: _settings.projectionOpacity,
     side: THREE.DoubleSide,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
 
   projectionPlane = new THREE.Mesh(geometry, material);
-  projectionPlane.rotation.x = -Math.PI / 2; // Horizontal plane
+  projectionPlane.rotation.x = -Math.PI / 2;
   projectionPlane.position.set(
-    STATE.levelCenter.x + settings.projectionOffsetX,
-    STATE.levelCenter.y + settings.projectionOffsetY,
-    STATE.levelCenter.z + settings.projectionOffsetZ
+    _STATE.levelCenter.x + _settings.projectionOffsetX,
+    _STATE.levelCenter.y + _settings.projectionOffsetY,
+    _STATE.levelCenter.z + _settings.projectionOffsetZ
   );
   projectionPlane.renderOrder = 10;
-  projectionPlane.visible = false;
+  projectionPlane.visible = true;
+  projectionPlane.material.opacity = 0;
 
-  scene.add(projectionPlane);
+  _scene.add(projectionPlane);
 
-  // Preload textures for each state
-  preloadProjectionTextures(THREE, STATE, settings);
+  preloadProjectionTextures();
 
-  return projectionPlane;
+  // Create countdown intro video for projection
+  if (PATHS.video && PATHS.video.countdownIntro) {
+    projectionVideo = document.createElement("video");
+    projectionVideo.src = PATHS.video.countdownIntro;
+    projectionVideo.loop = false;
+    projectionVideo.muted = true;
+    projectionVideo.playsInline = true;
+    projectionVideo.crossOrigin = "anonymous";
+    projectionVideo.addEventListener("canplaythrough", () => {
+      if (!projectionVideoTexture) {
+        projectionVideoTexture = new THREE.VideoTexture(projectionVideo);
+        projectionVideoTexture.colorSpace = THREE.SRGBColorSpace;
+      }
+    }, { once: true });
+    // When video ends, transition to PLAYING
+    projectionVideo.addEventListener("timeupdate", () => {
+      if (_STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 0.1) {
+        _setGameStateFn("PLAYING");
+      }
+    });
+    projectionVideo.addEventListener("ended", () => {
+      if (_STATE.gameState === "STARTING") {
+        _setGameStateFn("PLAYING");
+      }
+    });
+    projectionVideo.load();
+  }
+
+  // Create game animation video (plays when returning to PRE_GAME after a game)
+  if (PATHS.video && PATHS.video.gameAnimation) {
+    gameAnimationVideo = document.createElement("video");
+    gameAnimationVideo.src = PATHS.video.gameAnimation;
+    gameAnimationVideo.loop = false;
+    gameAnimationVideo.muted = true;
+    gameAnimationVideo.playsInline = true;
+    gameAnimationVideo.crossOrigin = "anonymous";
+    gameAnimationVideo.addEventListener("canplaythrough", () => {
+      if (!gameAnimationVideoTexture) {
+        gameAnimationVideoTexture = new THREE.VideoTexture(gameAnimationVideo);
+        gameAnimationVideoTexture.colorSpace = THREE.SRGBColorSpace;
+      }
+    }, { once: true });
+    gameAnimationVideo.load();
+  }
 }
 
-export function preloadProjectionTextures(THREE, STATE, settings) {
+function preloadProjectionTextures() {
   const textureLoader = new THREE.TextureLoader();
   const imagePath = "assets/images/";
 
   const stateImages = {
-    PRE_GAME: settings.preGameImage,
-    STARTING: settings.startingImage,
-    PLAYING: settings.playingImage,
-    GAME_OVER: settings.gameOverImage,
+    PRE_GAME: _settings.preGameImage,
+    STARTING: _settings.startingImage || _settings.preGameImage,
+    PLAYING: _settings.playingImage,
+    GAME_OVER: _settings.gameOverImage,
   };
 
   for (const [state, imageName] of Object.entries(stateImages)) {
@@ -54,66 +125,94 @@ export function preloadProjectionTextures(THREE, STATE, settings) {
         (texture) => {
           texture.colorSpace = THREE.SRGBColorSpace;
           projectionTextures[state] = texture;
-          // If this is the current state, update the projection
-          if (STATE.gameState === state) {
-            updateProjectionForState(state, STATE, settings);
+          if (_STATE.gameState === state) {
+            updateProjectionForState(state);
           }
         },
         undefined,
         (err) => {
-          console.warn(`Failed to load projection image for ${state}:`, imageName);
+          console.warn(`Failed to load projection image for ${state}:`, imageName, err);
         }
       );
     }
   }
 }
 
-export function updateProjectionForState(state, STATE, settings) {
-  if (!projectionPlane) return;
-
-  const stateImageSettings = {
-    PRE_GAME: settings.preGameImage,
-    STARTING: settings.startingImage,
-    PLAYING: settings.playingImage,
-    GAME_OVER: settings.gameOverImage,
-  };
-
-  const imageName = stateImageSettings[state];
-
-  if (imageName && imageName.trim() !== "" && projectionTextures[state]) {
-    const texture = projectionTextures[state];
-    projectionPlane.material.map = texture;
-    projectionPlane.material.needsUpdate = true;
-    projectionPlane.visible = true;
-
-    // Adjust scale based on image aspect ratio
-    const img = texture.image;
-    if (img && img.width && img.height) {
-      const aspect = img.width / img.height;
-      projectionPlane.scale.set(
-        settings.projectionScale * aspect,
-        settings.projectionScale,
-        1
-      );
-    } else {
-      projectionPlane.scale.setScalar(settings.projectionScale);
-    }
-  } else {
-    projectionPlane.visible = false;
+export function updateProjectionForState(state) {
+  if (!projectionPlane) {
+    return;
   }
 
-  // Update projection properties
-  projectionPlane.material.opacity = settings.projectionOpacity;
-  projectionPlane.position.x = STATE.levelCenter.x + settings.projectionOffsetX;
-  projectionPlane.position.y = STATE.levelCenter.y + settings.projectionOffsetY;
-  projectionPlane.position.z = STATE.levelCenter.z + settings.projectionOffsetZ;
+  // Use video for STARTING state (intro plays until video ends)
+  const useVideo = state === "STARTING" && projectionVideoTexture;
+
+  if (useVideo) {
+    if (projectionPlane.material.map !== projectionVideoTexture) {
+      projectionPlane.material.map = projectionVideoTexture;
+      projectionPlane.material.needsUpdate = true;
+    }
+    projectionPlane.material.opacity = _settings.projectionOpacity;
+    projectionVideo.play().catch(() => {});
+
+    const vw = projectionVideo.videoWidth;
+    const vh = projectionVideo.videoHeight;
+    const aspect = (vw && vh) ? vw / vh : 1;
+    projectionPlane.scale.set(
+      _settings.projectionScale * aspect,
+      _settings.projectionScale,
+      1
+    );
+  } else {
+    if (projectionVideo) {
+      projectionVideo.pause();
+    }
+
+    const stateImageSettings = {
+      PRE_GAME: _settings.preGameImage,
+      STARTING: _settings.startingImage || _settings.preGameImage,
+      PLAYING: _settings.playingImage,
+      GAME_OVER: _settings.gameOverImage,
+    };
+
+    const imageName = stateImageSettings[state];
+    let texture = projectionTextures[state];
+    if (!texture && state === "STARTING") {
+      texture = projectionTextures["PRE_GAME"];
+    }
+
+    if (texture) {
+      if (projectionPlane.material.map !== texture) {
+        projectionPlane.material.map = texture;
+        projectionPlane.material.needsUpdate = true;
+      }
+      projectionPlane.material.opacity = _settings.projectionOpacity;
+
+      const img = texture.image;
+      if (img && img.width && img.height) {
+        const aspect = img.width / img.height;
+        projectionPlane.scale.set(
+          _settings.projectionScale * aspect,
+          _settings.projectionScale,
+          1
+        );
+      } else {
+        projectionPlane.scale.setScalar(_settings.projectionScale);
+      }
+    } else {
+      projectionPlane.material.opacity = 0;
+    }
+  }
+
+  projectionPlane.position.x = _STATE.levelCenter.x + _settings.projectionOffsetX;
+  projectionPlane.position.y = _STATE.levelCenter.y + _settings.projectionOffsetY;
+  projectionPlane.position.z = _STATE.levelCenter.z + _settings.projectionOffsetZ;
 }
 
-export function loadProjectionImage(THREE, state, imageName, STATE, settings) {
+export function loadProjectionImage(state, imageName) {
   if (!imageName || imageName.trim() === "") {
     projectionTextures[state] = null;
-    if (STATE.gameState === state) {
-      updateProjectionForState(state, STATE, settings);
+    if (_STATE.gameState === state) {
+      updateProjectionForState(state);
     }
     return;
   }
@@ -124,8 +223,8 @@ export function loadProjectionImage(THREE, state, imageName, STATE, settings) {
     (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       projectionTextures[state] = texture;
-      if (STATE.gameState === state) {
-        updateProjectionForState(state, STATE, settings);
+      if (_STATE.gameState === state) {
+        updateProjectionForState(state);
       }
     },
     undefined,
@@ -135,6 +234,82 @@ export function loadProjectionImage(THREE, state, imageName, STATE, settings) {
   );
 }
 
-export function getProjectionPlane() {
-  return projectionPlane;
+export function triggerProjectionPump() {
+  projectionPumpTime = PROJECTION_PUMP_DURATION;
 }
+
+export function updateProjectionPump(dt) {
+  if (projectionPumpTime <= 0 || !projectionPlane || !projectionPlane.visible) return;
+
+  projectionPumpTime = Math.max(0, projectionPumpTime - dt);
+  const t = projectionPumpTime / PROJECTION_PUMP_DURATION;
+  const ease = t * t;
+  const boost = 1 + PROJECTION_PUMP_STRENGTH * ease;
+
+  const baseScale = _settings.projectionScale;
+  const texture = projectionPlane.material.map;
+  const img = texture && texture.image;
+  const aspect = (img && img.width && img.height) ? img.width / img.height : 1;
+
+  projectionPlane.scale.set(
+    baseScale * aspect * boost,
+    baseScale * boost,
+    1
+  );
+}
+
+export function updateCountdown(dt) {
+  if (_STATE.gameState !== "STARTING") return;
+
+  _STATE.countdownTimer += dt;
+
+  if (_STATE.countdownTimer >= 1.0) {
+    _STATE.countdownTimer -= 1.0;
+    _STATE.countdownValue--;
+
+    if (_STATE.countdownValue >= 0) {
+      applyStartingText();
+      updateGlassCanvas();
+      triggerProjectionPump();
+      // Pre-warm PLAYING projection texture into GPU on "GO!" beat
+      if (_STATE.countdownValue === 0) {
+        const playingTex = projectionTextures["PLAYING"];
+        if (playingTex) _renderer.initTexture(playingTex);
+      }
+    } else {
+      _setGameStateFn("PLAYING");
+    }
+  }
+}
+
+// Handle projection-specific parts of game state transitions
+export function handleProjectionStateChange(newState, oldState) {
+  if (newState === "PRE_GAME") {
+    // Play game animation video when restarting (coming from GAME_OVER)
+    if (oldState === "GAME_OVER" && gameAnimationVideo && gameAnimationVideoTexture) {
+      _STATE.gameAnimationPlaying = true;
+      gameAnimationVideo.currentTime = 0;
+      gameAnimationVideo.play().catch(() => {});
+      if (projectionPlane && projectionPlane.material) {
+        projectionPlane.material.map = gameAnimationVideoTexture;
+        projectionPlane.material.opacity = _settings.projectionOpacity;
+        projectionPlane.material.needsUpdate = true;
+      }
+      const hideProjection = () => {
+        _STATE.gameAnimationPlaying = false;
+        if (projectionPlane) projectionPlane.material.opacity = 0;
+        gameAnimationVideo.removeEventListener("ended", hideProjection);
+      };
+      gameAnimationVideo.addEventListener("ended", hideProjection);
+    }
+  } else if (newState === "STARTING") {
+    // Start intro video from beginning — game starts on video end
+    if (projectionVideo) {
+      projectionVideo.muted = false;
+      projectionVideo.currentTime = 0;
+      projectionVideo.play().catch(() => {});
+    }
+  }
+}
+
+export function getProjectionTextures() { return projectionTextures; }
