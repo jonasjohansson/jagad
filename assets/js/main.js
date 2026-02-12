@@ -2179,11 +2179,7 @@ const loadingProgress = {
           }
         }, 1500);
       } else {
-        const paddedScoreFacade = String(STATE.playerScore || 0).padStart(3, "0");
-        settings.glassTextRow1 = "";
-        settings.glassTextRow2 = " GAMEOVER";
-        settings.glassTextRow3 = " SCORE:" + paddedScoreFacade;
-        settings.glassTextRow4 = "";
+        applyGameOverText();
         updateGlassCanvas();
         setTimeout(() => updateGlassCanvas(), 500);
         postHighScore({ score: STATE.playerScore, playerName: "???" })
@@ -2193,11 +2189,8 @@ const loadingProgress = {
       }
     } else {
       // Desktop/mobile: show result and score, no initials entry
-      const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
-      settings.glassTextRow1 = "";
-      settings.glassTextRow2 = allCaught ? " FÅNGADE!" : " GAMEOVER";
-      settings.glassTextRow3 = " SCORE:" + paddedScore;
-      settings.glassTextRow4 = "";
+      applyGameOverText();
+      if (allCaught) settings.glassTextRow2 = " FÅNGADE!";
       updateGlassCanvas();
       setTimeout(() => updateGlassCanvas(), 500);
       postHighScore({ score: STATE.playerScore, playerName: "???" })
