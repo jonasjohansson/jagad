@@ -55,8 +55,7 @@ const loadingProgress = {
 };
 
 (async () => {
-  // Suppress repeated Three.js texture unit warnings
-  const warnedMessages = new Set();
+  // Suppress Three.js texture unit warnings
   const originalWarn = console.warn;
   console.warn = function(...args) {
     const msg = args[0];
@@ -80,6 +79,54 @@ const loadingProgress = {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x191928);
+
+  // ============================================
+  // SERVER CONNECTION (fire-and-forget, game works offline)
+  // ============================================
+
+  let serverWS = null;
+
+  function getServerAddress() {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("server");
+    const LOCAL = "http://localhost:3000";
+    const REMOTE = "https://pacman-server-239p.onrender.com";
+    if (s) {
+      if (s.startsWith("http://") || s.startsWith("https://")) return s;
+      if (s === "local" || s === "localhost") return LOCAL;
+      if (s === "remote" || s === "render") return REMOTE;
+    }
+    if (window.location.origin === "http://localhost" || window.location.origin.startsWith("http://localhost:")) return LOCAL;
+    return REMOTE;
+  }
+
+  function connectToServer() {
+    try {
+      const url = getServerAddress().replace(/^http/, "ws");
+      serverWS = new WebSocket(url);
+      serverWS.addEventListener("close", () => {
+        serverWS = null;
+        setTimeout(connectToServer, 5000);
+      });
+      serverWS.addEventListener("error", () => serverWS.close());
+    } catch { serverWS = null; }
+  }
+
+  function sendServerEvent(event) {
+    if (serverWS && serverWS.readyState === WebSocket.OPEN) {
+      serverWS.send(JSON.stringify(event));
+    }
+  }
+
+  function postHighScore(data) {
+    fetch(`${getServerAddress()}/api/highscore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).catch(() => {});
+  }
+
+  connectToServer();
 
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -1876,6 +1923,7 @@ const loadingProgress = {
     // Add score based on current fugitive value
     const points = Math.max(0, Math.floor(STATE.fugitiveValue));
     STATE.playerScore += points;
+    sendServerEvent({ type: "fugitiveCaught", chaserIndex, fugitiveIndex, points, score: STATE.playerScore, capturedCount: STATE.capturedCount });
 
     // Get chaser color for the effect
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
@@ -1981,6 +2029,7 @@ const loadingProgress = {
       chaser.light.intensity = settings.chaserLightIntensity;
     }
     if (DEBUG) console.log(`Chaser ${chaserIndex} is ready!`);
+    sendServerEvent({ type: "chaserSelected", chaserIndex, playerName: `Player ${chaserIndex + 1}` });
 
     // Check if this is the first ready chaser - start countdown
     const readyCount = chasers.filter(c => c.ready).length;
@@ -2097,6 +2146,7 @@ const loadingProgress = {
         break;
 
       case "STARTING":
+        sendServerEvent({ type: "gameStarted" });
         settings.gameStarted = true; // Mark as started but input blocked
         setChasersOpacity(0.1);
         // Pre-set non-ready chaser materials to transparent to avoid shader recompilation at PLAYING
@@ -2177,6 +2227,7 @@ const loadingProgress = {
         break;
 
       case "GAME_OVER":
+        sendServerEvent({ type: "gameEnd", score: STATE.playerScore, capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)), allCaught: STATE.capturedCount >= fugitives.length });
         stopHelicopterSound(); // Stop helicopter loop
         STATE.gameOver = true;
         STATE.gameTimerStarted = false;
@@ -2609,7 +2660,7 @@ const loadingProgress = {
   function startHighScoreEntry(position) {
     STATE.enteringHighScore = true;
     STATE.highScorePosition = 0;
-    STATE.highScoreInitials = ["A", "A", "A"];
+    // Keep previous initials as starting point
     STATE.highScoreCharIndex = 0;
     STATE.newHighScoreRank = position;
     // Set initials color to first player's color
@@ -2636,6 +2687,7 @@ const loadingProgress = {
     highScores.length = 3; // Keep only top 3
 
     saveHighScores(highScores);
+    postHighScore({ score, playerName: initials, capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) });
 
     STATE.enteringHighScore = false;
 
@@ -2733,14 +2785,11 @@ const loadingProgress = {
 
     const frustumSize = horizontalSize * 1.5;
     const orthoDistance = horizontalSize * 1.2;
-    orthoCamera = new THREE.OrthographicCamera(
-      frustumSize * aspect / -2,
-      frustumSize * aspect / 2,
-      frustumSize / 2,
-      frustumSize / -2,
-      0.1,
-      5000
-    );
+    const oLeft = aspect >= 1 ? frustumSize * aspect / -2 : frustumSize / -2;
+    const oRight = aspect >= 1 ? frustumSize * aspect / 2 : frustumSize / 2;
+    const oTop = aspect >= 1 ? frustumSize / 2 : frustumSize / aspect / 2;
+    const oBottom = aspect >= 1 ? frustumSize / -2 : frustumSize / aspect / -2;
+    orthoCamera = new THREE.OrthographicCamera(oLeft, oRight, oTop, oBottom, 0.1, 5000);
     orthoCamera.position.set(levelCenter.x, levelCenter.y + orthoDistance, levelCenter.z);
     orthoCamera.lookAt(levelCenter);
     orthoCamera.zoom = settings.orthoZoom;
@@ -2757,12 +2806,26 @@ const loadingProgress = {
       camera = perspCamera;
     } else {
       const glbCam = glbCameras.find(c => c.name === type);
-      if (glbCam) {
+      if (glbCam && glbCam.camera.isPerspectiveCamera) {
+        // Copy GLB camera settings onto perspCamera so GUI tweaks still work
+        const src = glbCam.camera;
+        perspCamera.position.copy(src.getWorldPosition(new THREE.Vector3()));
+        perspCamera.quaternion.copy(src.getWorldQuaternion(new THREE.Quaternion()));
+        perspCamera.fov = src.fov;
+        perspCamera.near = src.near;
+        perspCamera.far = src.far;
+        perspCamera.aspect = window.innerWidth / window.innerHeight;
+        perspCamera.updateProjectionMatrix();
+        // Update settings to reflect GLB values
+        settings.perspFov = src.fov;
+        settings.perspNear = src.near;
+        settings.perspFar = src.far;
+        settings.perspPosX = perspCamera.position.x;
+        settings.perspPosY = perspCamera.position.y;
+        settings.perspPosZ = perspCamera.position.z;
+        camera = perspCamera;
+      } else if (glbCam) {
         camera = glbCam.camera;
-        if (camera.isPerspectiveCamera) {
-          camera.aspect = window.innerWidth / window.innerHeight;
-          camera.updateProjectionMatrix();
-        }
       }
     }
 
@@ -2941,10 +3004,19 @@ const loadingProgress = {
         orthoCamera.bottom = -orthoSize;
       } else {
         const frustumSize = STATE.horizontalSize * 1.5;
-        orthoCamera.left = frustumSize * aspect / -2;
-        orthoCamera.right = frustumSize * aspect / 2;
-        orthoCamera.top = frustumSize / 2;
-        orthoCamera.bottom = frustumSize / -2;
+        if (aspect >= 1) {
+          // Landscape: fixed vertical, expand horizontal
+          orthoCamera.left = frustumSize * aspect / -2;
+          orthoCamera.right = frustumSize * aspect / 2;
+          orthoCamera.top = frustumSize / 2;
+          orthoCamera.bottom = frustumSize / -2;
+        } else {
+          // Portrait/narrow: fixed horizontal, expand vertical
+          orthoCamera.left = frustumSize / -2;
+          orthoCamera.right = frustumSize / 2;
+          orthoCamera.top = frustumSize / aspect / 2;
+          orthoCamera.bottom = frustumSize / aspect / -2;
+        }
       }
       orthoCamera.updateProjectionMatrix();
     }
@@ -4616,6 +4688,7 @@ const loadingProgress = {
       // No high score - use game over text templates
       applyGameOverText();
       updateGlassCanvas();
+      postHighScore({ score: STATE.playerScore, playerName: "???", capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) });
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;
     }
@@ -4633,7 +4706,6 @@ const loadingProgress = {
     STATE.playerScore = 0;
     STATE.fugitiveValue = 250;
     STATE.enteringHighScore = false;
-    STATE.highScoreInitials = ["A", "A", "A"];
     STATE.highScorePosition = 0;
     STATE.highScoreCharIndex = 0;
     STATE.highScoreInitialsColor = null;
@@ -5579,7 +5651,7 @@ const loadingProgress = {
         const dz = f.mesh.position.z - c.mesh.position.z;
         nearestChaserDist = Math.min(nearestChaserDist, Math.sqrt(dx * dx + dz * dz));
       }
-      if (nearestChaserDist < (settings.fugitiveDangerRadius || 4)) {
+      if (nearestChaserDist < (settings.fugitiveDangerRadius || 4) && Math.random() < 0.3) {
         f.speed *= settings.fugitiveDangerSpeedMultiplier || 1.4;
       }
       if (f.currentEdge) {
@@ -5732,12 +5804,6 @@ const loadingProgress = {
     loadingProgress.complete();
     const gltf = levelGltf;
     const root = gltf.scene;
-
-    // Debug: inspect GLB contents for cameras
-    console.log("GLB gltf.cameras:", gltf.cameras);
-    const allObjects = [];
-    root.traverse((obj) => allObjects.push({ name: obj.name, type: obj.type, isCamera: obj.isCamera }));
-    console.log("GLB scene objects:", allObjects.filter(o => o.isCamera || o.type.includes("Camera") || o.name.toLowerCase().includes("camera")));
 
     // Store window and lamp meshes for emissive control
     const windowMeshes = [];
@@ -6478,15 +6544,6 @@ const loadingProgress = {
       // Default to MainCamera if available
       const mainCam = glbCameras.find(c => c.name.toUpperCase() === "MAINCAMERA");
       if (mainCam) {
-        const cam = mainCam.camera;
-        console.log("GLB MainCamera:", {
-          type: cam.isPerspectiveCamera ? "perspective" : "orthographic",
-          fov: cam.fov,
-          near: cam.near,
-          far: cam.far,
-          position: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
-          rotation: { x: cam.rotation.x, y: cam.rotation.y, z: cam.rotation.z },
-        });
         switchCamera(mainCam.name);
       }
     }

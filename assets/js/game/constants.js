@@ -28,9 +28,7 @@ export const PATHS = {
     honk: "assets/sounds/honk.mp3",
   },
   video: {
-    windowAmbience: "assets/video/windowAmbience.mp4",
     countdownIntro: "assets/video/countdownIntro.mp4",
-    gameAnimation: "assets/video/gameAnimation.mp4",
   },
 };
 

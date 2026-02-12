@@ -1,0 +1,182 @@
+@import url("../fonts/stylesheet.css");
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --spacing-xs: 8px;
+  --spacing-sm: 10px;
+  --spacing-md: 15px;
+  --spacing-lg: 20px;
+}
+
+body {
+  background: black;
+  color: white;
+  height: 100vh;
+  margin: 0;
+  display: flex;
+  overflow: hidden;
+  text-transform: uppercase;
+  font-family:
+    "BankGothic",
+    "BankGothic Md BT",
+    "Bank Gothic",
+    system-ui,
+    sans-serif;
+}
+
+#col1 {
+  flex: 4752;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.branding-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#col2 {
+  flex: 5940;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Event banner */
+#event-banner {
+  min-height: 0;
+  text-align: center;
+  font-size: 1.4em;
+  letter-spacing: 0.1em;
+  padding: 0;
+  transition: min-height 0.3s, padding 0.3s;
+}
+
+#event-banner.active {
+  min-height: 2em;
+  padding: var(--spacing-md);
+}
+
+/* Highscore table */
+.highscore-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.highscore-title {
+  padding: var(--spacing-lg);
+  text-align: center;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#highscore-content {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow-y: auto;
+}
+
+.highscore-item {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  align-items: center;
+}
+
+.highscore-item:last-child {
+  border-bottom: none;
+}
+
+.rank {
+  text-align: center;
+  min-width: 2em;
+}
+
+.score {
+  text-align: center;
+}
+
+.player-name {
+  text-align: center;
+}
+
+.no-highscore,
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Flash overlays */
+.flash-white::after,
+.flash-red::after,
+.flash-green::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.flash-white::after {
+  animation: flash-white 0.5s ease-out forwards;
+}
+
+.flash-red::after {
+  animation: flash-red 0.6s ease-out forwards;
+}
+
+.flash-green::after {
+  animation: flash-green 0.5s ease-out forwards;
+}
+
+@keyframes flash-white {
+  0% { background: rgba(255, 255, 255, 0.6); }
+  100% { background: rgba(255, 255, 255, 0); }
+}
+
+@keyframes flash-red {
+  0% { background: rgba(255, 0, 0, 0.5); }
+  100% { background: rgba(255, 0, 0, 0); }
+}
+
+@keyframes flash-green {
+  0% { background: rgba(0, 255, 0, 0.4); }
+  100% { background: rgba(0, 255, 0, 0); }
+}
+
+/* Shake */
+.shake {
+  animation: shake 0.5s ease-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-8px); }
+  20% { transform: translateX(8px); }
+  30% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  50% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  70% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}

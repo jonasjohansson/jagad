@@ -233,7 +233,7 @@ export const defaultSettings = {
 
   // Pre-game state text
   preGameTextRow1: "",
-  preGameTextRow2: "  JAGAD",
+  preGameTextRow2: "",
   preGameTextRow3: "",
   preGameTextRow4: "",
 
@@ -262,7 +262,7 @@ export const defaultSettings = {
   gameOverTextRow4: "",
 
   // State projection images
-  preGameImage: "",
+  preGameImage: "intro.png",
   startingImage: "",
   playingImage: "",
   gameOverImage: "",
