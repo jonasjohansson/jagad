@@ -19,6 +19,7 @@ let projectionVideo = null;
 let projectionVideoTexture = null;
 let gameAnimationVideo = null;
 let gameAnimationVideoTexture = null;
+let _projectionShader = null;
 
 // Projection pump effect
 let projectionPumpTime = 0;
@@ -45,19 +46,30 @@ export function initProjectionPlane() {
 
   const size = _STATE.horizontalSize * 2 || 30;
   const geometry = new THREE.PlaneGeometry(size, size);
-  const blendMode = BLENDING_MODES[_settings.projectionBlending] ?? THREE.AdditiveBlending;
-  const tint = new THREE.Color(_settings.projectionColor);
-  tint.multiplyScalar(_settings.projectionBrightness);
+  const blendMode = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
 
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: _settings.projectionOpacity,
-    color: tint,
+    color: new THREE.Color(_settings.projectionColor),
     side: THREE.DoubleSide,
     depthWrite: false,
     toneMapped: false,
     blending: blendMode,
   });
+
+  // Inject red-preserving brightness boost into the shader
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.brightness = { value: _settings.projectionBrightness };
+    shader.fragmentShader = "uniform float brightness;\n" + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <map_fragment>",
+      `#include <map_fragment>
+      float redDom = clamp(diffuseColor.r - max(diffuseColor.g, diffuseColor.b), 0.0, 1.0);
+      diffuseColor.rgb *= mix(brightness, 1.0, redDom);`
+    );
+    _projectionShader = shader;
+  };
 
   projectionPlane = new THREE.Mesh(geometry, material);
   projectionPlane.rotation.x = -Math.PI / 2;
@@ -334,11 +346,11 @@ export function handleProjectionStateChange(newState, oldState) {
 export function applyProjectionMaterial() {
   if (!projectionPlane) return;
   const mat = projectionPlane.material;
-  mat.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.AdditiveBlending;
-  const tint = new THREE.Color(_settings.projectionColor);
-  tint.multiplyScalar(_settings.projectionBrightness);
-  mat.color.copy(tint);
-  mat.needsUpdate = true;
+  mat.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
+  mat.color.set(_settings.projectionColor);
+  if (_projectionShader) {
+    _projectionShader.uniforms.brightness.value = _settings.projectionBrightness;
+  }
 }
 
 export function getProjectionTextures() { return projectionTextures; }
