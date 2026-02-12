@@ -1996,7 +1996,7 @@ const loadingProgress = {
     // Add score based on current fugitive value
     const points = Math.max(0, Math.floor(STATE.fugitiveValue));
     STATE.playerScore += points;
-    sendServerEvent({ type: "fugitiveCaught", chaserIndex, fugitiveIndex, points, score: STATE.playerScore, capturedCount: STATE.capturedCount });
+    sendServerEvent({ type: "fugitiveCaught", chaserIndex, fugitiveIndex, points, score: STATE.playerScore, capturedCount: STATE.capturedCount, color: [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color][chaserIndex] });
 
     // Get chaser color for the effect
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
@@ -2102,7 +2102,8 @@ const loadingProgress = {
       chaser.light.intensity = settings.chaserLightIntensity;
     }
     if (DEBUG) console.log(`Chaser ${chaserIndex} is ready!`);
-    sendServerEvent({ type: "chaserSelected", chaserIndex, playerName: `Player ${chaserIndex + 1}` });
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    sendServerEvent({ type: "chaserSelected", chaserIndex, color: chaserColors[chaserIndex], playerName: `Player ${chaserIndex + 1}` });
 
     // Check if this is the first ready chaser - start countdown
     const readyCount = chasers.filter(c => c.ready).length;

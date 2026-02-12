@@ -78,6 +78,16 @@ function applyEffect(el, className) {
   el.addEventListener("animationend", () => el.classList.remove(className), { once: true });
 }
 
+function flashColor(el, color, duration = 500) {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = `position:absolute;inset:0;pointer-events:none;z-index:100;background:${color};opacity:0.6;`;
+  el.appendChild(overlay);
+  overlay.animate([
+    { opacity: 0.6 },
+    { opacity: 0 }
+  ], { duration, easing: "ease-out" }).onfinish = () => overlay.remove();
+}
+
 function showBanner(text, durationMs = 3000) {
   banner.textContent = text;
   banner.classList.add("active");
@@ -106,8 +116,8 @@ function connectWS() {
 
     switch (msg.type) {
       case "chaserSelected":
-        applyEffect(col1, "flash-white");
-        applyEffect(col2, "flash-white");
+        flashColor(col1, msg.color || "#ffffff");
+        flashColor(col2, msg.color || "#ffffff");
         break;
 
       case "gameStarted":
@@ -116,7 +126,8 @@ function connectWS() {
         break;
 
       case "fugitiveCaught":
-        applyEffect(col2, "flash-red");
+        flashColor(col1, msg.color || "#ff0000");
+        flashColor(col2, msg.color || "#ff0000");
         applyEffect(col2, "shake");
         fetchHighscore();
         break;
