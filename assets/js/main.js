@@ -17,7 +17,7 @@ import { KTX2Loader } from "./lib/three/addons/loaders/KTX2Loader.js";
 import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=17";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=8";
 import { createBoostState, triggerBoost, updateBoosts, getBoostMultiplier, resetBoosts, addBoostGUI } from "./gui/index.js?v=1";
-import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput, createMobileOverlay, updateMobileOverlay, destroyMobileOverlay } from "./game/mobile.js?v=4";
+import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=4";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -2146,12 +2146,13 @@ const loadingProgress = {
           };
           gameAnimationVideo.addEventListener("ended", hideProjection);
         }
-        // Display pre-game text (skip if returning from GAME_OVER so initials persist)
+        // Clear glass text in PRE_GAME (intro image replaces text)
+        // Skip if returning from GAME_OVER so initials persist on screen
         if (oldState !== "GAME_OVER") {
-          settings.glassTextRow1 = settings.preGameTextRow1;
-          settings.glassTextRow2 = settings.preGameTextRow2;
-          settings.glassTextRow3 = settings.preGameTextRow3;
-          settings.glassTextRow4 = settings.preGameTextRow4;
+          settings.glassTextRow1 = "";
+          settings.glassTextRow2 = "";
+          settings.glassTextRow3 = "";
+          settings.glassTextRow4 = "";
         }
         settings.gameStarted = false;
         STATE.gameOver = false;
@@ -2907,42 +2908,6 @@ const loadingProgress = {
     portraitOverlay.style.display = "flex";
   }
 
-  /** Project board corners to screen-space pixel bounds using active camera */
-  function getBoardScreenBounds() {
-    if (!camera) return null;
-    const halfX = (STATE.levelSizeX || STATE.horizontalSize) / 2;
-    const halfZ = (STATE.levelSizeZ || STATE.horizontalSize) / 2;
-    const cx = STATE.levelCenter.x, cy = STATE.levelCenter.y, cz = STATE.levelCenter.z;
-    // Project actual board corners
-    const corners = [
-      new THREE.Vector3(cx - halfX, cy, cz - halfZ),
-      new THREE.Vector3(cx + halfX, cy, cz - halfZ),
-      new THREE.Vector3(cx - halfX, cy, cz + halfZ),
-      new THREE.Vector3(cx + halfX, cy, cz + halfZ),
-    ];
-    for (const c of corners) c.project(camera);
-    const w = window.innerWidth, h = window.innerHeight;
-    const xs = corners.map(c => (c.x + 1) / 2 * w);
-    const ys = corners.map(c => (1 - c.y) / 2 * h);
-    const top = Math.min(...ys);
-    const bottom = Math.max(...ys);
-    // Extend only downward by boardScale factor
-    const boardHeight = bottom - top;
-    const extraBottom = boardHeight * (settings.mobileBoardScale - 1);
-    return {
-      left: Math.min(...xs),
-      right: Math.max(...xs),
-      top: top,
-      bottom: bottom + extraBottom,
-    };
-  }
-
-  /** Refresh SVG overlay positions from current camera state */
-  function refreshOverlayPositions() {
-    const bounds = getBoardScreenBounds();
-    if (bounds) updateMobileOverlay(bounds, settings.mobileSvgOffset);
-  }
-
   function applyMobileMode(enabled) {
     if (enabled) {
       // 1. Snapshot desktop values, then apply mobile overrides
@@ -2997,16 +2962,17 @@ const loadingProgress = {
       settings.buildingEnabled = false;
       if (buildingPlane) buildingPlane.visible = false;
 
-      // Overlay shown on all devices (flush with board edges)
-      createMobileOverlay();
-      refreshOverlayPositions();
+      // Use device-specific intro image for non-facade mode
+      if (!isFacadeMode) {
+        settings.preGameImage = isMobileDevice() ? "introMobile.png" : "introDesktop.png";
+        loadProjectionImage("PRE_GAME", settings.preGameImage);
+      }
 
       // Portrait check only on actual mobile/touch devices
       if (isMobileDevice()) {
         checkPortraitMode();
       }
     } else {
-      destroyMobileOverlay();
       // 1. Restore desktop settings
       restoreDesktopSettings(settings);
 
@@ -3098,7 +3064,6 @@ const loadingProgress = {
 
     // Check portrait mode for mobile
     checkPortraitMode();
-    if (settings.mobileEnabled) refreshOverlayPositions();
   }
   window.addEventListener("resize", onResize);
   window.addEventListener("orientationchange", () => {
@@ -3171,22 +3136,16 @@ const loadingProgress = {
         orthoCamera.top = orthoSize;
         orthoCamera.bottom = -orthoSize;
         orthoCamera.updateProjectionMatrix();
-        refreshOverlayPositions();
       }
     });
     mobileFolder.add(settings, "mobileOrthoOffsetZ", -10, 10, 0.1).name("View Z Offset").onChange((v) => {
       if (settings.mobileEnabled && orthoCamera) {
         orthoCamera.position.z = STATE.levelCenter.z + v;
         orthoCamera.lookAt(new THREE.Vector3(STATE.levelCenter.x, STATE.levelCenter.y, STATE.levelCenter.z + v));
-        refreshOverlayPositions();
       }
     });
-    mobileFolder.add(settings, "mobileSvgOffset", 0, 200, 1).name("SVG Offset (px)").onChange(() => {
-      if (settings.mobileEnabled) refreshOverlayPositions();
-    });
-    mobileFolder.add(settings, "mobileBoardScale", 0.5, 2, 0.05).name("Board Scale").onChange(() => {
-      if (settings.mobileEnabled) refreshOverlayPositions();
-    });
+    mobileFolder.add(settings, "mobileSvgOffset", 0, 200, 1).name("SVG Offset (px)");
+    mobileFolder.add(settings, "mobileBoardScale", 0.5, 2, 0.05).name("Board Scale");
 
     // ---- Performance subfolder (per-feature mobile toggles) ----
     const perfFolder = mobileFolder.addFolder("Performance");

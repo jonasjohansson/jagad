@@ -61,21 +61,3 @@ body {
   letter-spacing: 0.1em;
 }
 
-/* UI overlay (branding + instructions, flush with board edges) */
-#mobile-overlay {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-
-#mobile-overlay .bottom-svg {
-  position: absolute;
-  bottom: 5vh;
-  height: 8vh;
-  width: auto;
-}
-
-#mobile-overlay .bottom-svg.bottom-right {
-  height: 5vh;
-}
