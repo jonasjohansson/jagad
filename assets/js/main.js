@@ -2693,8 +2693,28 @@ const loadingProgress = {
 
     STATE.enteringHighScore = false;
 
-    // Show final high scores display
-    displayHighScores();
+    // Staggered pulse waves from each ready chaser
+    const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
+    const readyChasers = chasers.filter(c => c.ready && c.mesh);
+    let delay = 0;
+    for (const c of readyChasers) {
+      const idx = chasers.indexOf(c);
+      setTimeout(() => {
+        createCaptureEffect(c.mesh.position.clone(), chaserColors[idx] || "#ffffff", null);
+        playSFX("capture", idx);
+      }, delay);
+      delay += 300;
+    }
+
+    // Clear glass text and restart after last pulse
+    setTimeout(() => {
+      settings.glassTextRow1 = "";
+      settings.glassTextRow2 = "";
+      settings.glassTextRow3 = "";
+      settings.glassTextRow4 = "";
+      updateGlassCanvas();
+      resetGame();
+    }, delay + 500);
   }
 
   function displayHighScores() {
