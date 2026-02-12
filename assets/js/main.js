@@ -413,7 +413,7 @@ const loadingProgress = {
 
   // Tone.js modulated SFX: per-player pitch variation
   const MODULATED_SFX = ["playerSelect", "honk", "capture", "nitro"]; // SFX that get pitch modulation
-  const PLAYER_PITCH_OFFSETS = [0, 4, 7, 12]; // root, major 3rd, 5th, octave (semitones)
+  const PLAYER_PITCH_OFFSETS = [-5, 0, 4, 7]; // lower 4th, root, major 3rd, 5th (semitones)
   const tonePlayers = {}; // "sfxName_playerIndex" -> pre-created Tone.Player
 
   function initToneSFX() {
@@ -2121,11 +2121,13 @@ const loadingProgress = {
           };
           gameAnimationVideo.addEventListener("ended", hideProjection);
         }
-        // Display pre-game text
-        settings.glassTextRow1 = settings.preGameTextRow1;
-        settings.glassTextRow2 = settings.preGameTextRow2;
-        settings.glassTextRow3 = settings.preGameTextRow3;
-        settings.glassTextRow4 = settings.preGameTextRow4;
+        // Display pre-game text (skip if returning from GAME_OVER so initials persist)
+        if (oldState !== "GAME_OVER") {
+          settings.glassTextRow1 = settings.preGameTextRow1;
+          settings.glassTextRow2 = settings.preGameTextRow2;
+          settings.glassTextRow3 = settings.preGameTextRow3;
+          settings.glassTextRow4 = settings.preGameTextRow4;
+        }
         settings.gameStarted = false;
         STATE.gameOver = false;
         STATE.firstPlayerIndex = -1;
@@ -2432,7 +2434,7 @@ const loadingProgress = {
       // When video ends, transition to PLAYING
       // Use timeupdate to detect near-end and avoid browser delay on "ended" event
       projectionVideo.addEventListener("timeupdate", () => {
-        if (STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 0.1) {
+        if (STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 1) {
           setGameState("PLAYING");
         }
       });
@@ -2660,8 +2662,8 @@ const loadingProgress = {
   function startHighScoreEntry(position) {
     STATE.enteringHighScore = true;
     STATE.highScorePosition = 0;
-    // Keep previous initials as starting point
-    STATE.highScoreCharIndex = 0;
+    // Keep previous initials as starting point, sync char index to first initial
+    STATE.highScoreCharIndex = Math.max(0, HIGH_SCORE_CHARS.indexOf(STATE.highScoreInitials[0]));
     STATE.newHighScoreRank = position;
     // Set initials color to first player's color
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
