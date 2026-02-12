@@ -8,10 +8,9 @@ import { GLTFLoader } from "./lib/three/addons/loaders/GLTFLoader.js";
 
 import { KTX2Loader } from "./lib/three/addons/loaders/KTX2Loader.js";
 import { defaultSettings, loadSettings, saveSettings, exportSettings, importSettings } from "./game/settings.js?v=17";
-import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=8";
+import { PATHS, CHASER_CONTROLS } from "./game/constants.js?v=8";
 import { createBoostState, triggerBoost, updateBoosts, getBoostMultiplier, resetBoosts, addBoostGUI } from "./gui/index.js?v=1";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=4";
-import { createNoiseTexture3D } from "./rendering/fog.js?v=145";
 import { checkCollision } from "./game/collision.js?v=145";
 import { getServerAddress, connectToServer, sendServerEvent, postHighScore } from "./game/server.js?v=145";
 import { initAudio, playAudio, stopAudio, setAudioTrack, initSFX, playSFX, playHelicopterSound, stopHelicopterSound, unlockAudio, getAudioElement } from "./systems/audio.js?v=145";
@@ -21,7 +20,7 @@ import { setupSearchlights, updateSearchlights, toggleSearchlightHelpers } from 
 import { updateLamps, updateCarsAudio, updateTextBPMPulse, updateAllEmissives } from "./systems/emissives.js?v=145";
 import { createCaptureEffect, updateCaptureEffects, clearCaptureEffects } from "./systems/captureEffects.js?v=145";
 import { setupGlassMeshes, updateGlassCanvas, updateGlassPosition, updateGlassMaterialOpacity, updateGlassColor, updateGlassBrightness, isShuffleActive, setBeforeRenderCallback, getGlassMeshes, getGlassMaterials, getGlassVideo, getGlassCanvas, isGlassVideoReady } from "./rendering/glass.js?v=145";
-import { initTemplateVars, replaceTemplateVars, applyStartingText, applyPlayingText, applyHighScoreText, applyGameOverText } from "./game/templateVars.js?v=145";
+import { initTemplateVars, applyStartingText, applyPlayingText, applyHighScoreText, applyGameOverText } from "./game/templateVars.js?v=145";
 import { initProjection, initProjectionPlane, updateProjectionForState, loadProjectionImage, updateProjectionPump, handleProjectionStateChange } from "./rendering/projection.js?v=145";
 import { initPathMovement, initActorOnPath, updateFugitiveMovementPath, updateChaserMovementPath } from "./game/pathMovement.js?v=145";
 import { initActorWire, ActorWire, updateWireBillboards } from "./systems/actorWire.js?v=145";
@@ -2144,10 +2143,6 @@ const loadingProgress = {
   // ============================================
   // GAME TIMER & RESET
   // ============================================
-
-  function formatTimer(seconds) {
-    return `${Math.floor(seconds)}`;
-  }
 
   function updateTimerDisplay() {
     if (STATE.showingScore) return;
