@@ -106,7 +106,6 @@ function connectWS() {
       case "chaserSelected":
         applyEffect(col1, "flash-white");
         applyEffect(col2, "flash-white");
-        showBanner(`Chaser selected: ${msg.playerName || "AI"}`);
         break;
 
       case "gameStarted":
