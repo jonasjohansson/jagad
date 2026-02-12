@@ -11,20 +11,20 @@ import { defaultSettings, loadSettings, saveSettings, exportSettings, importSett
 import { PATHS, CHASER_CONTROLS } from "./game/constants.js?v=8";
 import { createBoostState, triggerBoost, updateBoosts, getBoostMultiplier, resetBoosts, addBoostGUI } from "./gui/index.js?v=1";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=4";
-import { checkCollision } from "./game/collision.js?v=145";
-import { getServerAddress, connectToServer, sendServerEvent, postHighScore } from "./game/server.js?v=145";
-import { initAudio, playAudio, stopAudio, setAudioTrack, initSFX, playSFX, playHelicopterSound, stopHelicopterSound, unlockAudio, getAudioElement } from "./systems/audio.js?v=145";
-import { initPostProcessing, updatePostProcessing } from "./rendering/postprocessing.js?v=145";
-import { loadHelicopter, updateHelicopter, rebuildHelicopterCone, updateHelicopterColor, updateHelicopterScale, updateHelicopterBoundsHelper, getHelicopter, getHelicopterLightHelper, getHelicopterBoundsHelper, setHelicopterLightHelper } from "./systems/helicopter.js?v=145";
-import { setupSearchlights, updateSearchlights, toggleSearchlightHelpers } from "./systems/searchlights.js?v=145";
-import { updateLamps, updateCarsAudio, updateTextBPMPulse, updateAllEmissives } from "./systems/emissives.js?v=145";
-import { createCaptureEffect, updateCaptureEffects, clearCaptureEffects } from "./systems/captureEffects.js?v=145";
-import { setupGlassMeshes, updateGlassCanvas, updateGlassPosition, updateGlassMaterialOpacity, updateGlassColor, updateGlassBrightness, isShuffleActive, setBeforeRenderCallback, getGlassMeshes, getGlassMaterials, getGlassVideo, getGlassCanvas, isGlassVideoReady } from "./rendering/glass.js?v=145";
-import { initTemplateVars, applyStartingText, applyPlayingText, applyHighScoreText, applyGameOverText } from "./game/templateVars.js?v=145";
-import { initProjection, initProjectionPlane, updateProjectionForState, loadProjectionImage, updateProjectionPump, handleProjectionStateChange } from "./rendering/projection.js?v=145";
-import { initPathMovement, initActorOnPath, updateFugitiveMovementPath, updateChaserMovementPath } from "./game/pathMovement.js?v=145";
-import { initActorWire, ActorWire, updateWireBillboards } from "./systems/actorWire.js?v=145";
-import { setupLights, toneMappingOptions } from "./rendering/lights.js?v=145";
+import { checkCollision } from "./game/collision.js?v=146";
+import { getServerAddress, connectToServer, sendServerEvent, postHighScore } from "./game/server.js?v=146";
+import { initAudio, playAudio, stopAudio, setAudioTrack, initSFX, playSFX, playHelicopterSound, stopHelicopterSound, unlockAudio, getAudioElement } from "./systems/audio.js?v=146";
+import { initPostProcessing, updatePostProcessing } from "./rendering/postprocessing.js?v=146";
+import { loadHelicopter, updateHelicopter, rebuildHelicopterCone, updateHelicopterColor, updateHelicopterScale, updateHelicopterBoundsHelper, getHelicopter, getHelicopterLightHelper, getHelicopterBoundsHelper, setHelicopterLightHelper } from "./systems/helicopter.js?v=146";
+import { setupSearchlights, updateSearchlights, toggleSearchlightHelpers } from "./systems/searchlights.js?v=146";
+import { updateLamps, updateCarsAudio, updateTextBPMPulse, updateAllEmissives } from "./systems/emissives.js?v=146";
+import { createCaptureEffect, updateCaptureEffects, clearCaptureEffects } from "./systems/captureEffects.js?v=146";
+import { setupGlassMeshes, updateGlassCanvas, updateGlassPosition, updateGlassMaterialOpacity, updateGlassColor, updateGlassBrightness, isShuffleActive, setBeforeRenderCallback, getGlassMeshes, getGlassMaterials, getGlassVideo, getGlassCanvas, isGlassVideoReady } from "./rendering/glass.js?v=146";
+import { initTemplateVars, applyStartingText, applyPlayingText, applyHighScoreText, applyGameOverText } from "./game/templateVars.js?v=146";
+import { initProjection, initProjectionPlane, updateProjectionForState, loadProjectionImage, updateProjectionPump, handleProjectionStateChange, applyProjectionMaterial } from "./rendering/projection.js?v=146";
+import { initPathMovement, initActorOnPath, updateFugitiveMovementPath, updateChaserMovementPath } from "./game/pathMovement.js?v=146";
+import { initActorWire, ActorWire, updateWireBillboards } from "./systems/actorWire.js?v=146";
+import { setupLights, toneMappingOptions } from "./rendering/lights.js?v=146";
 
 // lil-gui loaded via script tag in index.html
 const GUI = window.lil.GUI;
@@ -1387,6 +1387,15 @@ const loadingProgress = {
     const projectionFolder = guiLeft.addFolder("🎥 Projection");
     projectionFolder.add(settings, "projectionOpacity", 0, 1, 0.05).name("Opacity").onChange(() => {
       updateProjectionForState(STATE.gameState);
+    });
+    projectionFolder.add(settings, "projectionBlending", ["additive", "normal", "multiply", "subtract"]).name("Blending").onChange(() => {
+      applyProjectionMaterial();
+    });
+    projectionFolder.add(settings, "projectionBrightness", 0, 3, 0.05).name("Brightness").onChange(() => {
+      applyProjectionMaterial();
+    });
+    projectionFolder.addColor(settings, "projectionColor").name("Tint").onChange(() => {
+      applyProjectionMaterial();
     });
     projectionFolder.add(settings, "projectionScale", 0.1, 5, 0.01).name("Scale").onChange(() => {
       updateProjectionForState(STATE.gameState);

@@ -2,6 +2,14 @@
 
 export const STORAGE_KEY = "jagadSettings";
 
+// Keys excluded from localStorage — always use defaults
+const noSaveKeys = new Set([
+  "projectionOpacity", "projectionBlending", "projectionBrightness",
+  "projectionColor", "projectionScale",
+  "projectionOffsetX", "projectionOffsetY", "projectionOffsetZ",
+  "preGameImage", "startingImage", "playingImage", "gameOverImage",
+]);
+
 export const defaultSettings = {
   fugitiveSpeed: 1,
   chaserSpeed: 1.2,
@@ -269,10 +277,13 @@ export const defaultSettings = {
   playingImage: "",
   gameOverImage: "",
   projectionOpacity: 1,
-  projectionScale: 0.2,
+  projectionBlending: "normal",
+  projectionBrightness: 1.2,
+  projectionColor: "#ffffff",
+  projectionScale: 0.25,
   projectionOffsetX: 0,
   projectionOffsetY: 0.75,
-  projectionOffsetZ: 1,
+  projectionOffsetZ: 0.8,
 
   // GLB Parts - per-mesh material overrides (partName -> settings)
   // Only non-default values need to be stored
@@ -309,7 +320,7 @@ export function loadSettings() {
       const parsed = JSON.parse(saved);
       // Don't let saved empty strings override non-empty defaults
       for (const key of Object.keys(parsed)) {
-        if (parsed[key] === "" && defaultSettings[key] !== "") {
+        if (noSaveKeys.has(key) || (parsed[key] === "" && defaultSettings[key] !== "")) {
           delete parsed[key];
         }
       }
@@ -332,6 +343,7 @@ export function loadSettings() {
 export function saveSettings(settings) {
   const toSave = {};
   for (const key of Object.keys(defaultSettings)) {
+    if (noSaveKeys.has(key)) continue;
     toSave[key] = settings[key];
   }
   try {

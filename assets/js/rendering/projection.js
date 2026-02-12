@@ -3,8 +3,15 @@
 
 import * as THREE from "../lib/three/three.module.js";
 import { PATHS } from "../game/constants.js?v=8";
-import { applyStartingText } from "../game/templateVars.js?v=145";
-import { updateGlassCanvas } from "./glass.js?v=145";
+import { applyStartingText } from "../game/templateVars.js?v=146";
+import { updateGlassCanvas } from "./glass.js?v=146";
+
+const BLENDING_MODES = {
+  additive: THREE.AdditiveBlending,
+  normal: THREE.NormalBlending,
+  multiply: THREE.MultiplyBlending,
+  subtract: THREE.SubtractiveBlending,
+};
 
 let projectionPlane = null;
 let projectionTextures = {};
@@ -38,12 +45,18 @@ export function initProjectionPlane() {
 
   const size = _STATE.horizontalSize * 2 || 30;
   const geometry = new THREE.PlaneGeometry(size, size);
+  const blendMode = BLENDING_MODES[_settings.projectionBlending] ?? THREE.AdditiveBlending;
+  const tint = new THREE.Color(_settings.projectionColor);
+  tint.multiplyScalar(_settings.projectionBrightness);
+
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: _settings.projectionOpacity,
+    color: tint,
     side: THREE.DoubleSide,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    blending: blendMode,
   });
 
   projectionPlane = new THREE.Mesh(geometry, material);
@@ -151,6 +164,7 @@ export function updateProjectionForState(state) {
       projectionPlane.material.map = projectionVideoTexture;
       projectionPlane.material.needsUpdate = true;
     }
+    projectionPlane.material.blending = THREE.AdditiveBlending;
     projectionPlane.material.opacity = _settings.projectionOpacity;
     projectionVideo.play().catch(() => {});
 
@@ -166,6 +180,7 @@ export function updateProjectionForState(state) {
     if (projectionVideo) {
       projectionVideo.pause();
     }
+    projectionPlane.material.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
 
     const stateImageSettings = {
       PRE_GAME: _settings.preGameImage,
@@ -292,12 +307,16 @@ export function handleProjectionStateChange(newState, oldState) {
       gameAnimationVideo.play().catch(() => {});
       if (projectionPlane && projectionPlane.material) {
         projectionPlane.material.map = gameAnimationVideoTexture;
+        projectionPlane.material.blending = THREE.AdditiveBlending;
         projectionPlane.material.opacity = _settings.projectionOpacity;
         projectionPlane.material.needsUpdate = true;
       }
       const hideProjection = () => {
         _STATE.gameAnimationPlaying = false;
-        if (projectionPlane) projectionPlane.material.opacity = 0;
+        if (projectionPlane) {
+          projectionPlane.material.opacity = 0;
+          projectionPlane.material.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
+        }
         gameAnimationVideo.removeEventListener("ended", hideProjection);
       };
       gameAnimationVideo.addEventListener("ended", hideProjection);
@@ -310,6 +329,16 @@ export function handleProjectionStateChange(newState, oldState) {
       projectionVideo.play().catch(() => {});
     }
   }
+}
+
+export function applyProjectionMaterial() {
+  if (!projectionPlane) return;
+  const mat = projectionPlane.material;
+  mat.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.AdditiveBlending;
+  const tint = new THREE.Color(_settings.projectionColor);
+  tint.multiplyScalar(_settings.projectionBrightness);
+  mat.color.copy(tint);
+  mat.needsUpdate = true;
 }
 
 export function getProjectionTextures() { return projectionTextures; }
