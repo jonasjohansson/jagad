@@ -1939,6 +1939,18 @@ const loadingProgress = {
       STATE.gameTimerRemaining = 0.001;
     }
 
+    // Toggle glass opacity between default and 1 (facade mode only)
+    if (e.key === "6" && isFacadeMode) {
+      const defaultOpacity = settings.glassMaterialOpacity;
+      if (defaultOpacity < 1) {
+        STATE._savedGlassOpacity = defaultOpacity;
+        settings.glassMaterialOpacity = 1;
+      } else {
+        settings.glassMaterialOpacity = STATE._savedGlassOpacity ?? 0;
+      }
+      updateGlassMaterialOpacity();
+    }
+
     keys.add(keyLower);
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
