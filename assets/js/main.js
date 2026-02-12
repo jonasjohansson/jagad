@@ -97,7 +97,7 @@ const loadingProgress = {
   };
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x191928);
+  scene.background = new THREE.Color(0x000000);
 
   // ============================================
   // SERVER CONNECTION (fire-and-forget, game works offline)
@@ -110,7 +110,7 @@ const loadingProgress = {
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio * (defaultSettings.renderScale || 1));
-  renderer.setClearColor(0x191928, 0);
+  renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.NeutralToneMapping;
@@ -2179,9 +2179,10 @@ const loadingProgress = {
           }
         }, 1500);
       } else {
+        const paddedScoreFacade = String(STATE.playerScore || 0).padStart(3, "0");
         settings.glassTextRow1 = "";
         settings.glassTextRow2 = " GAMEOVER";
-        settings.glassTextRow3 = "";
+        settings.glassTextRow3 = " SCORE:" + paddedScoreFacade;
         settings.glassTextRow4 = "";
         updateGlassCanvas();
         setTimeout(() => updateGlassCanvas(), 500);

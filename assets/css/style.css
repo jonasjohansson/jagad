@@ -17,7 +17,7 @@ body {
     "Bank Gothic",
     system-ui,
     sans-serif;
-  background: #191928;
+  background: #000000;
   color: #e5e7eb;
 }
 
@@ -44,7 +44,7 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: #191928;
+  background: #000000;
   color: #fff;
   z-index: 10000;
   flex-direction: column;
@@ -68,7 +68,7 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: #191928;
+  background: #000000;
   z-index: 9999;
   display: flex;
   align-items: center;
