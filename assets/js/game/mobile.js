@@ -14,7 +14,7 @@ export function isMobileDevice() {
  */
 export const MOBILE_OVERRIDES = {
   renderScale: 1,              // was 2 — 4x fewer pixels
-  bloomEnabled: false,         // multi-pass blur
+  bloomEnabled: true,          // multi-pass blur
   punctualLights: true,        // actor SpotLights
   colorGradingEnabled: true,   // shader pass
   helicopterEnabled: true,     // extra model + SpotLight
