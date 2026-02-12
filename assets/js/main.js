@@ -14,7 +14,7 @@ import { RenderPixelatedPass } from "./lib/three/addons/postprocessing/RenderPix
 import { SelectivePixelPass } from "./lib/three/addons/postprocessing/SelectivePixelPass.js";
 
 import { KTX2Loader } from "./lib/three/addons/loaders/KTX2Loader.js";
-import { STORAGE_KEY, defaultSettings, loadSettings, saveSettings, clearSettings, exportSettings, importSettings } from "./game/settings.js?v=17";
+import { defaultSettings, loadSettings, saveSettings, exportSettings, importSettings } from "./game/settings.js?v=17";
 import { PATHS, FACE_TEXTURES, CHASER_CONTROLS } from "./game/constants.js?v=8";
 import { createBoostState, triggerBoost, updateBoosts, getBoostMultiplier, resetBoosts, addBoostGUI } from "./gui/index.js?v=1";
 import { isMobileDevice, saveDesktopSettings, applyMobileOverrides, restoreDesktopSettings, initTouchInput } from "./game/mobile.js?v=4";
@@ -2530,7 +2530,6 @@ const loadingProgress = {
 
   function updateProjectionForState(state) {
     if (!projectionPlane) {
-      console.log("updateProjectionForState: no projection plane yet");
       return;
     }
 

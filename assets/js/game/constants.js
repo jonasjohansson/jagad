@@ -48,11 +48,3 @@ export const CHASER_CONTROLS = [
   { up: "i", down: "k", left: "j", right: "l", enter: "o" },
   { up: "arrowup", down: "arrowdown", left: "arrowleft", right: "arrowright", enter: "enter" },
 ];
-
-// Cardinal directions for pathfinding
-export const CARDINAL_DIRS = [
-  { x: 0, z: -1, name: "N" },
-  { x: 0, z: 1, name: "S" },
-  { x: 1, z: 0, name: "E" },
-  { x: -1, z: 0, name: "W" },
-];
