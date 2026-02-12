@@ -268,7 +268,7 @@ export const defaultSettings = {
   // Game Over text - no high score (same template variables available)
   gameOverTextRow1: "",
   gameOverTextRow2: " GAMEOVER",
-  gameOverTextRow3: " SCORE:${score}",
+  gameOverTextRow3: "SCORE:${score}",
   gameOverTextRow4: "",
 
   // State projection images
