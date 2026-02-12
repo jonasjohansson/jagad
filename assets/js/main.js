@@ -5532,14 +5532,14 @@ const loadingProgress = {
       const overshoot = actor.edgeT - 1;
       actor.edgeT = 1;
       const nodeId = actor.currentEdge.node2;
-      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
+      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph, chaserIndex);
       // Apply overshoot to new edge
       if (actor.edgeT === 0) actor.edgeT = overshoot * (edgeLength / actor.currentEdge.length);
     } else if (actor.edgeT <= 0) {
       const overshoot = -actor.edgeT;
       actor.edgeT = 0;
       const nodeId = actor.currentEdge.node1;
-      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph);
+      handleChaserAtNode(actor, pathGraph.nodes[nodeId], pathGraph, chaserIndex);
       // Apply overshoot to new edge
       if (actor.edgeT === 1) actor.edgeT = 1 - overshoot * (edgeLength / actor.currentEdge.length);
     }
@@ -5570,7 +5570,7 @@ const loadingProgress = {
     }
   }
 
-  function handleChaserAtNode(actor, node, pathGraph) {
+  function handleChaserAtNode(actor, node, pathGraph, chaserIndex) {
     if (!node) return;
 
     // Get current cardinal direction (edges are strictly H or V)
