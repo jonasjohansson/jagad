@@ -1916,9 +1916,11 @@ const loadingProgress = {
 
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
-      // Prevent GUI elements from stealing focus (Enter can activate lil-gui controls)
-      if (document.activeElement && document.activeElement !== document.body) {
+      e.stopPropagation();
+      // Return focus to canvas so GUI doesn't steal key events
+      if (document.activeElement && document.activeElement !== document.body && document.activeElement !== canvas) {
         document.activeElement.blur();
+        canvas.focus();
       }
       // In PRE_GAME or STARTING state, mark the chaser as ready (lights up car fully)
       if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
@@ -5617,7 +5619,19 @@ const loadingProgress = {
       return;
     }
 
-    // No straight path and no queued turn - stop at intersection
+    // No straight path and no queued turn — check live input as fallback
+    const liveInput = getChaserInputDirection(chaserIndex);
+    if (liveInput.hasInput) {
+      const liveMatch = options.find(o => o.dirX === liveInput.x && o.dirZ === liveInput.z);
+      if (liveMatch) {
+        actor.currentEdge = liveMatch.edge;
+        actor.edgeT = liveMatch.startFromNode1 ? 0 : 1;
+        actor.edgeDir = liveMatch.startFromNode1 ? 1 : -1;
+        return;
+      }
+    }
+
+    // No valid direction — stop at intersection
     actor.isMoving = false;
   }
 
