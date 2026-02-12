@@ -92,6 +92,7 @@ let ws = null;
 
 function connectWS() {
   const url = getWSAddress();
+  console.log("Display WS connecting to", url);
   ws = new WebSocket(url);
 
   ws.addEventListener("open", () => {
@@ -101,6 +102,7 @@ function connectWS() {
   ws.addEventListener("message", (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
+    console.log("Display WS received:", msg.type);
 
     switch (msg.type) {
       case "chaserSelected":
@@ -134,7 +136,7 @@ function connectWS() {
   });
 
   ws.addEventListener("close", () => {
-    console.log("Display WS closed, reconnecting in 3s...");
+    console.log("Display WS disconnected, reconnecting in 3s...");
     setTimeout(connectWS, 3000);
   });
 
