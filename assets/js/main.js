@@ -2523,9 +2523,8 @@ const loadingProgress = {
         }
       }, { once: true });
       // When video ends, transition to PLAYING
-      // Use timeupdate to detect near-end and avoid browser delay on "ended" event
       projectionVideo.addEventListener("timeupdate", () => {
-        if (STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 1) {
+        if (STATE.gameState === "STARTING" && projectionVideo.duration - projectionVideo.currentTime < 0.1) {
           setGameState("PLAYING");
         }
       });
