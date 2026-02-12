@@ -2157,13 +2157,10 @@ const loadingProgress = {
           gameAnimationVideo.addEventListener("ended", hideProjection);
         }
         // Clear glass text in PRE_GAME (intro image replaces text)
-        // Skip if returning from GAME_OVER so initials persist on screen
-        if (oldState !== "GAME_OVER") {
-          settings.glassTextRow1 = "";
-          settings.glassTextRow2 = "";
-          settings.glassTextRow3 = "";
-          settings.glassTextRow4 = "";
-        }
+        settings.glassTextRow1 = "";
+        settings.glassTextRow2 = "";
+        settings.glassTextRow3 = "";
+        settings.glassTextRow4 = "";
         settings.gameStarted = false;
         STATE.gameOver = false;
         STATE.firstPlayerIndex = -1;
@@ -4723,10 +4720,12 @@ const loadingProgress = {
     } else {
       // No high score - show GAMEOVER
       settings.glassTextRow1 = "";
-      settings.glassTextRow2 = "GAMEOVER";
+      settings.glassTextRow2 = " GAMEOVER";
       settings.glassTextRow3 = "";
       settings.glassTextRow4 = "";
       updateGlassCanvas();
+      // Force a second render after shuffle settles
+      setTimeout(() => updateGlassCanvas(), 500);
       postHighScore({ score: STATE.playerScore, playerName: "???", capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) })
         .then(() => fetchServerHighScores());
       STATE.showingScore = true;
@@ -5635,8 +5634,8 @@ const loadingProgress = {
       updateCaptureEffects(dt);
       updateAtmosphere(dt);
 
-      // Update glass canvas for video/marquee/shuffle animation/high score entry
-      if (settings.glassEnabled && glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive() || STATE.enteringHighScore)) {
+      // Update glass canvas for video/marquee/shuffle animation/high score entry/game over
+      if (settings.glassEnabled && glassCanvas && (settings.glassTextMarquee || (settings.glassVideoEnabled && glassVideoReady) || isShuffleActive() || STATE.enteringHighScore || STATE.gameOver)) {
         updateGlassCanvas(timestamp);
       }
     }
