@@ -3670,6 +3670,22 @@ const loadingProgress = {
     emissiveFolder.add(settings, "roadEmissiveIntensity", 0, 50, 0.5).name("Roads").onChange(() => {
       updateAllEmissives();
     });
+    emissiveFolder.add(settings, "roadNormalMap").name("Road Normal Map").onChange((v) => {
+      if (STATE.roadMeshes) {
+        for (const mesh of STATE.roadMeshes) {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const mat of mats) {
+            if (v) {
+              if (mat._savedNormalMap) mat.normalMap = mat._savedNormalMap;
+            } else {
+              if (mat.normalMap) mat._savedNormalMap = mat.normalMap;
+              mat.normalMap = null;
+            }
+            mat.needsUpdate = true;
+          }
+        }
+      }
+    });
     emissiveFolder.add(settings, "pathEmissiveIntensity", 0, 50, 0.5).name("Paths").onChange(() => {
       updateAllEmissives();
     });
@@ -5896,6 +5912,12 @@ const loadingProgress = {
           const mat = obj.material;
           if (mat.emissive) {
             mat.emissiveIntensity = (settings.roadEmissiveIntensity || 1.0) * globalMult;
+          }
+          // Strip normal map at load if toggled off
+          if (!settings.roadNormalMap && mat.normalMap) {
+            mat._savedNormalMap = mat.normalMap;
+            mat.normalMap = null;
+            mat.needsUpdate = true;
           }
         } else if (isPath && obj.material) {
           pathMeshes.push(obj);

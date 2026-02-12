@@ -112,6 +112,7 @@ export const defaultSettings = {
   motionTrailsSize: 0.15,
   windowEmissiveIntensity: 22.5,
   lampEmissiveIntensity: 0,
+  roadNormalMap: false,
   roadEmissiveIntensity: 4,
   pathEmissiveIntensity: 7,
   otherEmissiveIntensity: 0,
