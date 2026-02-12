@@ -105,8 +105,13 @@ const loadingProgress = {
   function connectToServer() {
     try {
       const url = getServerAddress().replace(/^http/, "ws");
+      console.log("Game WS connecting to", url);
       serverWS = new WebSocket(url);
+      serverWS.addEventListener("open", () => {
+        console.log("Game WS connected");
+      });
       serverWS.addEventListener("close", () => {
+        console.log("Game WS disconnected, retrying in 5s");
         serverWS = null;
         setTimeout(connectToServer, 5000);
       });
@@ -1725,8 +1730,20 @@ const loadingProgress = {
     glassMeshes = meshes;
     initGlassCanvas();
 
+    // Pick up GLB material color as default glass tint (skip black/very dark)
+    for (const mesh of meshes) {
+      if (mesh.material && mesh.material.color) {
+        const c = mesh.material.color;
+        if ((c.r + c.g + c.b) > 0.1 && (c.r !== 1 || c.g !== 1 || c.b !== 1)) {
+          settings.glassColor = "#" + c.getHexString();
+          break;
+        }
+      }
+    }
+
     glassMaterials = [];
     const brightness = settings.glassTextBrightness || 1;
+    const tint = new THREE.Color(settings.glassColor);
     for (const mesh of glassMeshes) {
       // Store original positions and rotation for offset calculations
       mesh.userData.originalX = mesh.position.x;
@@ -1737,7 +1754,7 @@ const loadingProgress = {
       // Use BasicMaterial with toneMapped:false to allow brightness > 1
       const glassMaterial = new THREE.MeshBasicMaterial({
         map: glassTexture,
-        color: new THREE.Color(brightness, brightness, brightness),
+        color: tint.clone().multiplyScalar(brightness),
         transparent: true,
         opacity: settings.glassMaterialOpacity ?? 1.0,
         side: THREE.DoubleSide,
@@ -1780,13 +1797,17 @@ const loadingProgress = {
     }
   }
 
-  function updateGlassBrightness() {
+  function updateGlassColor() {
     const brightness = settings.glassTextBrightness || 1;
+    const tint = new THREE.Color(settings.glassColor);
     for (const mat of glassMaterials) {
-      mat.color.setRGB(brightness, brightness, brightness);
+      mat.color.copy(tint).multiplyScalar(brightness);
     }
-    // Re-render canvas to compensate background
     updateGlassCanvas();
+  }
+
+  function updateGlassBrightness() {
+    updateGlassColor();
   }
 
   // ============================================
@@ -1880,6 +1901,10 @@ const loadingProgress = {
 
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
+      // Prevent GUI elements from stealing focus (Enter can activate lil-gui controls)
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
       // In PRE_GAME or STARTING state, mark the chaser as ready (lights up car fully)
       if (STATE.loaded && (STATE.gameState === "PRE_GAME" || STATE.gameState === "STARTING")) {
         const chaserIndex = getChaserIndexForKey(keyLower);
@@ -2731,7 +2756,7 @@ const loadingProgress = {
     saveHighScores(highScores);
 
     // Post to server and refresh cache from response
-    postHighScore({ score, playerName: initials, capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) })
+    postHighScore({ score, playerName: initials })
       .then(() => fetchServerHighScores());
 
     STATE.enteringHighScore = false;
@@ -3390,6 +3415,7 @@ const loadingProgress = {
 
     // ==================== TEXT ====================
     const textFolder = guiLeft.addFolder("📝 Text");
+    textFolder.addColor(settings, "glassColor").name("Glass Color").onChange(() => updateGlassColor());
     textFolder.add(settings, "glassEnabled").name("Glass Enabled").onChange((v) => {
       for (const mesh of glassMeshes) mesh.visible = v;
     });
@@ -4741,7 +4767,7 @@ const loadingProgress = {
       updateGlassCanvas();
       // Force a second render after shuffle settles
       setTimeout(() => updateGlassCanvas(), 500);
-      postHighScore({ score: STATE.playerScore, playerName: "???", capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) })
+      postHighScore({ score: STATE.playerScore, playerName: "???" })
         .then(() => fetchServerHighScores());
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;

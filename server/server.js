@@ -10,9 +10,9 @@ const STATIC_ROOT = path.join(__dirname, "..");
 // ========== HIGHSCORE STORAGE ==========
 
 const SEED_DATA = [
-  { score: 999, playerName: "AAA", capturedCount: 4, gameTime: 90, date: new Date().toISOString() },
-  { score: 500, playerName: "BBB", capturedCount: 2, gameTime: 60, date: new Date().toISOString() },
-  { score: 100, playerName: "CCC", capturedCount: 1, gameTime: 30, date: new Date().toISOString() },
+  { score: 999, playerName: "AAA", date: new Date().toISOString() },
+  { score: 500, playerName: "BBB", date: new Date().toISOString() },
+  { score: 100, playerName: "CCC", date: new Date().toISOString() },
 ];
 
 function loadHighscore() {
@@ -41,10 +41,8 @@ function saveHighscoreRaw(scores) {
 function addHighscore(entry) {
   let scores = loadHighscore();
   scores.push({
-    score: entry.score,
-    playerName: entry.playerName || "???",
-    capturedCount: entry.capturedCount || 0,
-    gameTime: entry.gameTime || 0,
+    score: Math.min(entry.score, 999),
+    playerName: (entry.playerName || "???").substring(0, 3),
     date: new Date().toISOString(),
   });
   scores.sort((a, b) => b.score - a.score);

@@ -124,6 +124,7 @@ export const defaultSettings = {
   carAudioIntensity: 10,
   textBPMPulse: true,
   textBPMIntensity: 0.5,
+  glassColor: "#ffffff",
   glassEnabled: true,
   glassOpacity: 0,
   glassMaterialOpacity: 1,
