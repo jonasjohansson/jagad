@@ -61,28 +61,12 @@ body {
   letter-spacing: 0.1em;
 }
 
-/* Mobile SVG branding overlay */
+/* UI overlay (branding + instructions, flush with board edges) */
 #mobile-overlay {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 5;
-}
-
-#mobile-overlay .side-svg {
-  position: absolute;
-  width: auto;
-}
-
-#mobile-overlay .side-svg.right {
-  transform: scaleX(-1);
-}
-
-#mobile-overlay .top-svg {
-  position: absolute;
-  height: 3vh;
-  width: auto;
-  transform: translateX(-50%);
 }
 
 #mobile-overlay .bottom-svg {

@@ -84,6 +84,8 @@ const loadingProgress = {
   // SERVER CONNECTION (fire-and-forget, game works offline)
   // ============================================
 
+  const isFacadeMode = new URLSearchParams(window.location.search).has("facade");
+
   let serverWS = null;
 
   function getServerAddress() {
@@ -119,7 +121,7 @@ const loadingProgress = {
   }
 
   function postHighScore(data) {
-    fetch(`${getServerAddress()}/api/highscore`, {
+    return fetch(`${getServerAddress()}/api/highscore`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -2043,13 +2045,36 @@ const loadingProgress = {
   // ============================================
 
   function loadHighScores() {
-    return settings.highScores.slice(); // Return copy of defaults
+    return settings.highScores.slice(); // Return copy from cache
   }
 
   function saveHighScores(scores) {
     settings.highScores = scores;
     if (STATE.updateStateDisplay) STATE.updateStateDisplay();
   }
+
+  // Fetch highscores from server into local cache
+  function fetchServerHighScores() {
+    fetch(`${getServerAddress()}/api/highscore`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          // Map server format (playerName) to local format (initials)
+          settings.highScores = data.slice(0, 3).map(e => ({
+            initials: (e.playerName || "???").substring(0, 3),
+            score: e.score,
+          }));
+          // Pad to 3 entries
+          while (settings.highScores.length < 3) {
+            settings.highScores.push({ initials: "???", score: 0 });
+          }
+          if (STATE.updateStateDisplay) STATE.updateStateDisplay();
+        }
+      })
+      .catch(() => {});
+  }
+
+  fetchServerHighScores();
 
   // Set all chasers to low or full opacity
   function setChasersOpacity(opacity) {
@@ -2669,6 +2694,13 @@ const loadingProgress = {
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
     STATE.highScoreInitialsColor = STATE.firstPlayerIndex >= 0 ? chaserColors[STATE.firstPlayerIndex] : null;
     updateHighScoreDisplay();
+
+    // Auto-confirm after 30 seconds
+    STATE.highScoreTimeout = setTimeout(() => {
+      if (STATE.enteringHighScore) {
+        confirmHighScoreEntry();
+      }
+    }, 30000);
   }
 
   function updateHighScoreDisplay() {
@@ -2678,18 +2710,25 @@ const loadingProgress = {
   }
 
   function confirmHighScoreEntry() {
+    // Clear auto-confirm timeout if manually confirmed
+    if (STATE.highScoreTimeout) {
+      clearTimeout(STATE.highScoreTimeout);
+      STATE.highScoreTimeout = null;
+    }
     // Ensure initials are exactly 3 characters
     const initials = STATE.highScoreInitials.join("").substring(0, 3).padEnd(3, "A");
     const score = STATE.playerScore;
     const position = STATE.newHighScoreRank;
 
-    // Insert new score and remove lowest
+    // Update local cache optimistically
     const highScores = loadHighScores();
     highScores.splice(position, 0, { initials, score });
-    highScores.length = 3; // Keep only top 3
-
+    highScores.length = 3;
     saveHighScores(highScores);
-    postHighScore({ score, playerName: initials, capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) });
+
+    // Post to server and refresh cache from response
+    postHighScore({ score, playerName: initials, capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) })
+      .then(() => fetchServerHighScores());
 
     STATE.enteringHighScore = false;
 
@@ -2868,9 +2907,9 @@ const loadingProgress = {
     portraitOverlay.style.display = "flex";
   }
 
-  /** Project board corners to screen-space pixel bounds using ortho camera */
+  /** Project board corners to screen-space pixel bounds using active camera */
   function getBoardScreenBounds() {
-    if (!orthoCamera) return null;
+    if (!camera) return null;
     const halfX = (STATE.levelSizeX || STATE.horizontalSize) / 2;
     const halfZ = (STATE.levelSizeZ || STATE.horizontalSize) / 2;
     const cx = STATE.levelCenter.x, cy = STATE.levelCenter.y, cz = STATE.levelCenter.z;
@@ -2881,7 +2920,7 @@ const loadingProgress = {
       new THREE.Vector3(cx - halfX, cy, cz + halfZ),
       new THREE.Vector3(cx + halfX, cy, cz + halfZ),
     ];
-    for (const c of corners) c.project(orthoCamera);
+    for (const c of corners) c.project(camera);
     const w = window.innerWidth, h = window.innerHeight;
     const xs = corners.map(c => (c.x + 1) / 2 * w);
     const ys = corners.map(c => (1 - c.y) / 2 * h);
@@ -2935,28 +2974,37 @@ const loadingProgress = {
       // Chaser speed boost
       for (const c of chasers) c.speed = settings.chaserSpeed;
 
-      // 3. Camera + building + portrait (existing behavior)
-      settings.cameraType = "orthographic";
-      switchCamera("orthographic");
+      // 3. Camera + building + portrait
+      if (isFacadeMode) {
+        // Facade: top-down orthographic for projection mapping
+        settings.cameraType = "orthographic";
+        switchCamera("orthographic");
 
-      if (orthoCamera) {
-        const aspect = window.innerWidth / window.innerHeight;
-        const orthoSize = STATE.horizontalSize * 0.6 * settings.mobileOrthoZoom;
-        orthoCamera.left = -orthoSize * aspect;
-        orthoCamera.right = orthoSize * aspect;
-        orthoCamera.top = orthoSize;
-        orthoCamera.bottom = -orthoSize;
-        orthoCamera.position.z = STATE.levelCenter.z + settings.mobileOrthoOffsetZ;
-        orthoCamera.lookAt(new THREE.Vector3(STATE.levelCenter.x, STATE.levelCenter.y, STATE.levelCenter.z + settings.mobileOrthoOffsetZ));
-        orthoCamera.updateProjectionMatrix();
+        if (orthoCamera) {
+          const aspect = window.innerWidth / window.innerHeight;
+          const orthoSize = STATE.horizontalSize * 0.6 * settings.mobileOrthoZoom;
+          orthoCamera.left = -orthoSize * aspect;
+          orthoCamera.right = orthoSize * aspect;
+          orthoCamera.top = orthoSize;
+          orthoCamera.bottom = -orthoSize;
+          orthoCamera.position.z = STATE.levelCenter.z + settings.mobileOrthoOffsetZ;
+          orthoCamera.lookAt(new THREE.Vector3(STATE.levelCenter.x, STATE.levelCenter.y, STATE.levelCenter.z + settings.mobileOrthoOffsetZ));
+          orthoCamera.updateProjectionMatrix();
+        }
       }
+      // Mobile/desktop without facade: keep perspective camera (GLB MainCamera)
 
       settings.buildingEnabled = false;
       if (buildingPlane) buildingPlane.visible = false;
 
-      checkPortraitMode();
+      // Overlay shown on all devices (flush with board edges)
       createMobileOverlay();
       refreshOverlayPositions();
+
+      // Portrait check only on actual mobile/touch devices
+      if (isMobileDevice()) {
+        checkPortraitMode();
+      }
     } else {
       destroyMobileOverlay();
       // 1. Restore desktop settings
@@ -3017,8 +3065,8 @@ const loadingProgress = {
 
     if (orthoCamera) {
       const aspect = width / height;
-      if (settings.mobileEnabled) {
-        // Use mobile ortho zoom
+      if (settings.mobileEnabled && isFacadeMode) {
+        // Facade mode: use mobile ortho zoom
         const orthoSize = STATE.horizontalSize * 0.6 * settings.mobileOrthoZoom;
         orthoCamera.left = -orthoSize * aspect;
         orthoCamera.right = orthoSize * aspect;
@@ -4710,7 +4758,8 @@ const loadingProgress = {
       // No high score - use game over text templates
       applyGameOverText();
       updateGlassCanvas();
-      postHighScore({ score: STATE.playerScore, playerName: "???", capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) });
+      postHighScore({ score: STATE.playerScore, playerName: "???", capturedCount: STATE.capturedCount, gameTime: Math.round(90 - (STATE.gameTimerRemaining || 0)) })
+        .then(() => fetchServerHighScores());
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;
     }
@@ -6856,9 +6905,8 @@ const loadingProgress = {
     // Initialize game state to PRE_GAME
     setGameState("PRE_GAME");
 
-    // Auto-detect mobile/touch device and apply mobile mode
-    // Don't auto-ready the chaser — let the first touch do it (which also unlocks audio)
-    if (isMobileDevice()) {
+    // Apply performance overrides and mobile overlay when not in facade mode
+    if (!isFacadeMode) {
       applyMobileMode(true);
     }
 

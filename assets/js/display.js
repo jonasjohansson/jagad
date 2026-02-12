@@ -111,13 +111,11 @@ function connectWS() {
       case "gameStarted":
         applyEffect(col1, "flash-green");
         applyEffect(col2, "flash-green");
-        showBanner("Game started!");
         break;
 
       case "fugitiveCaught":
         applyEffect(col2, "flash-red");
         applyEffect(col2, "shake");
-        showBanner("Fugitive caught!");
         fetchHighscore();
         break;
 
@@ -126,7 +124,6 @@ function connectWS() {
         applyEffect(col2, "flash-white");
         applyEffect(col1, "shake");
         applyEffect(col2, "shake");
-        showBanner("Game over!", 5000);
         setTimeout(fetchHighscore, 1000);
         break;
 

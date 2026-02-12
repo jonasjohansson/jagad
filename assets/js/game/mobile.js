@@ -136,16 +136,7 @@ export function createMobileOverlay() {
   const overlay = document.createElement("div");
   overlay.id = "mobile-overlay";
 
-  // Side SVGs (vertically centred beside the board)
-  const leftImg = document.createElement("img");
-  leftImg.src = "assets/images/mobile/jagad-left.svg";
-  leftImg.className = "side-svg left";
-
-  const rightImg = document.createElement("img");
-  rightImg.src = "assets/images/mobile/jagad-left.svg";
-  rightImg.className = "side-svg right";
-
-  // Bottom images (resting at viewport bottom, aligned to board)
+  // Bottom images (flush with board edges)
   const bumper = document.createElement("img");
   bumper.src = "assets/images/mobile/jagad-promo.png";
   bumper.className = "bottom-svg bottom-left";
@@ -154,8 +145,6 @@ export function createMobileOverlay() {
   instruktioner.src = "assets/images/mobile/mobile-instruction.png";
   instruktioner.className = "bottom-svg bottom-right";
 
-  overlay.appendChild(leftImg);
-  overlay.appendChild(rightImg);
   overlay.appendChild(bumper);
   overlay.appendChild(instruktioner);
 
@@ -173,28 +162,12 @@ export function updateMobileOverlay(bounds, offset) {
 
   const vw = window.innerWidth;
 
-  // Side SVGs: match board top/height, pushed out from board left/right edges
-  const leftSvg = overlay.querySelector(".side-svg.left");
-  const rightSvg = overlay.querySelector(".side-svg.right");
-  const boardTop = bounds.top + "px";
-  const boardHeight = (bounds.bottom - bounds.top) + "px";
-  if (leftSvg) {
-    leftSvg.style.top = boardTop;
-    leftSvg.style.height = boardHeight;
-    leftSvg.style.right = (vw - bounds.left + offset) + "px";
-  }
-  if (rightSvg) {
-    rightSvg.style.top = boardTop;
-    rightSvg.style.height = boardHeight;
-    rightSvg.style.left = (bounds.right + offset) + "px";
-  }
-
-  // Bottom SVGs: resting at viewport bottom, aligned to board edges (inset)
+  // Bottom images: flush with board left/right edges
   const bottomLeft = overlay.querySelector(".bottom-left");
   const bottomRight = overlay.querySelector(".bottom-right");
 
-  if (bottomLeft) bottomLeft.style.left = (bounds.left + offset * 0.25) + "px";
-  if (bottomRight) bottomRight.style.right = (vw - bounds.right + offset) + "px";
+  if (bottomLeft) bottomLeft.style.left = bounds.left + "px";
+  if (bottomRight) bottomRight.style.right = (vw - bounds.right) + "px";
 }
 
 /**
