@@ -2194,7 +2194,7 @@ const loadingProgress = {
       // Desktop/mobile: show result and score, no initials entry
       const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
       settings.glassTextRow1 = "";
-      settings.glassTextRow2 = allCaught ? " ALLAFÅNGADE!" : " GAMEOVER";
+      settings.glassTextRow2 = allCaught ? " FÅNGADE!" : " GAMEOVER";
       settings.glassTextRow3 = " SCORE:" + paddedScore;
       settings.glassTextRow4 = "";
       updateGlassCanvas();
