@@ -771,9 +771,10 @@ const loadingProgress = {
           }
         }
         showGameScore();
-        // Play win/lose SFX based on high score
-        const isHighScore = checkHighScore(STATE.playerScore) >= 0;
-        playSFX(isHighScore ? "gameWin" : "gameLose");
+        // Play win/lose SFX
+        const allCaught = STATE.capturedCount >= fugitives.length;
+        const isWin = isFacadeMode ? checkHighScore(STATE.playerScore) >= 0 : allCaught;
+        playSFX(isWin ? "gameWin" : "gameLose");
         // Reset to PRE_GAME after 10 seconds (unless entering high score)
         setTimeout(() => {
           if (STATE.gameState === "GAME_OVER" && !STATE.enteringHighScore) {
@@ -2155,25 +2156,39 @@ const loadingProgress = {
   }
 
   function showGameScore() {
-    // Check for high score
-    const highScorePosition = checkHighScore(STATE.playerScore);
-    if (highScorePosition >= 0) {
-      // Player made the high score list - show high score text, then start entry
-      applyHighScoreText();
-      updateGlassCanvas();
-      setTimeout(() => {
-        if (STATE.gameState === "GAME_OVER") {
-          startHighScoreEntry(highScorePosition);
-        }
-      }, 1500);
+    const allCaught = STATE.capturedCount >= fugitives.length;
+
+    if (isFacadeMode) {
+      // Facade mode: high score entry flow
+      const highScorePosition = checkHighScore(STATE.playerScore);
+      if (highScorePosition >= 0) {
+        applyHighScoreText();
+        updateGlassCanvas();
+        setTimeout(() => {
+          if (STATE.gameState === "GAME_OVER") {
+            startHighScoreEntry(highScorePosition);
+          }
+        }, 1500);
+      } else {
+        settings.glassTextRow1 = "";
+        settings.glassTextRow2 = " GAMEOVER";
+        settings.glassTextRow3 = "";
+        settings.glassTextRow4 = "";
+        updateGlassCanvas();
+        setTimeout(() => updateGlassCanvas(), 500);
+        postHighScore({ score: STATE.playerScore, playerName: "???" })
+          .then(() => fetchServerHighScores());
+        STATE.showingScore = true;
+        STATE.scoreDisplayTime = 5;
+      }
     } else {
-      // No high score - show GAMEOVER
+      // Desktop/mobile: show result and score, no initials entry
+      const paddedScore = String(STATE.playerScore || 0).padStart(3, "0");
       settings.glassTextRow1 = "";
-      settings.glassTextRow2 = " GAMEOVER";
-      settings.glassTextRow3 = "";
+      settings.glassTextRow2 = allCaught ? " ALLAFÅNGADE!" : " GAMEOVER";
+      settings.glassTextRow3 = " SCORE:" + paddedScore;
       settings.glassTextRow4 = "";
       updateGlassCanvas();
-      // Force a second render after shuffle settles
       setTimeout(() => updateGlassCanvas(), 500);
       postHighScore({ score: STATE.playerScore, playerName: "???" })
         .then(() => fetchServerHighScores());
