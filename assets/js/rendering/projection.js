@@ -58,15 +58,23 @@ export function initProjectionPlane() {
     blending: blendMode,
   });
 
-  // Inject red-preserving brightness boost into the shader
+  // Inject red-preserving brightness boost + red saturation into the shader
+  // brightness=0 → original PNG colors; brightness>0 → boosts non-red pixels
+  // redSaturation=1 → original reds; >1 → pushes red-dominant pixels toward pure red
   material.onBeforeCompile = (shader) => {
     shader.uniforms.brightness = { value: _settings.projectionBrightness };
-    shader.fragmentShader = "uniform float brightness;\n" + shader.fragmentShader;
+    shader.uniforms.redSaturation = { value: _settings.projectionRedSaturation ?? 1.0 };
+    shader.fragmentShader = "uniform float brightness;\nuniform float redSaturation;\n" + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <map_fragment>",
       `#include <map_fragment>
       float redDom = clamp(diffuseColor.r - max(diffuseColor.g, diffuseColor.b), 0.0, 1.0);
-      diffuseColor.rgb *= mix(brightness, 1.0, redDom);`
+      float boost = 1.0 + brightness * (1.0 - redDom);
+      diffuseColor.rgb *= boost;
+      // Saturate reds: when redDom > 0, pull g/b toward 0 based on redSaturation
+      float redPull = redDom * (redSaturation - 1.0);
+      diffuseColor.g *= max(1.0 - redPull, 0.0);
+      diffuseColor.b *= max(1.0 - redPull, 0.0);`
     );
     _projectionShader = shader;
   };
@@ -350,6 +358,7 @@ export function applyProjectionMaterial() {
   mat.color.set(_settings.projectionColor);
   if (_projectionShader) {
     _projectionShader.uniforms.brightness.value = _settings.projectionBrightness;
+    _projectionShader.uniforms.redSaturation.value = _settings.projectionRedSaturation ?? 1.0;
   }
 }
 

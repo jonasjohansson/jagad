@@ -4,7 +4,7 @@ export const STORAGE_KEY = "jagadSettings";
 
 // Keys excluded from localStorage — always use defaults
 const noSaveKeys = new Set([
-  "projectionOpacity", "projectionBlending", "projectionBrightness",
+  "projectionOpacity", "projectionBlending", "projectionBrightness", "projectionRedSaturation",
   "projectionColor", "projectionScale",
   "projectionOffsetX", "projectionOffsetY", "projectionOffsetZ",
   "preGameImage", "startingImage", "playingImage", "gameOverImage",
@@ -129,7 +129,7 @@ export const defaultSettings = {
   lampAudioSensitivity: 3,
   carAudioReactive: true,
   carAudioBPM: 95,
-  carAudioIntensity: 10,
+  carAudioIntensity: 2.5,
   textBPMPulse: true,
   textBPMIntensity: 0.5,
   glassColor: "#ffffff",
@@ -221,6 +221,7 @@ export const defaultSettings = {
   pulseWaveFlash: true,
 
   // Mobile
+  shadowsEnabled: true,
   mobileEnabled: false,
   mobileOrthoZoom: 0.5,
   mobileOrthoOffsetZ: 0.6,
@@ -278,7 +279,8 @@ export const defaultSettings = {
   gameOverImage: "",
   projectionOpacity: 1,
   projectionBlending: "normal",
-  projectionBrightness: 1.1,
+  projectionBrightness: 0.1,
+  projectionRedSaturation: 10,
   projectionColor: "#ffffff",
   projectionScale: 0.25,
   projectionOffsetX: 0,

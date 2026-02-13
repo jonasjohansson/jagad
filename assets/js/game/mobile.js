@@ -21,6 +21,7 @@ export const MOBILE_OVERRIDES = {
   pulseWaveParticles: true,    // 120 particles per capture
   carAudioReactive: true,      // per-frame emissive updates
   textBPMPulse: true,          // per-frame text brightness
+  shadowsEnabled: true,        // shadow maps
   chaserSpeed: 1.2,            // solo mobile boost (+0.2)
 };
 

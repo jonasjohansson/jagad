@@ -981,8 +981,8 @@ const loadingProgress = {
         composer.setSize(window.innerWidth, window.innerHeight);
       }
 
-      // Shadows
-      renderer.shadowMap.enabled = false;
+      // Shadows (controlled via mobile override)
+      renderer.shadowMap.enabled = settings.shadowsEnabled !== false;
       renderer.shadowMap.needsUpdate = true;
 
       // Post-processing (bloom, color grading)
@@ -1021,9 +1021,10 @@ const loadingProgress = {
       settings.buildingEnabled = false;
       if (buildingPlane) buildingPlane.visible = false;
 
-      // Use device-specific intro image for non-facade mode
+      // Use device-specific intro image and scale for non-facade mode
       if (!isFacadeMode) {
         settings.preGameImage = isMobileDevice() ? "introMobile.png" : "introDesktop.png";
+        settings.projectionScale = 0.32;
         loadProjectionImage("PRE_GAME", settings.preGameImage);
       }
 
@@ -1238,6 +1239,11 @@ const loadingProgress = {
     perfFolder.add(settings, "pulseWaveParticles").name("Pulse Particles").listen();
 
 
+    perfFolder.add(settings, "shadowsEnabled").name("Shadows").listen().onChange((v) => {
+      renderer.shadowMap.enabled = v;
+      renderer.shadowMap.needsUpdate = true;
+    });
+
     perfFolder.add(settings, "carAudioReactive").name("Car BPM Pulse").listen();
 
     perfFolder.add(settings, "textBPMPulse").name("Text BPM Pulse").listen();
@@ -1392,6 +1398,9 @@ const loadingProgress = {
       applyProjectionMaterial();
     });
     projectionFolder.add(settings, "projectionBrightness", 0, 3, 0.05).name("Brightness").onChange(() => {
+      applyProjectionMaterial();
+    });
+    projectionFolder.add(settings, "projectionRedSaturation", 0, 20, 0.1).name("Red Saturation").onChange(() => {
       applyProjectionMaterial();
     });
     projectionFolder.addColor(settings, "projectionColor").name("Tint").onChange(() => {
@@ -3499,7 +3508,8 @@ const loadingProgress = {
         light.shadow.mapSize.height = 1024;
         light.shadow.camera.near = 0.1;
         light.shadow.camera.far = settings.chaserLightDistance || 50;
-        light.shadow.bias = -0.001;
+        light.shadow.bias = -0.002;
+        light.shadow.normalBias = 0.05;
 
         // Create target for spotlight - point forward from the car (negative Z due to car flip)
         const lightTarget = new THREE.Object3D();
