@@ -38,8 +38,6 @@ export function sendServerEvent(event) {
   if (serverWS && serverWS.readyState === WebSocket.OPEN) {
     console.log("Game WS sending:", event.type);
     serverWS.send(JSON.stringify(event));
-  } else {
-    console.warn("Game WS not connected, event dropped:", event.type);
   }
 }
 

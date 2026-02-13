@@ -67,16 +67,18 @@ export function initProjectionPlane() {
     const rt = new THREE.Color(_settings.projectionRedTarget || "#E1143C");
     shader.uniforms.redTarget = { value: rt };
     shader.uniforms.redStrength = { value: _settings.projectionRedStrength ?? 1.0 };
-    shader.fragmentShader = "uniform float brightness;\nuniform vec3 redTarget;\nuniform float redStrength;\n" + shader.fragmentShader;
+    shader.uniforms.effectsEnabled = { value: 1.0 };
+    shader.fragmentShader = "uniform float brightness;\nuniform vec3 redTarget;\nuniform float redStrength;\nuniform float effectsEnabled;\n" + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <map_fragment>",
       `#include <map_fragment>
-      float redDom = clamp(diffuseColor.r - max(diffuseColor.g, diffuseColor.b), 0.0, 1.0);
-      float boost = 1.0 + brightness * (1.0 - redDom);
-      diffuseColor.rgb = min(diffuseColor.rgb * boost, vec3(1.5));
-      // Remap red-dominant pixels toward target color
-      float remap = clamp(redDom * redStrength * 2.0, 0.0, 1.0);
-      diffuseColor.rgb = mix(diffuseColor.rgb, redTarget, remap);`
+      if (effectsEnabled > 0.5) {
+        float redDom = clamp(diffuseColor.r - max(diffuseColor.g, diffuseColor.b), 0.0, 1.0);
+        float boost = 1.0 + brightness * (1.0 - redDom);
+        diffuseColor.rgb = min(diffuseColor.rgb * boost, vec3(1.5));
+        float remap = clamp(redDom * redStrength * 2.0, 0.0, 1.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, redTarget, remap);
+      }`
     );
     _projectionShader = shader;
   };
@@ -188,11 +190,7 @@ export function updateProjectionForState(state) {
     }
     projectionPlane.material.blending = THREE.AdditiveBlending;
     projectionPlane.material.opacity = _settings.projectionOpacity;
-    // Disable red remap and brightness boost for video
-    if (_projectionShader) {
-      _projectionShader.uniforms.redStrength.value = 0;
-      _projectionShader.uniforms.brightness.value = 0;
-    }
+    if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 0.0;
     projectionVideo.play().catch(() => {});
 
     const vw = projectionVideo.videoWidth;
@@ -207,11 +205,7 @@ export function updateProjectionForState(state) {
     if (projectionVideo) {
       projectionVideo.pause();
     }
-    // Restore red remap and brightness for static images
-    if (_projectionShader) {
-      _projectionShader.uniforms.redStrength.value = _settings.projectionRedStrength ?? 1.0;
-      _projectionShader.uniforms.brightness.value = _settings.projectionBrightness;
-    }
+    if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 1.0;
     projectionPlane.material.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
 
     const stateImageSettings = {
@@ -342,11 +336,7 @@ export function handleProjectionStateChange(newState, oldState) {
         projectionPlane.material.blending = THREE.AdditiveBlending;
         projectionPlane.material.opacity = _settings.projectionOpacity;
         projectionPlane.material.needsUpdate = true;
-        // Disable red remap and brightness boost for video
-        if (_projectionShader) {
-          _projectionShader.uniforms.redStrength.value = 0;
-          _projectionShader.uniforms.brightness.value = 0;
-        }
+        if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 0.0;
       }
       const hideProjection = () => {
         _STATE.gameAnimationPlaying = false;

@@ -105,7 +105,7 @@ const loadingProgress = {
 
   const isFacadeMode = new URLSearchParams(window.location.search).has("facade");
 
-  connectToServer();
+  if (isFacadeMode) connectToServer();
 
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -593,7 +593,7 @@ const loadingProgress = {
       .catch(() => {});
   }
 
-  fetchServerHighScores();
+  if (isFacadeMode) fetchServerHighScores();
 
   // Set all chasers to low or full opacity
   function setChasersOpacity(opacity) {
