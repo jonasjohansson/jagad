@@ -279,7 +279,7 @@ export const defaultSettings = {
   gameOverImage: "",
   projectionOpacity: 1,
   projectionBlending: "normal",
-  projectionBrightness: 3,
+  projectionBrightness: 0.05,
   projectionRedTarget: "#ca072e",
   projectionRedStrength: 2,
   projectionColor: "#ffffff",
