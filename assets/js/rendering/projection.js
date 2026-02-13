@@ -3,8 +3,8 @@
 
 import * as THREE from "../lib/three/three.module.js";
 import { PATHS } from "../game/constants.js?v=8";
-import { applyStartingText } from "../game/templateVars.js?v=146";
-import { updateGlassCanvas } from "./glass.js?v=146";
+import { applyStartingText } from "../game/templateVars.js?v=148";
+import { updateGlassCanvas } from "./glass.js?v=148";
 
 const BLENDING_MODES = {
   additive: THREE.AdditiveBlending,
@@ -188,6 +188,11 @@ export function updateProjectionForState(state) {
     }
     projectionPlane.material.blending = THREE.AdditiveBlending;
     projectionPlane.material.opacity = _settings.projectionOpacity;
+    // Disable red remap and brightness boost for video
+    if (_projectionShader) {
+      _projectionShader.uniforms.redStrength.value = 0;
+      _projectionShader.uniforms.brightness.value = 0;
+    }
     projectionVideo.play().catch(() => {});
 
     const vw = projectionVideo.videoWidth;
@@ -201,6 +206,11 @@ export function updateProjectionForState(state) {
   } else {
     if (projectionVideo) {
       projectionVideo.pause();
+    }
+    // Restore red remap and brightness for static images
+    if (_projectionShader) {
+      _projectionShader.uniforms.redStrength.value = _settings.projectionRedStrength ?? 1.0;
+      _projectionShader.uniforms.brightness.value = _settings.projectionBrightness;
     }
     projectionPlane.material.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
 
@@ -332,6 +342,11 @@ export function handleProjectionStateChange(newState, oldState) {
         projectionPlane.material.blending = THREE.AdditiveBlending;
         projectionPlane.material.opacity = _settings.projectionOpacity;
         projectionPlane.material.needsUpdate = true;
+        // Disable red remap and brightness boost for video
+        if (_projectionShader) {
+          _projectionShader.uniforms.redStrength.value = 0;
+          _projectionShader.uniforms.brightness.value = 0;
+        }
       }
       const hideProjection = () => {
         _STATE.gameAnimationPlaying = false;
