@@ -3,8 +3,8 @@
 
 import * as THREE from "../lib/three/three.module.js";
 import { PATHS } from "../game/constants.js?v=8";
-import { applyStartingText } from "../game/templateVars.js?v=148";
-import { updateGlassCanvas } from "./glass.js?v=148";
+import { applyStartingText } from "../game/templateVars.js?v=149";
+import { updateGlassCanvas } from "./glass.js?v=149";
 
 const BLENDING_MODES = {
   additive: THREE.AdditiveBlending,
