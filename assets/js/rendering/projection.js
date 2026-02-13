@@ -358,6 +358,9 @@ export function handleProjectionStateChange(newState, oldState) {
       projectionVideo.muted = false;
       projectionVideo.currentTime = 0;
       projectionVideo.play().catch(() => {});
+      // Disable shader effects for video
+      _effectsEnabled = 0.0;
+      if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 0.0;
     }
   }
 }
