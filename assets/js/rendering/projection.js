@@ -20,6 +20,7 @@ let projectionVideoTexture = null;
 let gameAnimationVideo = null;
 let gameAnimationVideoTexture = null;
 let _projectionShader = null;
+let _effectsEnabled = 1.0;
 
 // Projection pump effect
 let projectionPumpTime = 0;
@@ -67,7 +68,7 @@ export function initProjectionPlane() {
     const rt = new THREE.Color(_settings.projectionRedTarget || "#E1143C");
     shader.uniforms.redTarget = { value: rt };
     shader.uniforms.redStrength = { value: _settings.projectionRedStrength ?? 1.0 };
-    shader.uniforms.effectsEnabled = { value: 1.0 };
+    shader.uniforms.effectsEnabled = { value: _effectsEnabled };
     shader.fragmentShader = "uniform float brightness;\nuniform vec3 redTarget;\nuniform float redStrength;\nuniform float effectsEnabled;\n" + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <map_fragment>",
@@ -190,6 +191,7 @@ export function updateProjectionForState(state) {
     }
     projectionPlane.material.blending = THREE.AdditiveBlending;
     projectionPlane.material.opacity = _settings.projectionOpacity;
+    _effectsEnabled = 0.0;
     if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 0.0;
     projectionVideo.play().catch(() => {});
 
@@ -205,6 +207,7 @@ export function updateProjectionForState(state) {
     if (projectionVideo) {
       projectionVideo.pause();
     }
+    _effectsEnabled = 1.0;
     if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 1.0;
     projectionPlane.material.blending = BLENDING_MODES[_settings.projectionBlending] ?? THREE.NormalBlending;
 
@@ -336,6 +339,7 @@ export function handleProjectionStateChange(newState, oldState) {
         projectionPlane.material.blending = THREE.AdditiveBlending;
         projectionPlane.material.opacity = _settings.projectionOpacity;
         projectionPlane.material.needsUpdate = true;
+        _effectsEnabled = 0.0;
         if (_projectionShader) _projectionShader.uniforms.effectsEnabled.value = 0.0;
       }
       const hideProjection = () => {
