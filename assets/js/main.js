@@ -97,7 +97,7 @@ const loadingProgress = {
   };
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  scene.background = new THREE.Color(0x191928);
 
   // ============================================
   // SERVER CONNECTION (fire-and-forget, game works offline)
@@ -110,7 +110,7 @@ const loadingProgress = {
   // WebGL Renderer
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio * (defaultSettings.renderScale || 1));
-  renderer.setClearColor(0x000000, 0);
+  renderer.setClearColor(0x191928, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.NeutralToneMapping;

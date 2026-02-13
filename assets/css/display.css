@@ -16,7 +16,7 @@
 }
 
 body {
-  background: #000000;
+  background: #191928;
   color: white;
   height: 100vh;
   margin: 0;
@@ -44,6 +44,11 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+#display-right-img {
+  height: auto;
+  flex-shrink: 0;
 }
 
 #col2 {
