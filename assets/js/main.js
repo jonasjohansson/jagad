@@ -1400,7 +1400,10 @@ const loadingProgress = {
     projectionFolder.add(settings, "projectionBrightness", 0, 3, 0.05).name("Brightness").onChange(() => {
       applyProjectionMaterial();
     });
-    projectionFolder.add(settings, "projectionRedSaturation", 0, 20, 0.1).name("Red Saturation").onChange(() => {
+    projectionFolder.addColor(settings, "projectionRedTarget").name("Red Target").onChange(() => {
+      applyProjectionMaterial();
+    });
+    projectionFolder.add(settings, "projectionRedStrength", 0, 2, 0.05).name("Red Strength").onChange(() => {
       applyProjectionMaterial();
     });
     projectionFolder.addColor(settings, "projectionColor").name("Tint").onChange(() => {

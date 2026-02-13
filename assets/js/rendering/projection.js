@@ -58,23 +58,25 @@ export function initProjectionPlane() {
     blending: blendMode,
   });
 
-  // Inject red-preserving brightness boost + red saturation into the shader
+  // Inject red-preserving brightness boost + red target color into the shader
   // brightness=0 → original PNG colors; brightness>0 → boosts non-red pixels
-  // redSaturation=1 → original reds; >1 → pushes red-dominant pixels toward pure red
+  // redTarget: red-dominant pixels get remapped toward this color
+  // redStrength: how aggressively to remap (0 = off, 1 = full remap)
   material.onBeforeCompile = (shader) => {
     shader.uniforms.brightness = { value: _settings.projectionBrightness };
-    shader.uniforms.redSaturation = { value: _settings.projectionRedSaturation ?? 1.0 };
-    shader.fragmentShader = "uniform float brightness;\nuniform float redSaturation;\n" + shader.fragmentShader;
+    const rt = new THREE.Color(_settings.projectionRedTarget || "#E1143C");
+    shader.uniforms.redTarget = { value: rt };
+    shader.uniforms.redStrength = { value: _settings.projectionRedStrength ?? 1.0 };
+    shader.fragmentShader = "uniform float brightness;\nuniform vec3 redTarget;\nuniform float redStrength;\n" + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <map_fragment>",
       `#include <map_fragment>
       float redDom = clamp(diffuseColor.r - max(diffuseColor.g, diffuseColor.b), 0.0, 1.0);
       float boost = 1.0 + brightness * (1.0 - redDom);
-      diffuseColor.rgb *= boost;
-      // Saturate reds: when redDom > 0, pull g/b toward 0 based on redSaturation
-      float redPull = redDom * (redSaturation - 1.0);
-      diffuseColor.g *= max(1.0 - redPull, 0.0);
-      diffuseColor.b *= max(1.0 - redPull, 0.0);`
+      diffuseColor.rgb = min(diffuseColor.rgb * boost, vec3(1.5));
+      // Remap red-dominant pixels toward target color
+      float remap = clamp(redDom * redStrength * 2.0, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, redTarget, remap);`
     );
     _projectionShader = shader;
   };
@@ -358,7 +360,8 @@ export function applyProjectionMaterial() {
   mat.color.set(_settings.projectionColor);
   if (_projectionShader) {
     _projectionShader.uniforms.brightness.value = _settings.projectionBrightness;
-    _projectionShader.uniforms.redSaturation.value = _settings.projectionRedSaturation ?? 1.0;
+    _projectionShader.uniforms.redTarget.value.set(_settings.projectionRedTarget || "#E1143C");
+    _projectionShader.uniforms.redStrength.value = _settings.projectionRedStrength ?? 1.0;
   }
 }
 

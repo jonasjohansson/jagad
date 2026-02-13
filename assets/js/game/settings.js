@@ -4,7 +4,7 @@ export const STORAGE_KEY = "jagadSettings";
 
 // Keys excluded from localStorage — always use defaults
 const noSaveKeys = new Set([
-  "projectionOpacity", "projectionBlending", "projectionBrightness", "projectionRedSaturation",
+  "projectionOpacity", "projectionBlending", "projectionBrightness", "projectionRedTarget", "projectionRedStrength",
   "projectionColor", "projectionScale",
   "projectionOffsetX", "projectionOffsetY", "projectionOffsetZ",
   "preGameImage", "startingImage", "playingImage", "gameOverImage",
@@ -204,7 +204,7 @@ export const defaultSettings = {
   searchlightAngle: 12,
   searchlightDistance: 30,
   searchlightPenumbra: 0.5,
-  searchlightHeight: 8,
+  searchlightHeight: 10,
   searchlightSpeed: 0.75,
   searchlightSway: 9.5,
 
@@ -279,8 +279,9 @@ export const defaultSettings = {
   gameOverImage: "",
   projectionOpacity: 1,
   projectionBlending: "normal",
-  projectionBrightness: 0.1,
-  projectionRedSaturation: 10,
+  projectionBrightness: 3,
+  projectionRedTarget: "#ca072e",
+  projectionRedStrength: 2,
   projectionColor: "#ffffff",
   projectionScale: 0.25,
   projectionOffsetX: 0,
