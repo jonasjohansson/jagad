@@ -46,11 +46,6 @@ body {
   object-fit: cover;
 }
 
-#display-right-img {
-  height: auto;
-  flex-shrink: 0;
-}
-
 #col2 {
   flex: 5940;
   display: flex;
@@ -74,61 +69,84 @@ body {
   padding: var(--spacing-md);
 }
 
-/* Highscore table */
-.highscore-container {
+/* Display right panel */
+#display-right {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.highscore-title {
-  padding: var(--spacing-lg);
-  text-align: center;
-  text-transform: uppercase;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-#highscore-content {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr;
-  overflow-y: auto;
-}
-
-.highscore-item {
-  display: grid;
-  grid-template-columns: auto 1fr 1fr;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  align-items: center;
-}
-
-.highscore-item:last-child {
-  border-bottom: none;
-}
-
-.rank {
-  text-align: center;
-  min-width: 2em;
-}
-
-.score {
-  text-align: center;
-}
-
-.player-name {
-  text-align: center;
-}
-
-.no-highscore,
-.loading {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-lg);
-  color: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.display-right-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+#display-right-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 5%;
+}
+
+#display-text {
+  font-size: 40vh;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: white;
+}
+
+.shuffle-char {
+  display: inline-block;
+  width: 0.75em;
+  text-align: center;
+}
+
+/* Highscore row layout */
+.highscore-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12vh;
+  width: 100%;
+}
+
+.highscore-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 2vh;
+  white-space: nowrap;
+  letter-spacing: 0.08em;
+}
+
+.highscore-entry .rank {
+  color: #c8102e;
+  font-size: 40vh;
+  font-weight: bold;
+}
+
+.highscore-entry .name {
+  color: white;
+  font-size: 40vh;
+  font-weight: bold;
+}
+
+.highscore-entry .score {
+  color: white;
+  font-size: 40vh;
+  font-weight: bold;
 }
 
 /* Flash overlays */

@@ -1,4 +1,4 @@
-// --- Server address (same logic as highscore.js) ---
+// --- Server address ---
 function getHTTPServerAddress() {
   const params = new URLSearchParams(window.location.search);
   const serverParam = params.get("server");
@@ -27,52 +27,173 @@ function getWSAddress() {
 const col1 = document.getElementById("col1");
 const col2 = document.getElementById("col2");
 const banner = document.getElementById("event-banner");
-const loadingEl = document.getElementById("loading");
-const contentEl = document.getElementById("highscore-content");
-const noHighscoreEl = document.getElementById("no-highscore");
+const contentEl = document.getElementById("display-right-content");
+
+const TAGLINE = "KAN DU FÅNGA RYMMARNA?";
+const TAGLINE_DURATION = 10000;
+const PAGE_DURATION = 6000;
+const PAGE_SIZE = 3;
+const SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const SHUFFLE_DURATION = 600;
+const SHUFFLE_INTERVAL = 40;
+
+let scores = [];
+let cycleTimer = null;
+let activeShuffleIntervals = [];
+
+function cancelAllShuffles() {
+  activeShuffleIntervals.forEach(id => clearInterval(id));
+  activeShuffleIntervals = [];
+}
+
+// --- Shuffle text effect (per-character, fixed-width spans) ---
+function shuffleTransition(targetText, el, onDone, { keepFixed = false } = {}) {
+  const len = targetText.length;
+  const stagger = 30; // ms delay per character
+  const charDuration = SHUFFLE_DURATION;
+  const startTime = performance.now();
+
+  el.innerHTML = "";
+  const charSpans = [];
+  for (let i = 0; i < len; i++) {
+    const span = document.createElement("span");
+    if (keepFixed) span.className = "shuffle-char";
+    span.textContent = targetText[i] === " " ? "\u00A0" : SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
+    el.appendChild(span);
+    charSpans.push({ span, target: targetText[i], resolved: false, start: stagger * i });
+  }
+
+  const interval = setInterval(() => {
+    const now = performance.now() - startTime;
+    let allDone = true;
+
+    for (const ch of charSpans) {
+      if (ch.resolved) continue;
+      const elapsed = now - ch.start;
+      if (elapsed >= charDuration) {
+        ch.span.textContent = ch.target === " " ? "\u00A0" : ch.target;
+        ch.resolved = true;
+      } else if (elapsed > 0) {
+        ch.span.textContent = ch.target === " " ? "\u00A0" : SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
+        allDone = false;
+      } else {
+        allDone = false;
+      }
+    }
+
+    if (allDone) {
+      clearInterval(interval);
+      activeShuffleIntervals = activeShuffleIntervals.filter(id => id !== interval);
+      if (!keepFixed) el.textContent = targetText;
+      if (onDone) onDone();
+    }
+  }, SHUFFLE_INTERVAL);
+
+  activeShuffleIntervals.push(interval);
+}
+
+// --- Build highscore HTML for a page ---
+function buildHighscoreHTML(pageScores) {
+  return pageScores.map(({ rank, playerName, score }) =>
+    `<span class="highscore-entry">` +
+    `<span class="rank">${rank}</span>` +
+    `<span class="name">${playerName || "???"}</span>` +
+    `<span class="score">${score.toLocaleString()}</span>` +
+    `</span>`
+  ).join("");
+}
+
+function getHighscorePages() {
+  const capped = scores.slice(0, 9);
+  const pages = [];
+  for (let i = 0; i < capped.length; i += PAGE_SIZE) {
+    pages.push(capped.slice(i, i + PAGE_SIZE).map((entry, j) => ({
+      rank: i + j + 1,
+      playerName: entry.playerName,
+      score: entry.score
+    })));
+  }
+  return pages;
+}
+
+// --- Display cycle ---
+function getTextEl() {
+  return contentEl.querySelector("#display-text");
+}
+
+function showTagline(nextFn) {
+  contentEl.innerHTML = `<span id="display-text"></span>`;
+  shuffleTransition(TAGLINE, getTextEl(), () => {
+    cycleTimer = setTimeout(nextFn, TAGLINE_DURATION);
+  });
+}
+
+function showPage(page, nextFn) {
+  contentEl.innerHTML = `<div class="highscore-row">${buildHighscoreHTML(page)}</div>`;
+
+  const spans = contentEl.querySelectorAll(".highscore-entry .rank, .highscore-entry .name, .highscore-entry .score");
+  let pending = spans.length;
+  if (pending === 0) { cycleTimer = setTimeout(nextFn, PAGE_DURATION); return; }
+
+  spans.forEach(span => {
+    const target = span.textContent;
+    span.textContent = "";
+    shuffleTransition(target, span, () => {
+      pending--;
+      if (pending === 0) {
+        cycleTimer = setTimeout(nextFn, PAGE_DURATION);
+      }
+    }, { keepFixed: true });
+  });
+}
+
+function startDisplayCycle() {
+  if (cycleTimer) clearTimeout(cycleTimer);
+  cancelAllShuffles();
+
+  const pages = getHighscorePages();
+  let phase = 0;
+
+  function nextPhase() {
+    if (phase === 0) {
+      phase = 1;
+      if (pages.length > 0) {
+        nextPhase();
+      } else {
+        showTagline(nextPhase);
+      }
+      return;
+    }
+
+    const pageIndex = phase - 1;
+    if (pageIndex < pages.length) {
+      phase++;
+      showPage(pages[pageIndex], nextPhase);
+    } else {
+      phase = 0;
+      showTagline(nextPhase);
+    }
+  }
+
+  showTagline(nextPhase);
+}
 
 // --- Highscore fetching ---
 async function fetchHighscore() {
   try {
     const res = await fetch(`${getHTTPServerAddress()}/api/highscore`);
-    if (!res.ok) {
-      if (res.status === 404) {
-        loadingEl.textContent = "Highscore endpoint not available.";
-        return;
-      }
-      throw new Error(`HTTP ${res.status}`);
-    }
+    if (!res.ok) return;
 
     const data = await res.json();
-    loadingEl.style.display = "none";
-
-    const scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
-
-    if (scores.length > 0) {
-      contentEl.style.display = "grid";
-      noHighscoreEl.style.display = "none";
-      contentEl.innerHTML = scores.map((entry, i) => `
-        <div class="highscore-item">
-          <div class="rank">${i + 1}</div>
-          <div class="player-name">${entry.playerName || "Unknown"}</div>
-          <div class="score">${entry.score.toLocaleString()}</div>
-        </div>
-      `).join("");
-    } else {
-      contentEl.style.display = "none";
-      noHighscoreEl.style.display = "flex";
-    }
+    scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
   } catch (err) {
     console.error("Highscore fetch error:", err);
-    loadingEl.style.display = "flex";
-    loadingEl.textContent = `Error: ${err.message}`;
   }
 }
 
 // --- Visual effects ---
 function applyEffect(el, className) {
   el.classList.remove(className);
-  // Force reflow so re-adding the class restarts the animation
   void el.offsetWidth;
   el.classList.add(className);
   el.addEventListener("animationend", () => el.classList.remove(className), { once: true });
@@ -129,7 +250,7 @@ function connectWS() {
         flashColor(col1, msg.color || "#ff0000");
         flashColor(col2, msg.color || "#ff0000");
         applyEffect(col2, "shake");
-        fetchHighscore();
+        fetchHighscore().then(() => startDisplayCycle());
         break;
 
       case "gameEnd":
@@ -137,11 +258,11 @@ function connectWS() {
         applyEffect(col2, "flash-white");
         applyEffect(col1, "shake");
         applyEffect(col2, "shake");
-        setTimeout(fetchHighscore, 1000);
+        setTimeout(() => fetchHighscore().then(() => startDisplayCycle()), 1000);
         break;
 
       case "gameReset":
-        fetchHighscore();
+        fetchHighscore().then(() => startDisplayCycle());
         break;
     }
   });
@@ -157,6 +278,6 @@ function connectWS() {
 }
 
 // --- Init ---
-fetchHighscore();
-setInterval(fetchHighscore, 5000);
+fetchHighscore().then(() => startDisplayCycle());
+setInterval(() => fetchHighscore(), 30000);
 connectWS();
