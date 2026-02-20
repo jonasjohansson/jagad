@@ -129,6 +129,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // API: POST reset highscore
+  if (req.url === "/api/reset-highscore" && req.method === "POST") {
+    saveHighscoreRaw(SEED_DATA);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(SEED_DATA));
+    return;
+  }
+
   // Favicon
   if (req.url === "/favicon.ico") {
     res.writeHead(204);
