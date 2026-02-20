@@ -250,19 +250,19 @@ function connectWS() {
         flashColor(col1, msg.color || "#ff0000");
         flashColor(col2, msg.color || "#ff0000");
         applyEffect(col2, "shake");
-        fetchHighscore().then(() => startDisplayCycle());
+        fetchHighscore();
         break;
 
       case "gameEnd":
-        applyEffect(col1, "flash-white");
-        applyEffect(col2, "flash-white");
+        flashColor(col1, msg.color || "#ffffff");
+        flashColor(col2, msg.color || "#ffffff");
         applyEffect(col1, "shake");
         applyEffect(col2, "shake");
-        setTimeout(() => fetchHighscore().then(() => startDisplayCycle()), 1000);
+        fetchHighscore();
         break;
 
       case "gameReset":
-        fetchHighscore().then(() => startDisplayCycle());
+        fetchHighscore();
         break;
     }
   });
