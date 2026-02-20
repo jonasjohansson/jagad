@@ -10,9 +10,15 @@ const STATIC_ROOT = path.join(__dirname, "..");
 // ========== HIGHSCORE STORAGE ==========
 
 const SEED_DATA = [
-  { score: 999, playerName: "AAA", date: new Date().toISOString() },
-  { score: 500, playerName: "BBB", date: new Date().toISOString() },
-  { score: 100, playerName: "CCC", date: new Date().toISOString() },
+  { score: 500, playerName: "JGD", date: new Date().toISOString() },
+  { score: 450, playerName: "JGD", date: new Date().toISOString() },
+  { score: 400, playerName: "JGD", date: new Date().toISOString() },
+  { score: 350, playerName: "JGD", date: new Date().toISOString() },
+  { score: 300, playerName: "JGD", date: new Date().toISOString() },
+  { score: 250, playerName: "JGD", date: new Date().toISOString() },
+  { score: 200, playerName: "JGD", date: new Date().toISOString() },
+  { score: 150, playerName: "JGD", date: new Date().toISOString() },
+  { score: 100, playerName: "JGD", date: new Date().toISOString() },
 ];
 
 function loadHighscore() {
