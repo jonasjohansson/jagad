@@ -116,6 +116,17 @@ function getHighscorePages() {
   return pages;
 }
 
+// --- Fit text to container ---
+function fitToContainer(el) {
+  el.style.transform = "";
+  el.style.transformOrigin = "center center";
+  const containerWidth = contentEl.clientWidth;
+  const textWidth = el.scrollWidth;
+  if (textWidth > containerWidth) {
+    el.style.transform = `scaleX(${containerWidth / textWidth})`;
+  }
+}
+
 // --- Display cycle ---
 function getTextEl() {
   return contentEl.querySelector("#display-text");
