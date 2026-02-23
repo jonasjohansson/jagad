@@ -900,7 +900,15 @@ const loadingProgress = {
   function setupCameras(levelCenter, horizontalSize) {
     const aspect = window.innerWidth / window.innerHeight;
 
-    perspCamera = new THREE.PerspectiveCamera(settings.perspFov, aspect, settings.perspNear, settings.perspFar);
+    // Adjust FOV on narrower viewports to prevent board clipping
+    const referenceAspect = 16 / 9;
+    let perspFov = settings.perspFov;
+    if (aspect < referenceAspect) {
+      const baseFovRad = THREE.MathUtils.degToRad(settings.perspFov);
+      const adjustedFovRad = 2 * Math.atan(Math.tan(baseFovRad / 2) * referenceAspect / aspect);
+      perspFov = THREE.MathUtils.radToDeg(adjustedFovRad) * 1.1;
+    }
+    perspCamera = new THREE.PerspectiveCamera(perspFov, aspect, settings.perspNear, settings.perspFar);
     perspCamera.position.set(settings.perspPosX + (settings.perspPanX || 0), settings.perspPosY, settings.perspPosZ + (settings.perspPanZ || 0));
     perspCamera.lookAt(levelCenter.x + (settings.perspPanX || 0), levelCenter.y, levelCenter.z + (settings.perspPanZ || 0));
 
@@ -1080,12 +1088,25 @@ const loadingProgress = {
   // ============================================
 
   function onResize() {
-    const width = window.innerWidth;
+    const minDesktopWidth = 1400;
+    const width = settings.mobileEnabled ? window.innerWidth : Math.max(window.innerWidth, minDesktopWidth);
     const height = window.innerHeight;
     renderer.setSize(width, height);
+    // Allow horizontal scroll when viewport is below min width
+    document.body.style.overflowX = (!settings.mobileEnabled && window.innerWidth < minDesktopWidth) ? "auto" : "hidden";
 
     if (perspCamera) {
-      perspCamera.aspect = width / height;
+      const aspect = width / height;
+      perspCamera.aspect = aspect;
+      // Adjust FOV on narrower viewports to prevent board clipping
+      const referenceAspect = 16 / 9;
+      if (aspect < referenceAspect) {
+        const baseFovRad = THREE.MathUtils.degToRad(settings.perspFov);
+        const adjustedFovRad = 2 * Math.atan(Math.tan(baseFovRad / 2) * referenceAspect / aspect);
+        perspCamera.fov = THREE.MathUtils.radToDeg(adjustedFovRad) * 1.1;
+      } else {
+        perspCamera.fov = settings.perspFov;
+      }
       perspCamera.updateProjectionMatrix();
     }
 
