@@ -1089,12 +1089,23 @@ const loadingProgress = {
 
   function onResize() {
     const minDesktopWidth = 1400;
+    const minDesktopHeight = 800;
     const mobile = isMobileDevice();
     const width = mobile ? window.innerWidth : Math.max(window.innerWidth, minDesktopWidth);
-    const height = window.innerHeight;
+    const height = mobile ? window.innerHeight : Math.max(window.innerHeight, minDesktopHeight);
     renderer.setSize(width, height);
-    // Allow horizontal scroll when viewport is below min width
-    document.body.style.overflowX = (!mobile && window.innerWidth < minDesktopWidth) ? "auto" : "hidden";
+    // Center canvas when it exceeds viewport size
+    const canvas = renderer.domElement;
+    if (!mobile) {
+      const offsetX = Math.min(0, (window.innerWidth - width) / 2);
+      const offsetY = Math.min(0, (window.innerHeight - height) / 2);
+      canvas.style.left = offsetX + "px";
+      canvas.style.top = offsetY + "px";
+    } else {
+      canvas.style.left = "0px";
+      canvas.style.top = "0px";
+    }
+    document.body.style.overflow = "hidden";
 
     if (perspCamera) {
       const aspect = width / height;
