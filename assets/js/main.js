@@ -1089,11 +1089,12 @@ const loadingProgress = {
 
   function onResize() {
     const minDesktopWidth = 1400;
-    const width = settings.mobileEnabled ? window.innerWidth : Math.max(window.innerWidth, minDesktopWidth);
+    const mobile = isMobileDevice();
+    const width = mobile ? window.innerWidth : Math.max(window.innerWidth, minDesktopWidth);
     const height = window.innerHeight;
     renderer.setSize(width, height);
     // Allow horizontal scroll when viewport is below min width
-    document.body.style.overflowX = (!settings.mobileEnabled && window.innerWidth < minDesktopWidth) ? "auto" : "hidden";
+    document.body.style.overflowX = (!mobile && window.innerWidth < minDesktopWidth) ? "auto" : "hidden";
 
     if (perspCamera) {
       const aspect = width / height;
