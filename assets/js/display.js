@@ -1,3 +1,27 @@
+// --- Debug overlay ---
+const debugEl = document.createElement("div");
+debugEl.id = "debug-log";
+debugEl.style.cssText = "position:fixed;bottom:0;left:0;width:100%;max-height:25vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.4 monospace;padding:6px 10px;z-index:9999;pointer-events:none;";
+document.body.appendChild(debugEl);
+
+const debugLines = [];
+function debugLog(...args) {
+  const msg = args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
+  const time = new Date().toLocaleTimeString();
+  const line = `[${time}] ${msg}`;
+  debugLines.push(line);
+  if (debugLines.length > 30) debugLines.shift();
+  debugEl.textContent = debugLines.join("\n");
+  debugEl.scrollTop = debugEl.scrollHeight;
+  console.log(...args);
+  // Also send via WS if connected
+  if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "displayLog", message: msg }));
+  }
+}
+
+debugLog("[display] script loaded, origin:", window.location.origin);
+
 // --- Server address ---
 function getHTTPServerAddress() {
   const params = new URLSearchParams(window.location.search);
@@ -163,14 +187,17 @@ function startDisplayCycle() {
   cancelAllShuffles();
 
   const pages = getHighscorePages();
+  debugLog("[cycle] start, scores:", scores.length, "pages:", pages.length);
   let phase = 0;
 
   function nextPhase() {
+    debugLog("[cycle] nextPhase, phase:", phase, "pages:", pages.length);
     if (phase === 0) {
       phase = 1;
       if (pages.length > 0) {
         nextPhase();
       } else {
+        debugLog("[cycle] no pages, showing tagline only");
         showTagline(nextPhase);
       }
       return;
@@ -179,9 +206,11 @@ function startDisplayCycle() {
     const pageIndex = phase - 1;
     if (pageIndex < pages.length) {
       phase++;
+      debugLog("[cycle] showing score page", pageIndex + 1, "of", pages.length);
       showPage(pages[pageIndex], nextPhase);
     } else {
       phase = 0;
+      debugLog("[cycle] all pages shown, back to tagline");
       showTagline(nextPhase);
     }
   }
@@ -192,27 +221,27 @@ function startDisplayCycle() {
 // --- Highscore fetching ---
 async function fetchHighscore() {
   const url = `${getHTTPServerAddress()}/api/highscore`;
-  remoteLog("[display] fetching", url);
+  debugLog("[display] fetching", url);
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      remoteLog("[display] fetch failed, status:", res.status);
+      debugLog("[display] fetch failed, status:", res.status);
       return;
     }
 
     const oldLength = scores.length;
     const data = await res.json();
     scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
-    remoteLog("[display] scores loaded:", scores.length, "entries");
+    debugLog("[display] scores loaded:", scores.length, "entries");
 
     // Restart cycle if scores changed from empty to populated,
     // or if score data has changed
     if ((oldLength === 0 && scores.length > 0) || (scores.length > 0 && scoresChanged(data))) {
-      remoteLog("[display] scores changed, restarting cycle");
+      debugLog("[display] scores changed, restarting cycle");
       startDisplayCycle();
     }
   } catch (err) {
-    remoteLog("[display] fetch error:", err.message);
+    debugLog("[display] fetch error:", err.message);
     console.error("Highscore fetch error:", err);
   }
 }
@@ -254,15 +283,6 @@ function showBanner(text, durationMs = 3000) {
   }, durationMs);
 }
 
-// --- Remote logging (send console to admin via WS) ---
-function remoteLog(...args) {
-  const msg = args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
-  console.log(...args);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "displayLog", message: msg }));
-  }
-}
-
 // --- WebSocket ---
 let ws = null;
 
@@ -273,7 +293,7 @@ function connectWS() {
 
   ws.addEventListener("open", () => {
     console.log("Display WS connected");
-    remoteLog("[display] connected, server:", getHTTPServerAddress());
+    debugLog("[display] connected, server:", getHTTPServerAddress());
   });
 
   ws.addEventListener("message", (event) => {
@@ -328,8 +348,14 @@ function connectWS() {
 }
 
 // --- Init ---
+debugLog("[init] server:", getHTTPServerAddress());
+debugLog("[init] fetching initial scores...");
 fetchHighscore().then(() => {
+  debugLog("[init] initial fetch done, scores:", scores.length);
   lastScoreHash = JSON.stringify(scores);
+  startDisplayCycle();
+}).catch(err => {
+  debugLog("[init] initial fetch failed:", err.message);
   startDisplayCycle();
 });
 setInterval(() => fetchHighscore(), 30000);
