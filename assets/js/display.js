@@ -25,7 +25,9 @@ const scoreDebugEl = document.createElement("div");
 scoreDebugEl.id = "score-debug";
 scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.8);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;z-index:9999;pointer-events:none;white-space:pre;border-radius:4px;max-width:300px;";
 document.body.appendChild(scoreDebugEl);
-scoreDebugEl.textContent = "scores: loading...";
+const ua = navigator.userAgent;
+const chromeMatch = ua.match(/Chrome\/(\d+)/);
+scoreDebugEl.textContent = "scores: loading...\n" + (chromeMatch ? "Chrome/" + chromeMatch[1] : ua);
 
 let currentPhaseLabel = "init";
 function updateScoreDebug() {
@@ -143,11 +145,11 @@ function shuffleTransition(targetText, el, onDone, { keepFixed = false } = {}) {
 // --- Build highscore HTML for a page ---
 function buildHighscoreHTML(pageScores) {
   return pageScores.map(({ rank, playerName, score }) =>
-    `<span class="highscore-entry">` +
-    `<span class="rank">${rank}</span>` +
-    `<span class="name">${playerName || "???"}</span>` +
-    `<span class="score">${score.toLocaleString()}</span>` +
-    `</span>`
+    `<div class="highscore-entry">` +
+    `<div class="rank">${rank}</div>` +
+    `<div class="name">${playerName || "???"}</div>` +
+    `<div class="score">${score}</div>` +
+    `</div>`
   ).join("");
 }
 
