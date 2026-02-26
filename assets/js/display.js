@@ -20,6 +20,24 @@ function debugLog(...args) {
   }
 }
 
+// --- Score debug panel (bottom-right) ---
+const scoreDebugEl = document.createElement("div");
+scoreDebugEl.id = "score-debug";
+scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.8);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;z-index:9999;pointer-events:none;white-space:pre;border-radius:4px;max-width:300px;";
+document.body.appendChild(scoreDebugEl);
+scoreDebugEl.textContent = "scores: loading...";
+
+function updateScoreDebug() {
+  if (!scores.length) {
+    scoreDebugEl.textContent = "scores: [] (empty)";
+    return;
+  }
+  const lines = scores.map((s, i) =>
+    `${i + 1}. ${s.playerName || "???"} ${s.score}`
+  );
+  scoreDebugEl.textContent = `scores: ${scores.length}\n${lines.join("\n")}`;
+}
+
 // --- WebSocket ref (hoisted so debugLog can use it) ---
 let ws = null;
 
@@ -236,6 +254,7 @@ async function fetchHighscore() {
     const data = await res.json();
     scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
     debugLog("[display] scores loaded:", scores.length, "entries");
+    updateScoreDebug();
 
     // Restart cycle if scores changed from empty to populated,
     // or if score data has changed
@@ -246,6 +265,7 @@ async function fetchHighscore() {
   } catch (err) {
     debugLog("[display] fetch error:", err.message);
     console.error("Highscore fetch error:", err);
+    scoreDebugEl.textContent = "scores: ERROR\n" + err.message;
   }
 }
 
@@ -333,7 +353,9 @@ function connectWS() {
         break;
 
       case "toggleDebug":
-        debugEl.style.display = debugEl.style.display === "none" ? "" : "none";
+        const show = debugEl.style.display === "none";
+        debugEl.style.display = show ? "" : "none";
+        scoreDebugEl.style.display = show ? "" : "none";
         break;
 
       case "forceReload":
