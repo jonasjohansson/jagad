@@ -279,11 +279,15 @@ const loadingProgress = {
   // INPUT
   // ============================================
 
+  // Facade mode: remap C4 to z/x/c/v/b directly (no arrow keys)
+  // Normal mode: alias z/x/c/v/b to arrow keys so both work
+  if (isFacadeMode) {
+    CHASER_CONTROLS[3] = { up: "z", down: "x", left: "c", right: "v", enter: "b" };
+  }
+  const KEY_ALIASES = isFacadeMode ? {} : { z: "arrowup", x: "arrowdown", c: "arrowleft", v: "arrowright", b: "enter" };
+
   const keys = new Set();
-  const chaserControlKeys = [
-    "arrowup", "arrowdown", "arrowleft", "arrowright",
-    "w", "a", "s", "d", "e", "t", "f", "g", "h", "y", "i", "j", "k", "l", "o", "enter"
-  ];
+  const chaserControlKeys = CHASER_CONTROLS.flatMap(ctrl => [ctrl.up, ctrl.down, ctrl.left, ctrl.right, ctrl.enter]);
 
   // Character set for high score initials
   const HIGH_SCORE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -318,7 +322,7 @@ const loadingProgress = {
   }
 
   window.addEventListener("keydown", (e) => {
-    const keyLower = e.key.toLowerCase();
+    const keyLower = KEY_ALIASES[e.key.toLowerCase()] || e.key.toLowerCase();
 
     // Toggle GUI + stats panel with CMD/CTRL+G
     if (keyLower === "g" && (e.metaKey || e.ctrlKey)) {
@@ -431,7 +435,7 @@ const loadingProgress = {
 
     keys.add(keyLower);
   });
-  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+  window.addEventListener("keyup", (e) => keys.delete(KEY_ALIASES[e.key.toLowerCase()] || e.key.toLowerCase()));
   window.addEventListener("blur", () => keys.clear());
 
   // Touch input (mobile swipe controls for Chaser 1)
