@@ -27,15 +27,18 @@ scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgb
 document.body.appendChild(scoreDebugEl);
 scoreDebugEl.textContent = "scores: loading...";
 
+let currentPhaseLabel = "init";
 function updateScoreDebug() {
+  let text = `phase: ${currentPhaseLabel}\n`;
   if (!scores.length) {
-    scoreDebugEl.textContent = "scores: [] (empty)";
-    return;
+    text += "scores: [] (empty)";
+  } else {
+    const lines = scores.map((s, i) =>
+      `${i + 1}. ${s.playerName || "???"} ${s.score}`
+    );
+    text += `scores: ${scores.length}\n${lines.join("\n")}`;
   }
-  const lines = scores.map((s, i) =>
-    `${i + 1}. ${s.playerName || "???"} ${s.score}`
-  );
-  scoreDebugEl.textContent = `scores: ${scores.length}\n${lines.join("\n")}`;
+  scoreDebugEl.textContent = text;
 }
 
 // --- WebSocket ref (hoisted so debugLog can use it) ---
@@ -178,6 +181,8 @@ function getTextEl() {
 }
 
 function showTagline(nextFn) {
+  currentPhaseLabel = "tagline";
+  updateScoreDebug();
   contentEl.innerHTML = `<span id="display-text"></span>`;
   shuffleTransition(TAGLINE, getTextEl(), () => {
     cycleTimer = setTimeout(nextFn, TAGLINE_DURATION);
@@ -227,6 +232,8 @@ function startDisplayCycle() {
     const pageIndex = phase - 1;
     if (pageIndex < pages.length) {
       phase++;
+      currentPhaseLabel = `page ${pageIndex + 1}/${pages.length}`;
+      updateScoreDebug();
       debugLog("[cycle] showing score page", pageIndex + 1, "of", pages.length);
       showPage(pages[pageIndex], nextPhase);
     } else {
