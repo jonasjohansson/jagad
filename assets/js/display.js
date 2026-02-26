@@ -192,51 +192,49 @@ function showTagline(nextFn) {
 }
 
 function showPage(page, nextFn) {
-  // Simple single-line text, same approach as tagline
   const e = page[0];
-  const line = `${e.rank}  ${e.playerName || "???"}  ${e.score}`;
-  contentEl.innerHTML = `<span id="display-text"></span>`;
-  shuffleTransition(line, getTextEl(), () => {
-    cycleTimer = setTimeout(nextFn, PAGE_DURATION);
-  });
+  const line = e.rank + "  " + (e.playerName || "???") + "  " + e.score;
+  debugLog("[showPage] rendering:", line);
+  // Nuclear simple: just set text directly, no shuffle
+  contentEl.innerHTML = "";
+  var el = document.createElement("span");
+  el.id = "display-text";
+  el.textContent = line;
+  contentEl.appendChild(el);
+  cycleTimer = setTimeout(nextFn, PAGE_DURATION);
 }
 
 function startDisplayCycle() {
   if (cycleTimer) clearTimeout(cycleTimer);
   cancelAllShuffles();
 
-  const pages = getHighscorePages();
-  debugLog("[cycle] start, scores:", scores.length, "pages:", pages.length);
-  let phase = 0;
+  debugLog("[cycle] starting cycle");
+  let pageIndex = 0;
 
-  function nextPhase() {
-    debugLog("[cycle] nextPhase, phase:", phase, "pages:", pages.length);
-    if (phase === 0) {
-      phase = 1;
-      if (pages.length > 0) {
-        nextPhase();
-      } else {
-        debugLog("[cycle] no pages, showing tagline only");
-        showTagline(nextPhase);
-      }
+  function showNextScore() {
+    var pages = getHighscorePages();
+    debugLog("[cycle] showNextScore, pageIndex:", pageIndex, "pages:", pages.length);
+
+    if (pages.length === 0 || pageIndex >= pages.length) {
+      // Done with all scores (or no scores), show tagline then loop
+      pageIndex = 0;
+      currentPhaseLabel = "tagline";
+      updateScoreDebug();
+      showTagline(showNextScore);
       return;
     }
 
-    const pageIndex = phase - 1;
-    if (pageIndex < pages.length) {
-      phase++;
-      currentPhaseLabel = `page ${pageIndex + 1}/${pages.length}`;
-      updateScoreDebug();
-      debugLog("[cycle] showing score page", pageIndex + 1, "of", pages.length);
-      showPage(pages[pageIndex], nextPhase);
-    } else {
-      phase = 0;
-      debugLog("[cycle] all pages shown, back to tagline");
-      showTagline(nextPhase);
-    }
+    currentPhaseLabel = "page " + (pageIndex + 1) + "/" + pages.length;
+    updateScoreDebug();
+    debugLog("[cycle] showing score page", pageIndex + 1, "of", pages.length);
+    showPage(pages[pageIndex], showNextScore);
+    pageIndex++;
   }
 
-  showTagline(nextPhase);
+  // Start with tagline
+  currentPhaseLabel = "tagline";
+  updateScoreDebug();
+  showTagline(showNextScore);
 }
 
 // --- Highscore fetching ---
@@ -250,33 +248,15 @@ async function fetchHighscore() {
       return;
     }
 
-    const oldLength = scores.length;
     const data = await res.json();
     scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
     debugLog("[display] scores loaded:", scores.length, "entries");
     updateScoreDebug();
-
-    // Restart cycle if scores changed from empty to populated,
-    // or if score data has changed
-    if ((oldLength === 0 && scores.length > 0) || (scores.length > 0 && scoresChanged(data))) {
-      debugLog("[display] scores changed, restarting cycle");
-      startDisplayCycle();
-    }
   } catch (err) {
     debugLog("[display] fetch error:", err.message);
     console.error("Highscore fetch error:", err);
     scoreDebugEl.textContent = "scores: ERROR\n" + err.message;
   }
-}
-
-let lastScoreHash = "";
-function scoresChanged(data) {
-  const hash = JSON.stringify(data);
-  if (hash !== lastScoreHash) {
-    lastScoreHash = hash;
-    return true;
-  }
-  return false;
 }
 
 // --- Visual effects ---
@@ -379,11 +359,12 @@ debugLog("[init] server:", getHTTPServerAddress());
 debugLog("[init] fetching initial scores...");
 fetchHighscore().then(() => {
   debugLog("[init] initial fetch done, scores:", scores.length);
-  lastScoreHash = JSON.stringify(scores);
   startDisplayCycle();
 }).catch(err => {
   debugLog("[init] initial fetch failed:", err.message);
   startDisplayCycle();
 });
+// Poll for new scores every 30s (cycle will pick up changes naturally
+// since getHighscorePages reads from the live scores array)
 setInterval(() => fetchHighscore(), 30000);
 connectWS();
