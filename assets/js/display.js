@@ -339,7 +339,9 @@ function connectWS() {
         break;
 
       case "forceReload":
-        window.location.reload();
+        // Cache-busting reload: add timestamp to URL to bypass all caches
+        var url = window.location.href.split("?")[0] + "?reload=" + Date.now();
+        window.location.replace(url);
         break;
     }
   });
