@@ -432,6 +432,7 @@ const loadingProgress = {
     keys.add(keyLower);
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+  window.addEventListener("blur", () => keys.clear());
 
   // Touch input (mobile swipe controls for Chaser 1)
   initTouchInput(canvas, keys, STATE, markChaserReady, () => {
