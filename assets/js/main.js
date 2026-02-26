@@ -367,6 +367,12 @@ const loadingProgress = {
     if (chaserControlKeys.includes(keyLower)) {
       e.preventDefault();
       e.stopPropagation();
+      // Track last pressed axis per chaser for diagonal prevention
+      for (let i = 0; i < CHASER_CONTROLS.length; i++) {
+        const ctrl = CHASER_CONTROLS[i];
+        if (keyLower === ctrl.left || keyLower === ctrl.right) { lastAxis[i] = "x"; break; }
+        if (keyLower === ctrl.up || keyLower === ctrl.down) { lastAxis[i] = "z"; break; }
+      }
       // Return focus to canvas so GUI doesn't steal key events
       if (document.activeElement && document.activeElement !== document.body && document.activeElement !== canvas) {
         document.activeElement.blur();
@@ -476,6 +482,9 @@ const loadingProgress = {
     }
   }
 
+  // Track last pressed direction axis per chaser: "x" or "z"
+  const lastAxis = {};
+
   function getChaserInputDirection(chaserIndex) {
     if (chaserIndex >= CHASER_CONTROLS.length) return { x: 0, z: 0, hasInput: false };
     const ctrl = CHASER_CONTROLS[chaserIndex];
@@ -488,7 +497,11 @@ const loadingProgress = {
     if (keys.has(ctrl.left)) dx = -1;
     if (keys.has(ctrl.right)) dx = 1;
 
-    if (dz !== 0) dx = 0;
+    // Prevent diagonal: last pressed axis wins
+    if (dx !== 0 && dz !== 0) {
+      if (lastAxis[chaserIndex] === "x") dz = 0;
+      else dx = 0;
+    }
 
     const hasInput = dx !== 0 || dz !== 0;
     return { x: dx, z: dz, hasInput };
