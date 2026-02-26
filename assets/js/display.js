@@ -195,11 +195,28 @@ async function fetchHighscore() {
     const res = await fetch(`${getHTTPServerAddress()}/api/highscore`);
     if (!res.ok) return;
 
+    const oldLength = scores.length;
     const data = await res.json();
     scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
+
+    // Restart cycle if scores changed from empty to populated,
+    // or if score data has changed
+    if ((oldLength === 0 && scores.length > 0) || (scores.length > 0 && scoresChanged(data))) {
+      startDisplayCycle();
+    }
   } catch (err) {
     console.error("Highscore fetch error:", err);
   }
+}
+
+let lastScoreHash = "";
+function scoresChanged(data) {
+  const hash = JSON.stringify(data);
+  if (hash !== lastScoreHash) {
+    lastScoreHash = hash;
+    return true;
+  }
+  return false;
 }
 
 // --- Visual effects ---
@@ -293,6 +310,9 @@ function connectWS() {
 }
 
 // --- Init ---
-fetchHighscore().then(() => startDisplayCycle());
+fetchHighscore().then(() => {
+  lastScoreHash = JSON.stringify(scores);
+  startDisplayCycle();
+});
 setInterval(() => fetchHighscore(), 30000);
 connectWS();
