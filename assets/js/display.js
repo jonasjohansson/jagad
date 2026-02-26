@@ -15,10 +15,13 @@ function debugLog(...args) {
   debugEl.scrollTop = debugEl.scrollHeight;
   console.log(...args);
   // Also send via WS if connected
-  if (typeof ws !== "undefined" && ws && ws.readyState === WebSocket.OPEN) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "displayLog", message: msg }));
   }
 }
+
+// --- WebSocket ref (hoisted so debugLog can use it) ---
+let ws = null;
 
 debugLog("[display] script loaded, origin:", window.location.origin);
 
@@ -284,8 +287,6 @@ function showBanner(text, durationMs = 3000) {
 }
 
 // --- WebSocket ---
-let ws = null;
-
 function connectWS() {
   const url = getWSAddress();
   console.log("Display WS connecting to", url);
