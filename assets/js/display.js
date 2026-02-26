@@ -275,6 +275,10 @@ function connectWS() {
       case "gameReset":
         fetchHighscore();
         break;
+
+      case "forceReload":
+        window.location.reload();
+        break;
     }
   });
 
