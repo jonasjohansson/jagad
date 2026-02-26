@@ -192,21 +192,11 @@ function showTagline(nextFn) {
 }
 
 function showPage(page, nextFn) {
-  contentEl.innerHTML = `<div class="highscore-row">${buildHighscoreHTML(page)}</div>`;
-
-  const spans = contentEl.querySelectorAll(".highscore-entry .rank, .highscore-entry .name, .highscore-entry .score");
-  let pending = spans.length;
-  if (pending === 0) { cycleTimer = setTimeout(nextFn, PAGE_DURATION); return; }
-
-  spans.forEach(span => {
-    const target = span.textContent;
-    span.textContent = "";
-    shuffleTransition(target, span, () => {
-      pending--;
-      if (pending === 0) {
-        cycleTimer = setTimeout(nextFn, PAGE_DURATION);
-      }
-    }, { keepFixed: true });
+  // Simple single-line text, same approach as tagline
+  const line = page.map(e => `${e.rank}  ${e.playerName || "???"}  ${e.score}`).join("   ");
+  contentEl.innerHTML = `<span id="display-text"></span>`;
+  shuffleTransition(line, getTextEl(), () => {
+    cycleTimer = setTimeout(nextFn, PAGE_DURATION);
   });
 }
 
