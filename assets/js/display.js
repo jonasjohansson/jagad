@@ -191,20 +191,28 @@ function startDisplayCycle() {
 
 // --- Highscore fetching ---
 async function fetchHighscore() {
+  const url = `${getHTTPServerAddress()}/api/highscore`;
+  remoteLog("[display] fetching", url);
   try {
-    const res = await fetch(`${getHTTPServerAddress()}/api/highscore`);
-    if (!res.ok) return;
+    const res = await fetch(url);
+    if (!res.ok) {
+      remoteLog("[display] fetch failed, status:", res.status);
+      return;
+    }
 
     const oldLength = scores.length;
     const data = await res.json();
     scores = Array.isArray(data) ? data : (data && data.score !== undefined ? [data] : []);
+    remoteLog("[display] scores loaded:", scores.length, "entries");
 
     // Restart cycle if scores changed from empty to populated,
     // or if score data has changed
     if ((oldLength === 0 && scores.length > 0) || (scores.length > 0 && scoresChanged(data))) {
+      remoteLog("[display] scores changed, restarting cycle");
       startDisplayCycle();
     }
   } catch (err) {
+    remoteLog("[display] fetch error:", err.message);
     console.error("Highscore fetch error:", err);
   }
 }
@@ -246,6 +254,15 @@ function showBanner(text, durationMs = 3000) {
   }, durationMs);
 }
 
+// --- Remote logging (send console to admin via WS) ---
+function remoteLog(...args) {
+  const msg = args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
+  console.log(...args);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "displayLog", message: msg }));
+  }
+}
+
 // --- WebSocket ---
 let ws = null;
 
@@ -256,6 +273,7 @@ function connectWS() {
 
   ws.addEventListener("open", () => {
     console.log("Display WS connected");
+    remoteLog("[display] connected, server:", getHTTPServerAddress());
   });
 
   ws.addEventListener("message", (event) => {

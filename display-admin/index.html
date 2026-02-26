@@ -159,6 +159,17 @@
           log("Connected");
         });
 
+        ws.addEventListener("message", (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "displayLog") {
+              log(msg.message);
+            } else {
+              log("WS: " + msg.type);
+            }
+          } catch {}
+        });
+
         ws.addEventListener("close", () => {
           dot.className = "dot disconnected";
           statusText.textContent = "Disconnected";
