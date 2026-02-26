@@ -82,7 +82,7 @@ const contentEl = document.getElementById("display-right-content");
 const TAGLINE = "KAN DU FÅNGA RYMMARNA?";
 const TAGLINE_DURATION = 10000;
 const PAGE_DURATION = 6000;
-const PAGE_SIZE = 3;
+const PAGE_SIZE = 1;
 const SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const SHUFFLE_DURATION = 600;
 const SHUFFLE_INTERVAL = 40;
@@ -193,7 +193,8 @@ function showTagline(nextFn) {
 
 function showPage(page, nextFn) {
   // Simple single-line text, same approach as tagline
-  const line = page.map(e => `${e.rank}  ${e.playerName || "???"}  ${e.score}`).join("   ");
+  const e = page[0];
+  const line = `${e.rank}  ${e.playerName || "???"}  ${e.score}`;
   contentEl.innerHTML = `<span id="display-text"></span>`;
   shuffleTransition(line, getTextEl(), () => {
     cycleTimer = setTimeout(nextFn, PAGE_DURATION);
