@@ -1,7 +1,7 @@
 // --- Debug overlay ---
 const debugEl = document.createElement("div");
 debugEl.id = "debug-log";
-debugEl.style.cssText = "position:fixed;bottom:0;left:0;width:100%;max-height:25vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.4 monospace;padding:6px 10px;z-index:9999;pointer-events:none;";
+debugEl.style.cssText = "position:fixed;bottom:0;left:0;width:100%;max-height:25vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.4 monospace;padding:6px 10px;z-index:9999;pointer-events:none;display:none;";
 document.body.appendChild(debugEl);
 
 const debugLines = [];
@@ -330,6 +330,10 @@ function connectWS() {
 
       case "gameReset":
         fetchHighscore();
+        break;
+
+      case "toggleDebug":
+        debugEl.style.display = debugEl.style.display === "none" ? "" : "none";
         break;
 
       case "forceReload":

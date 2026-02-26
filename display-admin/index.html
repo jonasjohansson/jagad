@@ -102,6 +102,7 @@
     </div>
     <div class="controls">
       <button class="primary" id="btn-reload">Force Reload Display</button>
+      <button id="btn-toggle-debug">Toggle Debug Log</button>
     </div>
     <div class="log" id="log"></div>
     <script>
@@ -193,6 +194,10 @@
 
       document.getElementById("btn-reload").addEventListener("click", () => {
         sendCommand("forceReload");
+      });
+
+      document.getElementById("btn-toggle-debug").addEventListener("click", () => {
+        sendCommand("toggleDebug");
       });
 
       connectWS();
