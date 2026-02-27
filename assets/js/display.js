@@ -202,45 +202,31 @@ function showTagline(nextFn) {
   });
 }
 
-function showPage(page, nextFn) {
-  debugLog("[showPage] rendering", page.length, "entries");
-  contentEl.innerHTML = buildHighscoreHTML(page);
-  cycleTimer = setTimeout(nextFn, PAGE_DURATION);
+var cycleInterval = null;
+var pageIndex = 0;
+
+function showCurrentPage() {
+  var pages = getHighscorePages();
+
+  if (pages.length === 0) {
+    contentEl.innerHTML = '<span id="display-text">NO SCORES</span>';
+    return;
+  }
+
+  if (pageIndex >= pages.length) {
+    pageIndex = 0;
+  }
+
+  debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
+  contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
+  pageIndex++;
 }
 
 function startDisplayCycle() {
-  if (cycleTimer) clearTimeout(cycleTimer);
-  cancelAllShuffles();
-
+  if (cycleInterval) clearInterval(cycleInterval);
   debugLog("[cycle] starting cycle");
-  let pageIndex = 0;
-
-  function showNextScore() {
-    var pages = getHighscorePages();
-    debugLog("[cycle] showNextScore, pageIndex:", pageIndex, "pages:", pages.length);
-
-    if (pages.length === 0) {
-      // No scores yet, wait and retry
-      pageIndex = 0;
-      debugLog("[cycle] no scores, waiting 3s");
-      contentEl.innerHTML = '<span id="display-text">NO SCORES</span>';
-      cycleTimer = setTimeout(showNextScore, 3000);
-      return;
-    }
-
-    if (pageIndex >= pages.length) {
-      pageIndex = 0;
-    }
-
-    currentPhaseLabel = "page " + (pageIndex + 1) + "/" + pages.length;
-    updateScoreDebug();
-    debugLog("[cycle] showing score page", pageIndex + 1, "of", pages.length);
-    showPage(pages[pageIndex], showNextScore);
-    pageIndex++;
-  }
-
-  // Start directly with scores (no tagline)
-  showNextScore();
+  showCurrentPage();
+  cycleInterval = setInterval(showCurrentPage, PAGE_DURATION);
 }
 
 // --- Highscore fetching ---
