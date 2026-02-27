@@ -192,46 +192,45 @@ function fitToContainer(el) {
 }
 
 // --- Display cycle ---
-// Flat tick cycle: tagline 10s, then 3s per score page, repeat
-// Total cycle = 10 + (3 * number_of_pages), ticks at 1s
+// Simple setInterval that cycles: page0, page1, page2, tagline, repeat
+// Each step shows for 3 seconds, tagline for 10 seconds
 var cycleInterval = null;
-var cycleTick = 0;
+var pageIndex = 0;
 
 function startDisplayCycle() {
   if (cycleInterval) clearInterval(cycleInterval);
   debugLog("[cycle] starting, scores:", scores.length);
 
-  // Show tagline first
-  contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-  cycleTick = 0;
+  // Show first content immediately
+  var pages = getHighscorePages();
+  if (pages.length > 0) {
+    contentEl.innerHTML = buildHighscoreHTML(pages[0]);
+    pageIndex = 1;
+  } else {
+    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+    pageIndex = 0;
+  }
 
   cycleInterval = setInterval(function() {
-    cycleTick++;
     var pages = getHighscorePages();
-    var numPages = pages.length;
-    var totalTicks = 10 + numPages * 3; // 10s tagline + 3s per page
 
-    // Wrap around
-    var t = cycleTick % totalTicks;
+    if (pages.length === 0) {
+      contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+      return;
+    }
 
-    if (t === 0) {
-      // Start of cycle: tagline
+    if (pageIndex < pages.length) {
+      // Show next score page
+      debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
+      contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
+      pageIndex++;
+    } else {
+      // Show tagline, then reset
       debugLog("[cycle] tagline");
       contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-    } else if (t === 10) {
-      // First score page
-      debugLog("[cycle] page 1 of", numPages);
-      if (numPages > 0) contentEl.innerHTML = buildHighscoreHTML(pages[0]);
-    } else if (t === 13) {
-      // Second score page
-      debugLog("[cycle] page 2 of", numPages);
-      if (numPages > 1) contentEl.innerHTML = buildHighscoreHTML(pages[1]);
-    } else if (t === 16) {
-      // Third score page
-      debugLog("[cycle] page 3 of", numPages);
-      if (numPages > 2) contentEl.innerHTML = buildHighscoreHTML(pages[2]);
+      pageIndex = 0;
     }
-  }, 1000);
+  }, 3000);
 }
 
 // --- Highscore fetching ---
