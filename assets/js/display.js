@@ -96,34 +96,34 @@ function cancelAllShuffles() {
   activeShuffleIntervals = [];
 }
 
-// --- Shuffle text effect (per-character, fixed-width spans) ---
+// --- Shuffle text effect (tick-based, no performance.now) ---
 function shuffleTransition(targetText, el, onDone, { keepFixed = false } = {}) {
-  const len = targetText.length;
-  const stagger = 30; // ms delay per character
-  const charDuration = SHUFFLE_DURATION;
-  const startTime = performance.now();
+  var len = targetText.length;
+  var ticksPerChar = Math.ceil(SHUFFLE_DURATION / SHUFFLE_INTERVAL); // ticks before a char resolves
+  var staggerTicks = Math.max(1, Math.round(30 / SHUFFLE_INTERVAL)); // ticks between each char start
+  var tick = 0;
 
   el.innerHTML = "";
-  const charSpans = [];
-  for (let i = 0; i < len; i++) {
-    const span = document.createElement("span");
+  var charSpans = [];
+  for (var i = 0; i < len; i++) {
+    var span = document.createElement("span");
     if (keepFixed) span.className = "shuffle-char";
     span.textContent = targetText[i] === " " ? "\u00A0" : SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
     el.appendChild(span);
-    charSpans.push({ span, target: targetText[i], resolved: false, start: stagger * i });
+    charSpans.push({ span: span, target: targetText[i], resolved: false, startTick: staggerTicks * i });
   }
 
-  const interval = setInterval(() => {
-    const now = performance.now() - startTime;
-    let allDone = true;
+  var interval = setInterval(function() {
+    var allDone = true;
 
-    for (const ch of charSpans) {
+    for (var j = 0; j < charSpans.length; j++) {
+      var ch = charSpans[j];
       if (ch.resolved) continue;
-      const elapsed = now - ch.start;
-      if (elapsed >= charDuration) {
+      var elapsed = tick - ch.startTick;
+      if (elapsed >= ticksPerChar) {
         ch.span.textContent = ch.target === " " ? "\u00A0" : ch.target;
         ch.resolved = true;
-      } else if (elapsed > 0) {
+      } else if (elapsed >= 0) {
         ch.span.textContent = ch.target === " " ? "\u00A0" : SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
         allDone = false;
       } else {
@@ -131,9 +131,11 @@ function shuffleTransition(targetText, el, onDone, { keepFixed = false } = {}) {
       }
     }
 
+    tick++;
+
     if (allDone) {
       clearInterval(interval);
-      activeShuffleIntervals = activeShuffleIntervals.filter(id => id !== interval);
+      activeShuffleIntervals = activeShuffleIntervals.filter(function(id) { return id !== interval; });
       if (!keepFixed) el.textContent = targetText;
       if (onDone) onDone();
     }
