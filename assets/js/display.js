@@ -206,56 +206,44 @@ function showTagline(nextFn) {
   });
 }
 
-// Tick-based cycle using setInterval (1 tick = 1 second)
-// Tagline: 10 ticks, each score page: 3 ticks
-var TAGLINE_TICKS = 10;
-var SCORE_TICKS = 3;
+// Flat tick cycle: tagline 10s, then 3s per score page, repeat
+// Total cycle = 10 + (3 * number_of_pages), ticks at 1s
 var cycleInterval = null;
-var tickCount = 0;
-
-function getCycleSchedule() {
-  // Build schedule: [{type:"tagline", ticks:10}, {type:"scores", page:0, ticks:3}, ...]
-  var pages = getHighscorePages();
-  var schedule = [];
-  schedule.push({ type: "tagline", ticks: TAGLINE_TICKS });
-  for (var i = 0; i < pages.length; i++) {
-    schedule.push({ type: "scores", page: i, ticks: SCORE_TICKS });
-  }
-  return schedule;
-}
-
-function renderCycleItem(item) {
-  var pages = getHighscorePages();
-  if (item.type === "tagline") {
-    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-  } else {
-    contentEl.innerHTML = buildHighscoreHTML(pages[item.page]);
-  }
-}
+var cycleTick = 0;
 
 function startDisplayCycle() {
   if (cycleInterval) clearInterval(cycleInterval);
-  debugLog("[cycle] starting cycle");
+  debugLog("[cycle] starting, scores:", scores.length);
 
-  var schedule = getCycleSchedule();
-  var slotIndex = 0;
-  var slotTick = 0;
-
-  // Show first item immediately
-  renderCycleItem(schedule[0]);
-  debugLog("[cycle] slot 0:", schedule[0].type);
+  // Show tagline first
+  contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+  cycleTick = 0;
 
   cycleInterval = setInterval(function() {
-    slotTick++;
-    if (slotTick >= schedule[slotIndex].ticks) {
-      slotTick = 0;
-      slotIndex++;
-      if (slotIndex >= schedule.length) {
-        slotIndex = 0;
-        schedule = getCycleSchedule(); // refresh scores
-      }
-      debugLog("[cycle] slot", slotIndex, ":", schedule[slotIndex].type);
-      renderCycleItem(schedule[slotIndex]);
+    cycleTick++;
+    var pages = getHighscorePages();
+    var numPages = pages.length;
+    var totalTicks = 10 + numPages * 3; // 10s tagline + 3s per page
+
+    // Wrap around
+    var t = cycleTick % totalTicks;
+
+    if (t === 0) {
+      // Start of cycle: tagline
+      debugLog("[cycle] tagline");
+      contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+    } else if (t === 10) {
+      // First score page
+      debugLog("[cycle] page 1 of", numPages);
+      if (numPages > 0) contentEl.innerHTML = buildHighscoreHTML(pages[0]);
+    } else if (t === 13) {
+      // Second score page
+      debugLog("[cycle] page 2 of", numPages);
+      if (numPages > 1) contentEl.innerHTML = buildHighscoreHTML(pages[1]);
+    } else if (t === 16) {
+      // Third score page
+      debugLog("[cycle] page 3 of", numPages);
+      if (numPages > 2) contentEl.innerHTML = buildHighscoreHTML(pages[2]);
     }
   }, 1000);
 }
