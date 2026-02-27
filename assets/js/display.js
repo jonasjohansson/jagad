@@ -372,9 +372,21 @@ debugLog("[init] server:", getHTTPServerAddress());
 debugLog("[init] fetching initial scores...");
 fetchHighscore().then(() => {
   debugLog("[init] initial fetch done, scores:", scores.length);
+  // If fetch returned nothing, inject test scores so we can tell it's a fetch issue
+  if (scores.length === 0) {
+    scores = [
+      { playerName: "TEST1", score: 999 },
+      { playerName: "TEST2", score: 888 },
+      { playerName: "TEST3", score: 777 }
+    ];
+    debugLog("[init] no scores from server, using test data");
+  }
   startDisplayCycle();
 }).catch(err => {
   debugLog("[init] initial fetch failed:", err.message);
+  scores = [
+    { playerName: "FETCH-ERR", score: 0 }
+  ];
   startDisplayCycle();
 });
 // Poll for new scores every 30s (cycle will pick up changes naturally
