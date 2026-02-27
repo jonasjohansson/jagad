@@ -336,6 +336,7 @@ function connectWS() {
         const show = debugEl.style.display === "none";
         debugEl.style.display = show ? "" : "none";
         scoreDebugEl.style.display = show ? "" : "none";
+        document.getElementById("display-text").style.display = show ? "" : "none";
         break;
 
       case "forceReload":
