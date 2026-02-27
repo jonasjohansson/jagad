@@ -339,9 +339,19 @@ function connectWS() {
         break;
 
       case "forceReload":
-        // Cache-busting reload: add timestamp to URL to bypass all caches
-        var url = window.location.href.split("?")[0] + "?reload=" + Date.now();
-        window.location.replace(url);
+        // Unregister service workers and clear caches, then hard reload
+        (async () => {
+          if ("serviceWorker" in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+          }
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          var url = window.location.href.split("?")[0] + "?reload=" + Date.now();
+          window.location.replace(url);
+        })();
         break;
     }
   });
