@@ -83,7 +83,7 @@ const contentEl = document.getElementById("display-right-content");
 const TAGLINE = "KAN DU FÅNGA RYMMARNA?";
 const TAGLINE_DURATION = 10000;
 const PAGE_DURATION = 6000;
-const PAGE_SIZE = 1;
+const PAGE_SIZE = 3;
 const SHUFFLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const SHUFFLE_DURATION = 600;
 const SHUFFLE_INTERVAL = 40;
@@ -203,13 +203,9 @@ function showTagline(nextFn) {
 }
 
 function showPage(page, nextFn) {
-  const e = page[0];
-  const line = e.rank + "  " + (e.playerName || "???") + "  " + e.score;
-  debugLog("[showPage] rendering:", line);
-  contentEl.innerHTML = '<span id="display-text"></span>';
-  shuffleTransition(line, getTextEl(), function() {
-    cycleTimer = setTimeout(nextFn, PAGE_DURATION);
-  });
+  debugLog("[showPage] rendering", page.length, "entries");
+  contentEl.innerHTML = buildHighscoreHTML(page);
+  cycleTimer = setTimeout(nextFn, PAGE_DURATION);
 }
 
 function startDisplayCycle() {
