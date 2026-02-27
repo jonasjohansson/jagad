@@ -46,11 +46,13 @@ function saveHighscoreRaw(scores) {
 
 function addHighscore(entry) {
   let scores = loadHighscore();
-  scores.push({
+  var obj = {
     score: Math.min(entry.score, 999),
     playerName: (entry.playerName || "???").substring(0, 3),
     date: new Date().toISOString(),
-  });
+  };
+  if (entry.color) obj.color = entry.color;
+  scores.push(obj);
   scores.sort((a, b) => b.score - a.score);
   scores = scores.slice(0, 10);
   saveHighscoreRaw(scores);

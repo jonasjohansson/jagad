@@ -155,24 +155,28 @@ function shuffleTransition(targetText, el, onDone) {
 
 // --- Build highscore HTML for a page ---
 function buildHighscoreHTML(pageScores) {
-  return pageScores.map(({ rank, playerName, score }) =>
-    `<div class="highscore-entry">` +
-    `<div class="rank">${rank}</div>` +
-    `<div class="name">${playerName || "???"}</div>` +
-    `<div class="score">${score}</div>` +
-    `</div>`
-  ).join("");
+  return pageScores.map(function(e) {
+    var nameStyle = e.color ? ' style="color:' + e.color + '"' : '';
+    return '<div class="highscore-entry">' +
+      '<div class="rank">' + e.rank + '</div>' +
+      '<div class="name"' + nameStyle + '>' + (e.playerName || "???") + '</div>' +
+      '<div class="score">' + e.score + '</div>' +
+      '</div>';
+  }).join("");
 }
 
 function getHighscorePages() {
-  const capped = scores.slice(0, 9);
-  const pages = [];
-  for (let i = 0; i < capped.length; i += PAGE_SIZE) {
-    pages.push(capped.slice(i, i + PAGE_SIZE).map((entry, j) => ({
-      rank: i + j + 1,
-      playerName: entry.playerName,
-      score: entry.score
-    })));
+  var capped = scores.slice(0, 9);
+  var pages = [];
+  for (var i = 0; i < capped.length; i += PAGE_SIZE) {
+    pages.push(capped.slice(i, i + PAGE_SIZE).map(function(entry, j) {
+      return {
+        rank: i + j + 1,
+        playerName: entry.playerName,
+        score: entry.score,
+        color: entry.color || null
+      };
+    }));
   }
   return pages;
 }
@@ -204,12 +208,22 @@ function showTagline(nextFn) {
 
 var cycleInterval = null;
 var pageIndex = 0;
+var showingTagline = true;
 
-function showCurrentPage() {
+function cycleNext() {
   var pages = getHighscorePages();
 
+  if (showingTagline) {
+    // Show tagline
+    debugLog("[cycle] tagline");
+    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+    showingTagline = false;
+    return;
+  }
+
+  // Show scores page
   if (pages.length === 0) {
-    contentEl.innerHTML = '<span id="display-text">NO SCORES</span>';
+    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
     return;
   }
 
@@ -220,13 +234,14 @@ function showCurrentPage() {
   debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
   contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
   pageIndex++;
+  showingTagline = true; // next tick shows tagline
 }
 
 function startDisplayCycle() {
   if (cycleInterval) clearInterval(cycleInterval);
   debugLog("[cycle] starting cycle");
-  showCurrentPage();
-  cycleInterval = setInterval(showCurrentPage, PAGE_DURATION);
+  cycleNext();
+  cycleInterval = setInterval(cycleNext, PAGE_DURATION);
 }
 
 // --- Highscore fetching ---

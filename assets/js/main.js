@@ -866,7 +866,7 @@ const loadingProgress = {
     saveHighScores(highScores);
 
     // Post to server and refresh cache from response
-    postHighScore({ score, playerName: initials })
+    postHighScore({ score, playerName: initials, color: STATE.highScoreInitialsColor || null })
       .then(() => fetchServerHighScores());
 
     STATE.enteringHighScore = false;
@@ -2245,7 +2245,7 @@ const loadingProgress = {
         applyGameOverText();
         updateGlassCanvas();
         setTimeout(() => updateGlassCanvas(), 500);
-        postHighScore({ score: STATE.playerScore, playerName: "???" })
+        postHighScore({ score: STATE.playerScore, playerName: "???", color: STATE.highScoreInitialsColor || null })
           .then(() => fetchServerHighScores());
         STATE.showingScore = true;
         STATE.scoreDisplayTime = 5;
@@ -2256,7 +2256,7 @@ const loadingProgress = {
       if (allCaught) settings.glassTextRow2 = " FÅNGADE!";
       updateGlassCanvas();
       setTimeout(() => updateGlassCanvas(), 500);
-      postHighScore({ score: STATE.playerScore, playerName: "???" })
+      postHighScore({ score: STATE.playerScore, playerName: "???", color: STATE.highScoreInitialsColor || null })
         .then(() => fetchServerHighScores());
       STATE.showingScore = true;
       STATE.scoreDisplayTime = 5;
