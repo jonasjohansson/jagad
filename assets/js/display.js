@@ -23,7 +23,8 @@ function debugLog(...args) {
 // --- Score debug panel (bottom-right) ---
 const scoreDebugEl = document.createElement("div");
 scoreDebugEl.id = "score-debug";
-scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.8);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;z-index:9999;pointer-events:none;white-space:pre;border-radius:4px;max-width:300px;display:none;";
+scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.8);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;z-index:9999;pointer-events:none;white-space:pre;border-radius:4px;max-width:300px;";
+scoreDebugEl.style.display = "none";
 document.body.appendChild(scoreDebugEl);
 const ua = navigator.userAgent;
 const chromeMatch = ua.match(/Chrome\/(\d+)/);
@@ -96,26 +97,38 @@ function cancelAllShuffles() {
   activeShuffleIntervals = [];
 }
 
-// --- Shuffle text effect (tick-based, no performance.now) ---
-function shuffleTransition(targetText, el, onDone, { keepFixed = false } = {}) {
+// --- Shuffle text effect (tick-based, with safety timeout) ---
+function shuffleTransition(targetText, el, onDone) {
   var len = targetText.length;
-  var ticksPerChar = Math.ceil(SHUFFLE_DURATION / SHUFFLE_INTERVAL); // ticks before a char resolves
-  var staggerTicks = Math.max(1, Math.round(30 / SHUFFLE_INTERVAL)); // ticks between each char start
+  var ticksPerChar = Math.ceil(SHUFFLE_DURATION / SHUFFLE_INTERVAL);
+  var staggerTicks = Math.max(1, Math.round(30 / SHUFFLE_INTERVAL));
+  var maxTicks = ticksPerChar + staggerTicks * len + 10; // safety cap
   var tick = 0;
+  var done = false;
+
+  function finish() {
+    if (done) return;
+    done = true;
+    clearInterval(interval);
+    activeShuffleIntervals = activeShuffleIntervals.filter(function(id) { return id !== interval; });
+    el.textContent = targetText;
+    if (onDone) onDone();
+  }
 
   el.innerHTML = "";
   var charSpans = [];
   for (var i = 0; i < len; i++) {
     var span = document.createElement("span");
-    if (keepFixed) span.className = "shuffle-char";
     span.textContent = targetText[i] === " " ? "\u00A0" : SHUFFLE_CHARS[Math.floor(Math.random() * SHUFFLE_CHARS.length)];
     el.appendChild(span);
     charSpans.push({ span: span, target: targetText[i], resolved: false, startTick: staggerTicks * i });
   }
 
   var interval = setInterval(function() {
-    var allDone = true;
+    tick++;
+    if (tick > maxTicks) { finish(); return; }
 
+    var allDone = true;
     for (var j = 0; j < charSpans.length; j++) {
       var ch = charSpans[j];
       if (ch.resolved) continue;
@@ -131,17 +144,13 @@ function shuffleTransition(targetText, el, onDone, { keepFixed = false } = {}) {
       }
     }
 
-    tick++;
-
-    if (allDone) {
-      clearInterval(interval);
-      activeShuffleIntervals = activeShuffleIntervals.filter(function(id) { return id !== interval; });
-      if (!keepFixed) el.textContent = targetText;
-      if (onDone) onDone();
-    }
+    if (allDone) finish();
   }, SHUFFLE_INTERVAL);
 
   activeShuffleIntervals.push(interval);
+
+  // Hard safety: force-resolve after 2 seconds no matter what
+  setTimeout(finish, 2000);
 }
 
 // --- Build highscore HTML for a page ---
@@ -188,7 +197,7 @@ function showTagline(nextFn) {
   currentPhaseLabel = "tagline";
   updateScoreDebug();
   contentEl.innerHTML = `<span id="display-text"></span>`;
-  shuffleTransition(TAGLINE, getTextEl(), () => {
+  shuffleTransition(TAGLINE, getTextEl(), function() {
     cycleTimer = setTimeout(nextFn, TAGLINE_DURATION);
   });
 }
