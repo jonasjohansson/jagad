@@ -89,7 +89,6 @@ const SHUFFLE_DURATION = 600;
 const SHUFFLE_INTERVAL = 40;
 
 let scores = [];
-let cycleTimer = null;
 let activeShuffleIntervals = [];
 
 function cancelAllShuffles() {
@@ -193,19 +192,6 @@ function fitToContainer(el) {
 }
 
 // --- Display cycle ---
-function getTextEl() {
-  return contentEl.querySelector("#display-text");
-}
-
-function showTagline(nextFn) {
-  currentPhaseLabel = "tagline";
-  updateScoreDebug();
-  contentEl.innerHTML = `<span id="display-text"></span>`;
-  shuffleTransition(TAGLINE, getTextEl(), function() {
-    cycleTimer = setTimeout(nextFn, TAGLINE_DURATION);
-  });
-}
-
 // Flat tick cycle: tagline 10s, then 3s per score page, repeat
 // Total cycle = 10 + (3 * number_of_pages), ticks at 1s
 var cycleInterval = null;
