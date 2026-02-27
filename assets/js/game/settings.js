@@ -263,7 +263,7 @@ export const defaultSettings = {
   // High score entry text (supports ${score}, ${time}, ${caught}, ${total}, ${status}, ${initials}, ${s1}, ${s2}, ${s3}, ${hs1i}, ${hs1s}, ${hs2i}, ${hs2s}, ${hs3i}, ${hs3s})
   highScoreTextRow1: "",
   highScoreTextRow2: "${initials}",
-  highScoreTextRow3: "",
+  highScoreTextRow3: "${score}",
   highScoreTextRow4: "",
 
   // Game Over text - no high score (same template variables available)
