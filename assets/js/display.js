@@ -206,36 +206,41 @@ function showTagline(nextFn) {
   });
 }
 
-var cycleInterval = null;
-var pageIndex = 0;
+var SCORE_DURATION = 3000;
+var cycleTimer = null;
 
-function cycleNext() {
+function runCycle() {
   var pages = getHighscorePages();
+  var step = 0;
 
-  if (pages.length === 0) {
-    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-    return;
+  function next() {
+    if (step === 0) {
+      // Tagline
+      debugLog("[cycle] tagline");
+      contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+      step++;
+      cycleTimer = setTimeout(next, TAGLINE_DURATION);
+    } else if (step <= pages.length) {
+      // Score page
+      var idx = step - 1;
+      debugLog("[cycle] page", idx + 1, "of", pages.length);
+      contentEl.innerHTML = buildHighscoreHTML(pages[idx]);
+      step++;
+      cycleTimer = setTimeout(next, SCORE_DURATION);
+    } else {
+      // Loop
+      step = 0;
+      next();
+    }
   }
 
-  // Cycle: page0, page1, page2, tagline, page0, page1, ...
-  if (pageIndex >= pages.length) {
-    // Show tagline once after all score pages
-    debugLog("[cycle] tagline");
-    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-    pageIndex = 0;
-    return;
-  }
-
-  debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
-  contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
-  pageIndex++;
+  next();
 }
 
 function startDisplayCycle() {
-  if (cycleInterval) clearInterval(cycleInterval);
+  if (cycleTimer) clearTimeout(cycleTimer);
   debugLog("[cycle] starting cycle");
-  cycleNext();
-  cycleInterval = setInterval(cycleNext, PAGE_DURATION);
+  runCycle();
 }
 
 // --- Highscore fetching ---
