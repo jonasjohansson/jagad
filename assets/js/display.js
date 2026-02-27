@@ -230,7 +230,7 @@ function startDisplayCycle() {
       contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
       pageIndex = 0;
     }
-  }, 3000);
+  }, 6000);
 }
 
 // --- Highscore fetching ---
