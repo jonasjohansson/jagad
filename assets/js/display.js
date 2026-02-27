@@ -208,33 +208,27 @@ function showTagline(nextFn) {
 
 var cycleInterval = null;
 var pageIndex = 0;
-var showingTagline = true;
 
 function cycleNext() {
   var pages = getHighscorePages();
 
-  if (showingTagline) {
-    // Show tagline
-    debugLog("[cycle] tagline");
-    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-    showingTagline = false;
-    return;
-  }
-
-  // Show scores page
   if (pages.length === 0) {
     contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
     return;
   }
 
+  // Cycle: page0, page1, page2, tagline, page0, page1, ...
   if (pageIndex >= pages.length) {
+    // Show tagline once after all score pages
+    debugLog("[cycle] tagline");
+    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
     pageIndex = 0;
+    return;
   }
 
   debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
   contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
   pageIndex++;
-  showingTagline = true; // next tick shows tagline
 }
 
 function startDisplayCycle() {
