@@ -826,9 +826,8 @@ const loadingProgress = {
   function startHighScoreEntry(position) {
     STATE.enteringHighScore = true;
     STATE.highScorePosition = 0;
-    // Reset initials to AAA each time
-    STATE.highScoreInitials = ["A", "A", "A"];
-    STATE.highScoreCharIndex = 0;
+    // Keep previous initials as starting point
+    STATE.highScoreCharIndex = Math.max(0, HIGH_SCORE_CHARS.indexOf(STATE.highScoreInitials[0]));
     STATE.newHighScoreRank = position;
     // Set initials color to first player's color
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
@@ -2278,6 +2277,7 @@ const loadingProgress = {
     STATE.enteringHighScore = false;
     STATE.highScorePosition = 0;
     STATE.highScoreCharIndex = 0;
+    STATE.highScoreInitials = ["A", "A", "A"];
     STATE.highScoreInitialsColor = null;
     STATE.countdownValue = 3;
     STATE.countdownTimer = 0;
