@@ -224,9 +224,11 @@ function startDisplayCycle() {
     debugLog("[cycle] showNextScore, pageIndex:", pageIndex, "pages:", pages.length);
 
     if (pages.length === 0) {
-      // No scores, show tagline and retry
+      // No scores yet, wait and retry
       pageIndex = 0;
-      showTagline(showNextScore);
+      debugLog("[cycle] no scores, waiting 3s");
+      contentEl.innerHTML = '<span id="display-text">NO SCORES</span>';
+      cycleTimer = setTimeout(showNextScore, 3000);
       return;
     }
 
