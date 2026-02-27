@@ -23,7 +23,7 @@ function debugLog(...args) {
 // --- Score debug panel (bottom-right) ---
 const scoreDebugEl = document.createElement("div");
 scoreDebugEl.id = "score-debug";
-scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.8);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;z-index:9999;pointer-events:none;white-space:pre;border-radius:4px;max-width:300px;";
+scoreDebugEl.style.cssText = "position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.8);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;z-index:9999;pointer-events:none;white-space:pre;border-radius:4px;max-width:300px;display:none;";
 document.body.appendChild(scoreDebugEl);
 const ua = navigator.userAgent;
 const chromeMatch = ua.match(/Chrome\/(\d+)/);
