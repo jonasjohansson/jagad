@@ -206,41 +206,58 @@ function showTagline(nextFn) {
   });
 }
 
-var SCORE_DURATION = 3000;
-var cycleTimer = null;
+// Tick-based cycle using setInterval (1 tick = 1 second)
+// Tagline: 10 ticks, each score page: 3 ticks
+var TAGLINE_TICKS = 10;
+var SCORE_TICKS = 3;
+var cycleInterval = null;
+var tickCount = 0;
 
-function runCycle() {
+function getCycleSchedule() {
+  // Build schedule: [{type:"tagline", ticks:10}, {type:"scores", page:0, ticks:3}, ...]
   var pages = getHighscorePages();
-  var step = 0;
-
-  function next() {
-    if (step === 0) {
-      // Tagline
-      debugLog("[cycle] tagline");
-      contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-      step++;
-      cycleTimer = setTimeout(next, TAGLINE_DURATION);
-    } else if (step <= pages.length) {
-      // Score page
-      var idx = step - 1;
-      debugLog("[cycle] page", idx + 1, "of", pages.length);
-      contentEl.innerHTML = buildHighscoreHTML(pages[idx]);
-      step++;
-      cycleTimer = setTimeout(next, SCORE_DURATION);
-    } else {
-      // Loop
-      step = 0;
-      next();
-    }
+  var schedule = [];
+  schedule.push({ type: "tagline", ticks: TAGLINE_TICKS });
+  for (var i = 0; i < pages.length; i++) {
+    schedule.push({ type: "scores", page: i, ticks: SCORE_TICKS });
   }
+  return schedule;
+}
 
-  next();
+function renderCycleItem(item) {
+  var pages = getHighscorePages();
+  if (item.type === "tagline") {
+    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+  } else {
+    contentEl.innerHTML = buildHighscoreHTML(pages[item.page]);
+  }
 }
 
 function startDisplayCycle() {
-  if (cycleTimer) clearTimeout(cycleTimer);
+  if (cycleInterval) clearInterval(cycleInterval);
   debugLog("[cycle] starting cycle");
-  runCycle();
+
+  var schedule = getCycleSchedule();
+  var slotIndex = 0;
+  var slotTick = 0;
+
+  // Show first item immediately
+  renderCycleItem(schedule[0]);
+  debugLog("[cycle] slot 0:", schedule[0].type);
+
+  cycleInterval = setInterval(function() {
+    slotTick++;
+    if (slotTick >= schedule[slotIndex].ticks) {
+      slotTick = 0;
+      slotIndex++;
+      if (slotIndex >= schedule.length) {
+        slotIndex = 0;
+        schedule = getCycleSchedule(); // refresh scores
+      }
+      debugLog("[cycle] slot", slotIndex, ":", schedule[slotIndex].type);
+      renderCycleItem(schedule[slotIndex]);
+    }
+  }, 1000);
 }
 
 // --- Highscore fetching ---
