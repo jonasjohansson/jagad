@@ -223,13 +223,15 @@ function startDisplayCycle() {
     var pages = getHighscorePages();
     debugLog("[cycle] showNextScore, pageIndex:", pageIndex, "pages:", pages.length);
 
-    if (pages.length === 0 || pageIndex >= pages.length) {
-      // Done with all scores (or no scores), show tagline then loop
+    if (pages.length === 0) {
+      // No scores, show tagline and retry
       pageIndex = 0;
-      currentPhaseLabel = "tagline";
-      updateScoreDebug();
       showTagline(showNextScore);
       return;
+    }
+
+    if (pageIndex >= pages.length) {
+      pageIndex = 0;
     }
 
     currentPhaseLabel = "page " + (pageIndex + 1) + "/" + pages.length;
@@ -239,10 +241,8 @@ function startDisplayCycle() {
     pageIndex++;
   }
 
-  // Start with tagline
-  currentPhaseLabel = "tagline";
-  updateScoreDebug();
-  showTagline(showNextScore);
+  // Start directly with scores (no tagline)
+  showNextScore();
 }
 
 // --- Highscore fetching ---
