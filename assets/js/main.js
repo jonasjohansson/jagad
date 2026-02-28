@@ -547,6 +547,7 @@ const loadingProgress = {
     }
 
     playSFX("playerSelect", chaserIndex);
+    triggerShake(0.2, 0.15);
 
     // Create pulse wave from chaser position in their color
     const chaserColors = [settings.chaser1Color, settings.chaser2Color, settings.chaser3Color, settings.chaser4Color];
