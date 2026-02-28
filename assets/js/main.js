@@ -24,6 +24,7 @@ import { initTemplateVars, applyStartingText, applyPlayingText, applyHighScoreTe
 import { initProjection, initProjectionPlane, updateProjectionForState, loadProjectionImage, updateProjectionPump, handleProjectionStateChange, applyProjectionMaterial } from "./rendering/projection.js?v=149";
 import { initPathMovement, initActorOnPath, updateFugitiveMovementPath, updateChaserMovementPath } from "./game/pathMovement.js?v=149";
 import { initActorWire, ActorWire, updateWireBillboards } from "./systems/actorWire.js?v=149";
+import { triggerShake, updateShake } from "./systems/cameraShake.js";
 import { setupLights, toneMappingOptions } from "./rendering/lights.js?v=149";
 
 // lil-gui loaded via script tag in index.html
@@ -406,6 +407,7 @@ const loadingProgress = {
             const boosted = triggerBoost(boostStates, i, settings);
             if (boosted) {
               playSFX("nitro", i);
+              triggerShake(0.15, 0.15);
             } else {
               playSFX("honk", i);
             }
@@ -2450,6 +2452,8 @@ const loadingProgress = {
     // Update chaser light debug helpers
     for (const h of chaserLightHelpers) h.update();
 
+    updateShake(camera, dt);
+
     // Render with post-processing (EffectComposer)
     if (composer) {
       composer.render();
@@ -2614,6 +2618,7 @@ const loadingProgress = {
 
           // Create capture effect at fugitive position
           createCaptureEffect(f.mesh.position.clone(), chaserColor, billboard, scene, settings, STATE);
+          triggerShake(0.3, 0.2);
 
           // Hide fugitive
           f.mesh.position.y = -1000;
