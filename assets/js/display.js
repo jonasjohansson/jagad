@@ -192,45 +192,41 @@ function fitToContainer(el) {
 }
 
 // --- Display cycle ---
-// Simple setInterval that cycles: page0, page1, page2, tagline, repeat
-// Each step shows for 3 seconds, tagline for 10 seconds
-var cycleInterval = null;
+// Chained setTimeout: page0 → page1 → page2 → tagline → repeat
+var cycleTimer = null;
 var pageIndex = 0;
 
-function startDisplayCycle() {
-  if (cycleInterval) clearInterval(cycleInterval);
-  debugLog("[cycle] starting, scores:", scores.length);
-
-  // Show first content immediately
+function scheduleCycleStep() {
   var pages = getHighscorePages();
-  if (pages.length > 0) {
-    contentEl.innerHTML = buildHighscoreHTML(pages[0]);
-    pageIndex = 1;
-  } else {
+
+  if (pages.length === 0) {
+    // No scores — show tagline and retry
     contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-    pageIndex = 0;
+    debugLog("[cycle] no scores, tagline");
+    cycleTimer = setTimeout(function() { pageIndex = 0; scheduleCycleStep(); }, TAGLINE_DURATION);
+    return;
   }
 
-  cycleInterval = setInterval(function() {
-    var pages = getHighscorePages();
+  if (pageIndex < pages.length) {
+    // Show score page
+    debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
+    contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
+    pageIndex++;
+    cycleTimer = setTimeout(scheduleCycleStep, PAGE_DURATION);
+  } else {
+    // Show tagline, then reset
+    debugLog("[cycle] tagline");
+    contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
+    pageIndex = 0;
+    cycleTimer = setTimeout(scheduleCycleStep, TAGLINE_DURATION);
+  }
+}
 
-    if (pages.length === 0) {
-      contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-      return;
-    }
-
-    if (pageIndex < pages.length) {
-      // Show next score page
-      debugLog("[cycle] page", pageIndex + 1, "of", pages.length);
-      contentEl.innerHTML = buildHighscoreHTML(pages[pageIndex]);
-      pageIndex++;
-    } else {
-      // Show tagline, then reset
-      debugLog("[cycle] tagline");
-      contentEl.innerHTML = '<span id="display-text">' + TAGLINE + '</span>';
-      pageIndex = 0;
-    }
-  }, 6000);
+function startDisplayCycle() {
+  if (cycleTimer) clearTimeout(cycleTimer);
+  debugLog("[cycle] starting, scores:", scores.length);
+  pageIndex = 0;
+  scheduleCycleStep();
 }
 
 // --- Highscore fetching ---
