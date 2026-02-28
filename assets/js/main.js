@@ -176,7 +176,7 @@ const loadingProgress = {
 
   // Facade mode overrides
   if (isFacadeMode) {
-    settings.exposure = 1;
+    settings.exposure = 0.67;
     settings.renderScale = 1.5;
     renderer.setPixelRatio(window.devicePixelRatio * settings.renderScale);
     renderer.toneMappingExposure = settings.exposure;
