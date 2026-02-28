@@ -83,7 +83,7 @@ function triggerRandomScramble(rowIndex) {
 }
 
 function getShuffledText(rowIndex, targetText, dt) {
-  if (!_settings.glassTextShuffle || _STATE.enteringHighScore) {
+  if (!_settings.glassTextShuffle || _STATE.enteringHighScore || _STATE.gameState === "GAME_OVER") {
     textShuffleState.lastTexts[rowIndex] = targetText;
     return targetText;
   }
