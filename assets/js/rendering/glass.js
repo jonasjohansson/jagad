@@ -418,60 +418,6 @@ export function updateGlassCanvas(timestamp = 0) {
         drawTextWithSpacing(text, xPos, y, _settings.glassTextAlign);
         ctx.restore();
         ctx.fillStyle = _settings.glassTextColor;
-
-        // Blinking underline cursor under the current initial position
-        const blink = Math.floor(Date.now() / 400) % 2 === 0;
-        if (blink) {
-          const pos = _STATE.highScorePosition;
-          const initialsText = text;
-          // Find the position of the initials characters within the row
-          const templateRow = _settings.highScoreTextRow2 || "";
-          const initialsIdx = templateRow.indexOf("${initials}");
-          const charOffset = initialsIdx >= 0 ? initialsIdx + pos : pos;
-
-          let cursorX, cursorW;
-          if (monospace) {
-            const totalWidth = initialsText.length * charWidth;
-            let startCharX = xPos;
-            if (_settings.glassTextAlign === "center") {
-              startCharX = xPos - totalWidth / 2;
-            } else if (_settings.glassTextAlign === "right") {
-              startCharX = xPos - totalWidth;
-            }
-            cursorX = startCharX + charOffset * charWidth;
-            cursorW = charWidth * 0.7;
-          } else {
-            // Measure characters up to the cursor position
-            let measured = 0;
-            for (let ci = 0; ci < charOffset; ci++) {
-              measured += ctx.measureText(initialsText[ci] || "").width + letterSpacing;
-            }
-            const cw = ctx.measureText(initialsText[charOffset] || "A").width;
-            let startCharX = xPos;
-            if (_settings.glassTextAlign === "center") {
-              let totalW = 0;
-              for (const ch of initialsText) totalW += ctx.measureText(ch).width + letterSpacing;
-              totalW -= letterSpacing;
-              startCharX = xPos - totalW / 2;
-            } else if (_settings.glassTextAlign === "right") {
-              let totalW = 0;
-              for (const ch of initialsText) totalW += ctx.measureText(ch).width + letterSpacing;
-              totalW -= letterSpacing;
-              startCharX = xPos - totalW;
-            }
-            cursorX = startCharX + measured;
-            cursorW = cw;
-          }
-          ctx.save();
-          ctx.fillStyle = _STATE.highScoreInitialsColor || "#ffffff";
-          ctx.shadowColor = _STATE.highScoreInitialsColor || "#ffffff";
-          ctx.shadowBlur = 10;
-          const underlineY = y + fontSize * 0.15;
-          const underlineH = Math.max(2, fontSize * 0.06);
-          ctx.fillRect(cursorX, underlineY, cursorW, underlineH);
-          ctx.restore();
-          ctx.fillStyle = _settings.glassTextColor;
-        }
       } else {
         drawTextWithSpacing(text, xPos, y, _settings.glassTextAlign);
       }

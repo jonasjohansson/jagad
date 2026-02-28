@@ -268,6 +268,7 @@ const loadingProgress = {
     // High score entry
     enteringHighScore: false,
     highScoreInitials: ["A", "A", "A"],
+    highScoreInitialsTouched: [false, false, false],
     highScorePosition: 0,  // Which initial being edited (0-2)
     highScoreCharIndex: 0, // Current character A-Z, 0-9
     newHighScoreRank: -1,  // Position in high scores list (0, 1, or 2)
@@ -326,6 +327,7 @@ const loadingProgress = {
       wouldFormBlockedWord(STATE.highScoreInitials, STATE.highScorePosition, HIGH_SCORE_CHARS[STATE.highScoreCharIndex])
     );
     STATE.highScoreInitials[STATE.highScorePosition] = HIGH_SCORE_CHARS[STATE.highScoreCharIndex];
+    STATE.highScoreInitialsTouched[STATE.highScorePosition] = true;
     updateHighScoreDisplay();
   }
 
@@ -835,6 +837,7 @@ const loadingProgress = {
     STATE.enteringHighScore = true;
     STATE.highScorePosition = 0;
     STATE.highScoreInitials = ["A", "A", "A"];
+    STATE.highScoreInitialsTouched = [false, false, false];
     STATE.highScoreCharIndex = 0;
     STATE.newHighScoreRank = position;
     // Set initials color to first player's color
@@ -2286,6 +2289,7 @@ const loadingProgress = {
     STATE.highScorePosition = 0;
     STATE.highScoreCharIndex = 0;
     STATE.highScoreInitials = ["A", "A", "A"];
+    STATE.highScoreInitialsTouched = [false, false, false];
     STATE.highScoreInitialsColor = null;
     STATE.countdownValue = 3;
     STATE.countdownTimer = 0;

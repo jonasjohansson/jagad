@@ -56,7 +56,18 @@ export function replaceTemplateVars(text) {
   if (!text) return "";
   let initials;
   if (_STATE.highScoreInitials) {
-    initials = _STATE.highScoreInitials.join("");
+    const blink = Math.floor(Date.now() / 400) % 2 === 0;
+    const touched = _STATE.highScoreInitialsTouched || [false, false, false];
+    initials = _STATE.highScoreInitials.map((c, i) => {
+      if (_STATE.enteringHighScore && !touched[i]) {
+        // Untouched: blink underscore at current position, static underscore elsewhere
+        if (i === _STATE.highScorePosition) {
+          return blink ? "_" : " ";
+        }
+        return "_";
+      }
+      return c;
+    }).join("");
   } else {
     initials = "___";
   }
