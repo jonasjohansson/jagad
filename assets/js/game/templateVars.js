@@ -54,16 +54,9 @@ function getCountdownText() {
 
 export function replaceTemplateVars(text) {
   if (!text) return "";
-  // Flash current position when entering high score
   let initials;
   if (_STATE.highScoreInitials) {
-    const blink = Math.floor(Date.now() / 400) % 2 === 0;
-    initials = _STATE.highScoreInitials.map((c, i) => {
-      if (_STATE.enteringHighScore && i === _STATE.highScorePosition) {
-        return blink ? c : "_";
-      }
-      return c;
-    }).join("");
+    initials = _STATE.highScoreInitials.join("");
   } else {
     initials = "___";
   }
